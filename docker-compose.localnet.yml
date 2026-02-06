@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  validator:
+    image: solanalabs/solana:v1.17.0
+    command: solana-test-validator --reset --rpc-port 8899 --ws-port 8900 --ledger /ledger
+    ports:
+      - "8899:8899"
+      - "8900:8900"
+      - "9900:9900" # Faucet
+    volumes:
+      - ./.anchor/test-ledger:/ledger
+
+  oracle-attester:
+    build:
+      context: ./apps/oracle-attester
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./apps/oracle-attester/.env
+    environment:
+      RPC_URL: http://validator:8899
+      ORACLE_KEYPAIR_PATH: /app/oracle-keypair.json
+      PROOF_STORE_DIR: /app/proof_store
+      RESOLVER_STORE_DIR: /app/resolver_store
+      APP_ENV: production
+      ZKTLS_MODE: reclaim_http
+      REQUIRE_ZKTLS: "1"
+      RECLAIM_VERIFY_URL: ${RECLAIM_VERIFY_URL:-}
+      RECLAIM_API_KEY: ${RECLAIM_API_KEY:-}
+    volumes:
+      - ./resolver_store:/app/resolver_store
+      - ./proof_store:/app/proof_store
+      - ./oracle-keypair.json:/app/oracle-keypair.json # Mount keypair if needed
+    depends_on:
+      - validator

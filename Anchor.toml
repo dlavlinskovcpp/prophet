@@ -1,0 +1,32 @@
+[toolchain]
+anchor_version = "0.32.1"
+
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+prophet = "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+# Long timeout for warpSlot and integration tests
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 30000 
+shutdown_wait = 2000
+
+[test.validator]
+bind_address = "127.0.0.1"
+gossip_host = "127.0.0.1"
+dynamic_port_range = "10240-10255"
+# url = "https://api.mainnet-beta.solana.com"
+ledger = ".anchor/test-ledger"
+rpc_port = 8899
