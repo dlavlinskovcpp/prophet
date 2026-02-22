@@ -3,18 +3,23 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::sysvar::instructions::{
     load_instruction_at_checked, ID as INSTRUCTIONS_ID,
 };
-use anchor_lang::solana_program::ed25519_program::ID as ED25519_ID_NATIVE;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
 use crate::state::*;
 use crate::errors::ErrorCode;
 use crate::events::*;
+use crate::ed25519_program::ID as ED25519_ID_NATIVE;
 
 pub mod state;
 pub mod errors;
 pub mod events;
 
 declare_id!("913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A");
+
+pub mod ed25519_program {
+    use anchor_lang::prelude::*;
+    declare_id!("Ed25519SigVerify111111111111111111111111111");
+}
 
 #[program]
 pub mod prophet {
@@ -195,6 +200,394 @@ pub mod prophet {
         market.outcome = MarketOutcome::Undecided;
 
         market.bump = ctx.bumps.market;
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.4 Create Claim (Bonded Claims MVP)
+    // -------------------------------------------------------------------------
+    pub fn create_claim(
+        ctx: Context<CreateClaim>,
+        claim_id: u64,
+        resolver_hash: [u8; 32],
+        resolve_ts: i64,
+        bond_atoms: u64,
+        pass_recipient: Pubkey,
+        fail_recipient: Pubkey,
+        oracle_authority: Pubkey,
+        notary_config: Pubkey,
+    ) -> Result<()> {
+        let now = Clock::get()?.unix_timestamp;
+        let claim = &mut ctx.accounts.claim;
+
+        require!(bond_atoms > 0, ErrorCode::InvalidBondAmount);
+        require!(resolve_ts >= now, ErrorCode::InvalidTimeRange);
+        require!(pass_recipient != Pubkey::default(), ErrorCode::InvalidClaimRecipient);
+        require!(fail_recipient != Pubkey::default(), ErrorCode::InvalidClaimRecipient);
+
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.issuer_quote_ata.to_account_info(),
+                    to: ctx.accounts.quote_vault.to_account_info(),
+                    authority: ctx.accounts.issuer.to_account_info(),
+                },
+            ),
+            bond_atoms,
+        )?;
+
+        claim.issuer = ctx.accounts.issuer.key();
+        claim.pass_recipient = pass_recipient;
+        claim.fail_recipient = fail_recipient;
+        claim.oracle_authority = oracle_authority;
+        claim.quote_mint = ctx.accounts.quote_mint.key();
+        claim.quote_vault = ctx.accounts.quote_vault.key();
+        claim.notary_config = notary_config;
+        claim.resolver_hash = resolver_hash;
+        claim.proof_hash = [0; 32];
+        claim.public_inputs_hash = [0; 32];
+        claim.claim_id = claim_id;
+        claim.bond_atoms = bond_atoms;
+        claim.created_ts = now;
+        claim.resolve_ts = resolve_ts;
+        claim.resolved_ts = 0;
+        claim.status = ClaimStatus::Open;
+        claim.outcome = ClaimOutcome::Undecided;
+        claim.bump = ctx.bumps.claim;
+        claim._reserved0 = [0; 5];
+
+        emit!(ClaimCreated {
+            claim: claim.key(),
+            issuer: claim.issuer,
+            claim_id,
+            pass_recipient: claim.pass_recipient,
+            fail_recipient: claim.fail_recipient,
+            bond_atoms: claim.bond_atoms,
+            resolve_ts: claim.resolve_ts,
+            resolver_hash: claim.resolver_hash,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.5 Redeem Claim (Bonded Claims MVP)
+    // -------------------------------------------------------------------------
+    pub fn redeem_claim(ctx: Context<RedeemClaim>) -> Result<()> {
+        let claim = &mut ctx.accounts.claim;
+
+        if claim.status == ClaimStatus::Redeemed {
+            return Err(ErrorCode::ClaimAlreadyRedeemed.into());
+        }
+        require!(claim.status == ClaimStatus::Resolved, ErrorCode::ClaimNotResolved);
+
+        let expected_recipient = match claim.outcome {
+            ClaimOutcome::Pass => claim.pass_recipient,
+            ClaimOutcome::Fail | ClaimOutcome::Invalid => claim.fail_recipient,
+            _ => return Err(ErrorCode::InvalidClaimOutcome.into()),
+        };
+        require!(
+            ctx.accounts.recipient.key() == expected_recipient,
+            ErrorCode::InvalidClaimRecipient
+        );
+
+        let payout = claim.bond_atoms;
+        let claim_id_bytes = claim.claim_id.to_le_bytes();
+        let seeds = &[
+            b"claim".as_ref(),
+            claim.issuer.as_ref(),
+            claim_id_bytes.as_ref(),
+            &[claim.bump],
+        ];
+        let signer = &[&seeds[..]];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.quote_vault.to_account_info(),
+                    to: ctx.accounts.recipient_quote_ata.to_account_info(),
+                    authority: claim.to_account_info(),
+                },
+                signer,
+            ),
+            payout,
+        )?;
+
+        claim.status = ClaimStatus::Redeemed;
+
+        emit!(ClaimRedeemed {
+            claim: claim.key(),
+            recipient: ctx.accounts.recipient.key(),
+            outcome: claim.outcome,
+            payout_atoms: payout,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.6 Resolve Claim Signed (Permissionless single-oracle)
+    // -------------------------------------------------------------------------
+    pub fn resolve_claim_signed(
+        ctx: Context<ResolveClaimSigned>,
+        outcome: ClaimOutcome,
+        proof_hash: [u8; 32],
+        public_inputs_hash: [u8; 32],
+        oracle_sig: [u8; 64],
+    ) -> Result<()> {
+        let claim = &mut ctx.accounts.claim;
+        let now = Clock::get()?.unix_timestamp;
+
+        require!(now >= claim.resolve_ts, ErrorCode::ClaimNotResolvableYet);
+        require!(claim.status == ClaimStatus::Open, ErrorCode::ClaimNotOpen);
+        require!(outcome != ClaimOutcome::Undecided, ErrorCode::InvalidClaimOutcome);
+
+        let sysvar_info = ctx.accounts.instructions_sysvar.to_account_info();
+        let current_index =
+            anchor_lang::solana_program::sysvar::instructions::load_current_index_checked(&sysvar_info)?;
+        require!(current_index > 0, ErrorCode::MissingEd25519Ix);
+
+        let ed25519_ix = load_instruction_at_checked((current_index - 1) as usize, &sysvar_info)?;
+        require!(
+            ed25519_ix.program_id.to_bytes() == ED25519_ID_NATIVE.to_bytes(),
+            ErrorCode::InvalidEd25519Program
+        );
+
+        // Header parsing for 1 signature (16-byte header)
+        let data = &ed25519_ix.data;
+        require!(data.len() > 16, ErrorCode::InvalidEd25519Data);
+        require!(data[0] == 1, ErrorCode::InvalidEd25519Data); // num_sigs
+        require!(data[1] == 0, ErrorCode::InvalidEd25519Data); // padding
+
+        let sig_offset =
+            u16::from_le_bytes(data[2..4].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let sig_ix =
+            u16::from_le_bytes(data[4..6].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let pk_offset =
+            u16::from_le_bytes(data[6..8].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let pk_ix =
+            u16::from_le_bytes(data[8..10].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let msg_offset =
+            u16::from_le_bytes(data[10..12].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let msg_size =
+            u16::from_le_bytes(data[12..14].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+        let msg_ix =
+            u16::from_le_bytes(data[14..16].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+
+        require!(sig_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+        require!(pk_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+        require!(msg_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+
+        let sig_start = sig_offset as usize;
+        let sig_end = sig_start.checked_add(64).ok_or(ErrorCode::InvalidEd25519Data)?;
+        let pk_start = pk_offset as usize;
+        let pk_end = pk_start.checked_add(32).ok_or(ErrorCode::InvalidEd25519Data)?;
+        let msg_start = msg_offset as usize;
+        let msg_end = msg_start
+            .checked_add(msg_size as usize)
+            .ok_or(ErrorCode::InvalidEd25519Data)?;
+
+        require!(sig_end <= data.len(), ErrorCode::InvalidEd25519Data);
+        require!(pk_end <= data.len(), ErrorCode::InvalidEd25519Data);
+        require!(msg_end <= data.len(), ErrorCode::InvalidEd25519Data);
+
+        let ix_sig = &data[sig_start..sig_end];
+        let ix_pk = &data[pk_start..pk_end];
+        let ix_msg = &data[msg_start..msg_end];
+
+        require!(ix_pk == claim.oracle_authority.as_ref(), ErrorCode::UnauthorizedOracle);
+        require!(ix_sig == oracle_sig, ErrorCode::SignatureMismatch);
+
+        // Canonical claim attestation message (single oracle)
+        let outcome_byte = claim_outcome_to_u8(outcome)?;
+
+        let mut expected_msg = Vec::with_capacity(24 + 32 + 32 + 32 + 8 + 8 + 1 + 32 + 32);
+        expected_msg.extend_from_slice(b"PROPHET_CLAIM_RESOLVE_V1");
+        expected_msg.extend_from_slice(crate::ID.as_ref());
+        expected_msg.extend_from_slice(claim.key().as_ref());
+        expected_msg.extend_from_slice(&claim.resolver_hash);
+        expected_msg.extend_from_slice(claim.issuer.as_ref());
+        expected_msg.extend_from_slice(&claim.claim_id.to_le_bytes());
+        expected_msg.extend_from_slice(&claim.resolve_ts.to_le_bytes());
+        expected_msg.push(outcome_byte);
+        expected_msg.extend_from_slice(&proof_hash);
+        expected_msg.extend_from_slice(&public_inputs_hash);
+
+        require!(msg_size as usize == expected_msg.len(), ErrorCode::MessageSizeMismatch);
+        require!(ix_msg == expected_msg.as_slice(), ErrorCode::MessageMismatch);
+
+        claim.status = ClaimStatus::Resolved;
+        claim.outcome = outcome;
+        claim.proof_hash = proof_hash;
+        claim.public_inputs_hash = public_inputs_hash;
+        claim.resolved_ts = now;
+
+        emit!(ClaimResolved {
+            claim: claim.key(),
+            outcome,
+            resolved_ts: now,
+            proof_hash,
+            public_inputs_hash,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.7 Resolve Claim Threshold (Permissionless, t-of-n notaries)
+    // -------------------------------------------------------------------------
+    pub fn resolve_claim_threshold(
+        ctx: Context<ResolveClaimThreshold>,
+        outcome: ClaimOutcome,
+        proof_hash: [u8; 32],
+        public_inputs_hash: [u8; 32],
+    ) -> Result<()> {
+        let claim = &mut ctx.accounts.claim;
+        let cfg = &ctx.accounts.notary_config;
+        let now = Clock::get()?.unix_timestamp;
+
+        require!(now >= claim.resolve_ts, ErrorCode::ClaimNotResolvableYet);
+        require!(claim.status == ClaimStatus::Open, ErrorCode::ClaimNotOpen);
+        require!(outcome != ClaimOutcome::Undecided, ErrorCode::InvalidClaimOutcome);
+
+        require!(
+            claim.notary_config != Pubkey::default(),
+            ErrorCode::ClaimNotaryConfigNotSet
+        );
+        require!(
+            claim.notary_config == cfg.key(),
+            ErrorCode::ClaimNotaryConfigMismatch
+        );
+
+        require!(cfg.threshold > 0, ErrorCode::InvalidNotaryThreshold);
+        require!(
+            (cfg.threshold as usize) <= (cfg.notary_count as usize),
+            ErrorCode::InvalidNotaryThreshold
+        );
+
+        // Canonical claim attestation message (threshold notaries)
+        let outcome_byte = claim_outcome_to_u8(outcome)?;
+
+        let mut expected_msg =
+            Vec::with_capacity(24 + 32 + 32 + 32 + 32 + 8 + 8 + 1 + 32 + 32);
+        expected_msg.extend_from_slice(b"PROPHET_CLAIM_RESOLVE_V2");
+        expected_msg.extend_from_slice(crate::ID.as_ref());
+        expected_msg.extend_from_slice(claim.key().as_ref());
+        expected_msg.extend_from_slice(cfg.key().as_ref());
+        expected_msg.extend_from_slice(&claim.resolver_hash);
+        expected_msg.extend_from_slice(claim.issuer.as_ref());
+        expected_msg.extend_from_slice(&claim.claim_id.to_le_bytes());
+        expected_msg.extend_from_slice(&claim.resolve_ts.to_le_bytes());
+        expected_msg.push(outcome_byte);
+        expected_msg.extend_from_slice(&proof_hash);
+        expected_msg.extend_from_slice(&public_inputs_hash);
+
+        let sysvar_info = ctx.accounts.instructions_sysvar.to_account_info();
+        let current_index =
+            anchor_lang::solana_program::sysvar::instructions::load_current_index_checked(&sysvar_info)?;
+        require!(current_index > 0, ErrorCode::MissingEd25519Ix);
+
+        let mut seen: Vec<Pubkey> = Vec::with_capacity(cfg.threshold as usize);
+        let mut valid_count: u8 = 0;
+
+        let max_scan: u16 = MAX_ED25519_SCAN as u16;
+        let mut scanned: u16 = 0;
+        let mut i: i32 = (current_index as i32) - 1;
+        while i >= 0 && scanned < max_scan && valid_count < cfg.threshold {
+            let ix = load_instruction_at_checked(i as usize, &sysvar_info)?;
+            scanned = scanned.saturating_add(1);
+
+            if ix.program_id.to_bytes() != ED25519_ID_NATIVE.to_bytes() {
+                i -= 1;
+                continue;
+            }
+
+            let data = &ix.data;
+            if data.len() < 16 {
+                i -= 1;
+                continue;
+            }
+            if data[0] != 1 || data[1] != 0 {
+                i -= 1;
+                continue;
+            }
+
+            let sig_offset =
+                u16::from_le_bytes(data[2..4].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let sig_ix =
+                u16::from_le_bytes(data[4..6].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let pk_offset =
+                u16::from_le_bytes(data[6..8].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let pk_ix =
+                u16::from_le_bytes(data[8..10].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let msg_offset =
+                u16::from_le_bytes(data[10..12].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let msg_size =
+                u16::from_le_bytes(data[12..14].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let msg_ix =
+                u16::from_le_bytes(data[14..16].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+
+            require!(sig_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+            require!(pk_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+            require!(msg_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
+
+            let sig_start = sig_offset as usize;
+            let sig_end = sig_start.checked_add(64).ok_or(ErrorCode::InvalidEd25519Data)?;
+            let pk_start = pk_offset as usize;
+            let pk_end = pk_start.checked_add(32).ok_or(ErrorCode::InvalidEd25519Data)?;
+            let msg_start = msg_offset as usize;
+            let msg_end = msg_start
+                .checked_add(msg_size as usize)
+                .ok_or(ErrorCode::InvalidEd25519Data)?;
+
+            if sig_end > data.len() || pk_end > data.len() || msg_end > data.len() {
+                i -= 1;
+                continue;
+            }
+
+            let pk_bytes: [u8; 32] = data[pk_start..pk_end]
+                .try_into()
+                .map_err(|_| ErrorCode::InvalidEd25519Data)?;
+            let pk = Pubkey::new_from_array(pk_bytes);
+
+            if !cfg.contains_notary(&pk) {
+                i -= 1;
+                continue;
+            }
+
+            if seen.iter().any(|x| x == &pk) {
+                return Err(ErrorCode::DuplicateNotarySig.into());
+            }
+
+            let msg = &data[msg_start..msg_end];
+            if msg != expected_msg.as_slice() {
+                i -= 1;
+                continue;
+            }
+
+            seen.push(pk);
+            valid_count = valid_count.saturating_add(1);
+            i -= 1;
+        }
+
+        require!(valid_count >= cfg.threshold, ErrorCode::NotEnoughNotarySigs);
+
+        claim.status = ClaimStatus::Resolved;
+        claim.outcome = outcome;
+        claim.proof_hash = proof_hash;
+        claim.public_inputs_hash = public_inputs_hash;
+        claim.resolved_ts = now;
+
+        emit!(ClaimResolved {
+            claim: claim.key(),
+            outcome,
+            resolved_ts: now,
+            proof_hash,
+            public_inputs_hash,
+        });
 
         Ok(())
     }
@@ -851,6 +1244,15 @@ fn mul_div_ceil(a: u128, b: u128, den: u128) -> Result<u64> {
     Ok(res as u64)
 }
 
+fn claim_outcome_to_u8(outcome: ClaimOutcome) -> Result<u8> {
+    match outcome {
+        ClaimOutcome::Pass => Ok(1),
+        ClaimOutcome::Fail => Ok(2),
+        ClaimOutcome::Invalid => Ok(3),
+        ClaimOutcome::Undecided => Err(ErrorCode::InvalidClaimOutcome.into()),
+    }
+}
+
 // -------------------------------------------------------------------------
 // Contexts
 // -------------------------------------------------------------------------
@@ -947,6 +1349,64 @@ pub struct InitializeMarketV2<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+#[instruction(claim_id: u64)]
+pub struct CreateClaim<'info> {
+    #[account(
+        init,
+        payer = issuer,
+        space = 8 + Claim::LEN,
+        seeds = [b"claim", issuer.key().as_ref(), &claim_id.to_le_bytes()],
+        bump
+    )]
+    pub claim: Box<Account<'info, Claim>>,
+    #[account(mut)]
+    pub issuer: Signer<'info>,
+    pub quote_mint: Box<Account<'info, token::Mint>>,
+    #[account(
+        mut,
+        constraint = issuer_quote_ata.owner == issuer.key(),
+        constraint = issuer_quote_ata.mint == quote_mint.key(),
+    )]
+    pub issuer_quote_ata: Box<Account<'info, TokenAccount>>,
+    #[account(
+        init,
+        payer = issuer,
+        associated_token::mint = quote_mint,
+        associated_token::authority = claim
+    )]
+    pub quote_vault: Box<Account<'info, TokenAccount>>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct RedeemClaim<'info> {
+    #[account(
+        mut,
+        seeds = [b"claim", claim.issuer.as_ref(), &claim.claim_id.to_le_bytes()],
+        bump = claim.bump
+    )]
+    pub claim: Box<Account<'info, Claim>>,
+    #[account(mut)]
+    pub recipient: Signer<'info>,
+    #[account(
+        mut,
+        constraint = quote_vault.key() == claim.quote_vault,
+        constraint = quote_vault.owner == claim.key(),
+        constraint = quote_vault.mint == claim.quote_mint
+    )]
+    pub quote_vault: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        constraint = recipient_quote_ata.owner == recipient.key(),
+        constraint = recipient_quote_ata.mint == claim.quote_mint
+    )]
+    pub recipient_quote_ata: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -1073,6 +1533,37 @@ pub struct ResolveMarketThreshold<'info> {
     #[account(mut)]
     pub market: Account<'info, Market>,
     pub notary_config: Account<'info, NotaryConfig>,
+    /// CHECK: Checked via address constraint
+    #[account(address = INSTRUCTIONS_ID)]
+    pub instructions_sysvar: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveClaimSigned<'info> {
+    #[account(
+        mut,
+        seeds = [b"claim", claim.issuer.as_ref(), &claim.claim_id.to_le_bytes()],
+        bump = claim.bump
+    )]
+    pub claim: Box<Account<'info, Claim>>,
+    /// CHECK: Checked via address constraint
+    #[account(address = INSTRUCTIONS_ID)]
+    pub instructions_sysvar: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveClaimThreshold<'info> {
+    #[account(
+        mut,
+        seeds = [b"claim", claim.issuer.as_ref(), &claim.claim_id.to_le_bytes()],
+        bump = claim.bump
+    )]
+    pub claim: Box<Account<'info, Claim>>,
+    #[account(
+        seeds = [b"notary_config", notary_config.admin.as_ref()],
+        bump = notary_config.bump
+    )]
+    pub notary_config: Box<Account<'info, NotaryConfig>>,
     /// CHECK: Checked via address constraint
     #[account(address = INSTRUCTIONS_ID)]
     pub instructions_sysvar: AccountInfo<'info>,

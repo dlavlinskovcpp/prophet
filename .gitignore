@@ -6,7 +6,11 @@ node_modules
 test-ledger
 .env*
 *.json
+!package.json
+!tsconfig.json
 !id.json
+!tests/fixtures/claim_message_vectors.json
+.logs
 !oracle-keypair.json
 __pycache__
 *.pyc

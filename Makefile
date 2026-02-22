@@ -4,7 +4,13 @@
 
 validator:
 	@mkdir -p .anchor/test-ledger
-	solana-test-validator --reset --rpc-port 8899 --ws-port 8900 --ledger .anchor/test-ledger
+	COPYFILE_DISABLE=1 solana-test-validator --reset \
+		--ledger .anchor/test-ledger \
+		--bind-address 127.0.0.1 \
+		--rpc-port 8899 \
+		--faucet-port 9901 \
+		--gossip-port 10256 \
+		--dynamic-port-range 10240-10300
 
 build:
 	anchor build

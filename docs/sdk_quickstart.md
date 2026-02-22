@@ -1,6 +1,6 @@
-# Python SDK Quickstart
+# Python SDK Quickstart (Claim Flow)
 
-This SDK is the primary interface for agent-to-agent interaction with Prophet.
+This SDK is the primary interface for issuer/attester automation.
 
 ## Install
 
@@ -11,38 +11,30 @@ pip install -e .
 
 ## Environment
 
-Set these before running examples:
-
 ```bash
 export RPC_URL="http://127.0.0.1:8899"
 export PROPHET_PROGRAM_ID="<your_program_id>"
 export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 ```
 
-## Core Lifecycle API
+## Claim Lifecycle API
 
-`ProphetClient` now exposes the full MVP market lifecycle:
+`ProphetClient` claim-path methods:
 
-- `initialize_market(...)`
-- `initialize_market_v2(...)`
+- `create_claim(...)`
+- `resolve_claim_signed(...)`
+- `resolve_claim_threshold(...)`
+- `redeem_claim(...)`
 - `initialize_notary_config(...)`
 - `update_notary_config(...)`
-- `place_order(...)`
-- `match_orders(...)`
-- `cancel_order(...)`
-- `claim_refunds(...)`
-- `resolve_market(...)`
-- `resolve_market_signed(...)`
-- `resolve_market_threshold(...)`
-- `redeem(...)`
 
-## Minimal Example
+## Minimal Create + Redeem Example
 
 ```python
 import os
 import time
 from solders.pubkey import Pubkey
-from prophet_sdk import ProphetClient, OrderSide, MarketOutcome, derive_market_pda
+from prophet_sdk import ProphetClient
 
 client = ProphetClient(
     rpc_url=os.getenv("RPC_URL"),
@@ -51,44 +43,51 @@ client = ProphetClient(
 )
 
 quote_mint = Pubkey.from_string(os.environ["QUOTE_MINT"])
-resolver_hash = bytes([7] * 32)
+resolver_hash = bytes([9] * 32)
+issuer = client.payer.pubkey()
 
-now = int(time.time())
-open_ts = now - 5
-lock_ts = now + 120
-resolve_ts = now + 180
+claim_id = int(time.time() * 1000) & ((1 << 64) - 1)
+resolve_ts = int(time.time()) + 120
 
-client.initialize_market(
+claim, sig = client.create_claim(
+    claim_id=claim_id,
     resolver_hash=resolver_hash,
-    open_ts=open_ts,
-    lock_ts=lock_ts,
     resolve_ts=resolve_ts,
+    bond_atoms=1_000_000,
+    pass_recipient=issuer,
+    fail_recipient=issuer,  # use a different wallet for directional payout checks
     quote_mint=quote_mint,
 )
+print("create sig:", sig, "claim:", claim)
 
-market, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
-client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
+# resolve_claim_* is typically sent by oracle/attester process.
+# after claim is resolved on-chain:
+redeem_sig = client.redeem_claim(claim)
+print("redeem sig:", redeem_sig)
 ```
 
-## Resolution Notes
+## Full Validation Script
 
-- `resolve_market_signed` is permissionless relayer flow for legacy single-oracle markets.
-- `resolve_market_threshold` is permissionless t-of-n notary flow for v2 markets.
-- Off-chain attester computes outcome, validates zkTLS, and sends signed resolve tx.
-
-## Attester Helper Script
-
-The helper script supports direct proof/public-input payloads or `proof_ref` passthrough:
+Use the integrated claim-stack validator:
 
 ```bash
-python scripts/resolve_market_via_attester.py <MARKET> YES \
-  --proof-file ./proof.bin \
-  --pi-file ./public_inputs.json
+bash scripts/validate_claim_stack.sh --skip-ts-test
 ```
 
-or:
+This executes:
+
+1. SDK smoke tests
+2. program build/deploy
+3. auto claim creation via SDK
+4. attester `/resolve-claim`
+5. SDK redeem and balance-direction assertions
+
+For a minimal localnet SDK-only walkthrough (no attester), see:
 
 ```bash
-python scripts/resolve_market_via_attester.py <MARKET> YES \
-  --proof-ref "file:/abs/path/proof.bin:/abs/path/public_inputs.json"
+python sdk/python/examples/claim_localnet_demo.py
 ```
+
+## Legacy Market API
+
+Market/CLOB SDK methods are still available for backward compatibility, but claim flow is the default development path.

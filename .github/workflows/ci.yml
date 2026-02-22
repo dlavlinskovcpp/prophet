@@ -1,0 +1,261 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust-check:
+    name: Rust Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check
+        run: cargo check --workspace --all-targets
+
+      - name: Cargo Clippy
+        run: cargo clippy --workspace --all-targets -- -A unexpected_cfgs
+
+  python-sdk-tests:
+    name: Python SDK Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install SDK Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./sdk/python pytest
+
+      - name: Run SDK Pytests
+        run: pytest -q sdk/python/tests
+
+  oracle-attester-tests:
+    name: Oracle Attester Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Install Attester Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ./apps/oracle-attester
+
+      - name: Run Attester Pytests (unit/integration only)
+        run: |
+          pytest -q apps/oracle-attester/tests --ignore=apps/oracle-attester/tests/test_e2e.py
+
+      - name: Run zkTLS Audit Script
+        run: bash scripts/check_zktls.sh
+
+  anchor-integration:
+    name: Anchor Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      ANCHOR_WALLET: /home/runner/.config/solana/id.json
+      ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+      ANCHOR_CLI_VERSION: 0.32.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Node Manifests Exist
+        run: |
+          if [ ! -f package.json ]; then
+            echo "package.json is missing in checkout. Ensure it is committed (it may be ignored by .gitignore)."
+            ls -la
+            exit 1
+          fi
+          if [ ! -f tsconfig.json ]; then
+            echo "tsconfig.json is missing in checkout. Ensure it is committed (it may be ignored by .gitignore)."
+            ls -la
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: yarn.lock
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install Yarn
+        run: npm install -g yarn@1.22.22
+
+      - name: Set Yarn Registry
+        run: yarn config set registry https://registry.npmjs.org
+
+      - name: Install JS Dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Prepare Root Python venv
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+          ./venv/bin/pip install ./sdk/python pytest
+
+      - name: Install Poetry
+        run: python -m pip install poetry
+
+      - name: Install Oracle Attester Dependencies
+        run: |
+          cd apps/oracle-attester
+          poetry install --no-interaction --no-root
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libssl-dev
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
+          solana-test-validator --version
+
+      - name: Verify SBF Toolchain
+        run: |
+          cargo build-sbf --version
+          cargo build-sbf --manifest-path programs/prophet/Cargo.toml --help >/dev/null
+
+      - name: Install Anchor CLI
+        run: |
+          cargo +stable install --git https://github.com/coral-xyz/anchor avm --force --locked
+          avm install ${ANCHOR_CLI_VERSION}
+          avm use ${ANCHOR_CLI_VERSION}
+          anchor --version
+
+      - name: Create CI Wallet
+        run: |
+          mkdir -p "$HOME/.config/solana"
+          solana-keygen new --no-bip39-passphrase -f -o "$ANCHOR_WALLET"
+          solana config set --keypair "$ANCHOR_WALLET"
+
+      - name: Sync Program ID to CI Program Keypair
+        run: |
+          mkdir -p target/deploy
+          if [ ! -f target/deploy/prophet-keypair.json ]; then
+            solana-keygen new --no-bip39-passphrase -f -o target/deploy/prophet-keypair.json
+          fi
+          anchor keys sync -p prophet
+          anchor keys list
+
+      - name: Run Anchor Tests
+        run: |
+          set -euo pipefail
+
+          mkdir -p .anchor/test-ledger
+          VALIDATOR_LOG=".anchor/test-ledger/test-ledger-log.txt"
+
+          solana-test-validator --reset \
+            --ledger .anchor/test-ledger \
+            --bind-address 127.0.0.1 \
+            --rpc-port 8899 \
+            --faucet-port 9901 \
+            --gossip-port 10256 \
+            --dynamic-port-range 10240-10300 \
+            >"${VALIDATOR_LOG}" 2>&1 &
+
+          VALIDATOR_PID=$!
+
+          cleanup() {
+            kill "${VALIDATOR_PID}" 2>/dev/null || true
+            wait "${VALIDATOR_PID}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in $(seq 1 120); do
+            if curl -s -X POST http://127.0.0.1:8899 \
+              -H "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","id":1,"method":"getLatestBlockhash"}' | grep -q '"result"'; then
+              echo "Validator is ready"
+              break
+            fi
+
+            if ! kill -0 "${VALIDATOR_PID}" 2>/dev/null; then
+              echo "Validator exited before becoming ready"
+              cat "${VALIDATOR_LOG}" || true
+              exit 1
+            fi
+
+            if [ "${i}" -eq 120 ]; then
+              echo "Validator did not become ready in time"
+              cat "${VALIDATOR_LOG}" || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          if ! anchor test --skip-lint --skip-local-validator; then
+            echo "Anchor tests failed; validator log follows:"
+            if [ -f "${VALIDATOR_LOG}" ]; then
+              cat "${VALIDATOR_LOG}" || true
+            else
+              echo "Validator log file not found at ${VALIDATOR_LOG}"
+            fi
+            exit 1
+          fi
+
+      - name: Run PR4 Claim Stack Validation
+        env:
+          REQUIRE_ZKTLS: "0"
+        run: |
+          PROPHET_PROGRAM_ID="$(solana-keygen pubkey target/deploy/prophet-keypair.json)" \
+            bash scripts/validate_claim_stack.sh --skip-ts-test

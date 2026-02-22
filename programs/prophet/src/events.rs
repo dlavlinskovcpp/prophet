@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::{OrderSide, MarketOutcome};
+use crate::state::{ClaimOutcome, MarketOutcome, OrderSide};
 
 #[event]
 pub struct OrderPlaced {
@@ -60,4 +60,33 @@ pub struct Redeemed {
     pub payout_atoms: u64,
     pub yes_burned_atoms: u64,
     pub no_burned_atoms: u64,
+}
+
+#[event]
+pub struct ClaimCreated {
+    pub claim: Pubkey,
+    pub issuer: Pubkey,
+    pub claim_id: u64,
+    pub pass_recipient: Pubkey,
+    pub fail_recipient: Pubkey,
+    pub bond_atoms: u64,
+    pub resolve_ts: i64,
+    pub resolver_hash: [u8; 32],
+}
+
+#[event]
+pub struct ClaimRedeemed {
+    pub claim: Pubkey,
+    pub recipient: Pubkey,
+    pub outcome: ClaimOutcome,
+    pub payout_atoms: u64,
+}
+
+#[event]
+pub struct ClaimResolved {
+    pub claim: Pubkey,
+    pub outcome: ClaimOutcome,
+    pub resolved_ts: i64,
+    pub proof_hash: [u8; 32],
+    pub public_inputs_hash: [u8; 32],
 }

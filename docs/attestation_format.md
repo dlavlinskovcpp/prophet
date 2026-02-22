@@ -1,67 +1,73 @@
 # Attestation Format
 
-This document defines the signed message formats used by Prophet market resolution.
+This document defines canonical signed message formats used by Prophet resolution.
 
-## Why This Exists
+## Claim V1 (Single Oracle)
 
-Resolution is permissionless, but signatures are constrained to canonical message bytes.  
-The program validates both:
-
-- the signer identity (oracle or allowed notary key)
-- exact message bytes (domain + fields + hashes)
-
-## V1 Message (Single Oracle)
-
-Domain: `PROPHET_RESOLVE_V1`
+Domain: `PROPHET_CLAIM_RESOLVE_V1`
 
 Byte layout:
 
-1. domain bytes (`PROPHET_RESOLVE_V1`)
-2. `market` pubkey bytes (32)
-3. `resolver_hash` (32)
-4. `open_ts` little-endian i64 (8)
-5. `outcome` u8 (`1=Yes`, `2=No`, `3=Invalid`)
-6. `proof_hash` (32)
-7. `public_inputs_hash` (32)
-
-Used by:
-
-- on-chain instruction: `resolve_market_signed`
-- SDK: `ProphetClient.resolve_market_signed(...)`
-- attester legacy flow
-
-## V2 Message (Threshold Notaries)
-
-Domain: `PROPHET_RESOLVE_V2`
-
-Byte layout:
-
-1. domain bytes (`PROPHET_RESOLVE_V2`)
+1. domain bytes (`PROPHET_CLAIM_RESOLVE_V1`)
 2. `program_id` pubkey bytes (32)
-3. `market` pubkey bytes (32)
-4. `notary_config` pubkey bytes (32)
-5. `resolver_hash` (32)
-6. `open_ts` little-endian i64 (8)
+3. `claim` pubkey bytes (32)
+4. `resolver_hash` (32)
+5. `issuer` pubkey bytes (32)
+6. `claim_id` little-endian u64 (8)
 7. `resolve_ts` little-endian i64 (8)
-8. `outcome` u8 (`1=Yes`, `2=No`, `3=Invalid`)
+8. `outcome` u8 (`1=Pass`, `2=Fail`, `3=Invalid`)
 9. `proof_hash` (32)
 10. `public_inputs_hash` (32)
 
 Used by:
 
-- on-chain instruction: `resolve_market_threshold`
-- SDK: `ProphetClient.resolve_market_threshold(...)`
-- attester threshold flow
+- on-chain instruction: `resolve_claim_signed`
+- SDK: `ProphetClient.resolve_claim_signed(...)`
+- attester claim single-oracle flow
+
+## Claim V2 (Threshold Notaries)
+
+Domain: `PROPHET_CLAIM_RESOLVE_V2`
+
+Byte layout:
+
+1. domain bytes (`PROPHET_CLAIM_RESOLVE_V2`)
+2. `program_id` pubkey bytes (32)
+3. `claim` pubkey bytes (32)
+4. `notary_config` pubkey bytes (32)
+5. `resolver_hash` (32)
+6. `issuer` pubkey bytes (32)
+7. `claim_id` little-endian u64 (8)
+8. `resolve_ts` little-endian i64 (8)
+9. `outcome` u8 (`1=Pass`, `2=Fail`, `3=Invalid`)
+10. `proof_hash` (32)
+11. `public_inputs_hash` (32)
+
+Used by:
+
+- on-chain instruction: `resolve_claim_threshold`
+- SDK: `ProphetClient.resolve_claim_threshold(...)`
+- attester claim threshold flow
 
 ## Hash Inputs
 
 - `proof_hash = sha256(proof_bytes)`
 - `public_inputs_hash = sha256(public_inputs_bytes)`
 
-The hashes are stored on-chain when the market is resolved.
+These hashes are stored on-chain when a claim is resolved.
 
-## Notes
+## Legacy Market Formats
 
-- On-chain verification does not re-run zkTLS proof cryptography.
-- zkTLS verification happens in the attester service.
-- Signatures are passed through Solana's Ed25519 verify instruction and checked against canonical message bytes in the program.
+Legacy market formats (`PROPHET_RESOLVE_V1` and `PROPHET_RESOLVE_V2`) are still supported for backward compatibility but are not the default product path.
+
+## Fixed Vectors
+
+Shared fixture source:
+
+- `tests/fixtures/claim_message_vectors.json`
+
+Exact byte-vector tests live in:
+
+- `sdk/python/tests/test_claim_message_vectors.py`
+- `apps/oracle-attester/tests/test_claim_message_vectors.py`
+- `tests/claim_message_vectors.ts`

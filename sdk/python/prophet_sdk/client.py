@@ -11,18 +11,27 @@ from solders.instruction import AccountMeta, Instruction
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
-from .accounts import decode_market, decode_order, decode_position, extract_account_bytes
+from .accounts import decode_claim, decode_market, decode_order, decode_position, extract_account_bytes
 from .ata import ensure_ata
 from .ed25519 import build_ed25519_ix
 from .pdas import (
     derive_associated_token_account,
+    derive_claim_pda,
     derive_market_pda,
     derive_notary_config_pda,
     derive_order_pda,
     derive_position_pda,
 )
 from .tx import submit_and_confirm
-from .types import MarketAccount, MarketOutcome, OrderAccount, OrderSide, PositionAccount
+from .types import (
+    ClaimAccount,
+    ClaimOutcome,
+    MarketAccount,
+    MarketOutcome,
+    OrderAccount,
+    OrderSide,
+    PositionAccount,
+)
 
 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 TOKEN_PROGRAM_ID = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
@@ -33,6 +42,8 @@ ORDER_DISCRIMINATOR = hashlib.sha256(b"account:Order").digest()[:8]
 
 DOMAIN_V1 = b"PROPHET_RESOLVE_V1"
 DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
+DOMAIN_CLAIM_V1 = b"PROPHET_CLAIM_RESOLVE_V1"
+DOMAIN_CLAIM_V2 = b"PROPHET_CLAIM_RESOLVE_V2"
 
 
 class ProphetClient:
@@ -86,6 +97,9 @@ class ProphetClient:
     def _outcome_index(self, outcome: MarketOutcome) -> int:
         return int(outcome)
 
+    def _claim_outcome_index(self, outcome: ClaimOutcome) -> int:
+        return int(outcome)
+
     def _build_resolve_message_v1(
         self,
         market: Pubkey,
@@ -129,6 +143,56 @@ class ProphetClient:
             + public_inputs_hash
         )
 
+    def _build_claim_resolve_message_v1(
+        self,
+        claim: Pubkey,
+        resolver_hash: bytes,
+        issuer: Pubkey,
+        claim_id: int,
+        resolve_ts: int,
+        outcome: ClaimOutcome,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> bytes:
+        return (
+            DOMAIN_CLAIM_V1
+            + bytes(self.program_id)
+            + bytes(claim)
+            + resolver_hash
+            + bytes(issuer)
+            + struct.pack("<Q", claim_id)
+            + struct.pack("<q", resolve_ts)
+            + struct.pack("B", self._claim_outcome_index(outcome))
+            + proof_hash
+            + public_inputs_hash
+        )
+
+    def _build_claim_resolve_message_v2(
+        self,
+        claim: Pubkey,
+        notary_config: Pubkey,
+        resolver_hash: bytes,
+        issuer: Pubkey,
+        claim_id: int,
+        resolve_ts: int,
+        outcome: ClaimOutcome,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> bytes:
+        return (
+            DOMAIN_CLAIM_V2
+            + bytes(self.program_id)
+            + bytes(claim)
+            + bytes(notary_config)
+            + resolver_hash
+            + bytes(issuer)
+            + struct.pack("<Q", claim_id)
+            + struct.pack("<q", resolve_ts)
+            + struct.pack("B", self._claim_outcome_index(outcome))
+            + proof_hash
+            + public_inputs_hash
+        )
+
     # -------------------------------------------------------------------------
     # Fetch Helpers
     # -------------------------------------------------------------------------
@@ -150,6 +214,12 @@ class ProphetClient:
         if not resp.value:
             return None
         return decode_position(extract_account_bytes(resp.value.data))
+
+    def fetch_claim(self, pubkey: Pubkey) -> Optional[ClaimAccount]:
+        resp = self.client.get_account_info(pubkey, commitment=Confirmed)
+        if not resp.value:
+            return None
+        return decode_claim(extract_account_bytes(resp.value.data))
 
     def get_next_order_seq(self, market: Pubkey) -> int:
         m = self.fetch_market(market)
@@ -359,6 +429,88 @@ class ProphetClient:
 
         ix = Instruction(self.program_id, data, keys)
         return submit_and_confirm(self.client, [ix], self.payer)
+
+    # -------------------------------------------------------------------------
+    # Claim Flow (Bonded Claims MVP)
+    # -------------------------------------------------------------------------
+
+    def create_claim(
+        self,
+        claim_id: int,
+        resolver_hash: bytes,
+        resolve_ts: int,
+        bond_atoms: int,
+        pass_recipient: Pubkey,
+        fail_recipient: Pubkey,
+        quote_mint: Pubkey,
+        oracle_authority: Optional[Pubkey] = None,
+        notary_config: Optional[Pubkey] = None,
+        issuer_quote_ata: Optional[Pubkey] = None,
+    ) -> Tuple[Pubkey, str]:
+        if len(resolver_hash) != 32:
+            raise ValueError("resolver_hash must be 32 bytes")
+
+        claim_pda, _ = derive_claim_pda(self.payer.pubkey(), claim_id, self.program_id)
+        quote_vault = derive_associated_token_account(claim_pda, quote_mint)
+        issuer_ata = issuer_quote_ata or ensure_ata(
+            self.client, self.payer, self.payer.pubkey(), quote_mint
+        )
+
+        oracle = oracle_authority or self.payer.pubkey()
+        cfg = notary_config or Pubkey.default()
+
+        data = self._get_discriminator("create_claim")
+        data += struct.pack("<Q", claim_id)
+        data += resolver_hash
+        data += struct.pack("<q", resolve_ts)
+        data += struct.pack("<Q", bond_atoms)
+        data += bytes(pass_recipient)
+        data += bytes(fail_recipient)
+        data += bytes(oracle)
+        data += bytes(cfg)
+
+        keys = [
+            AccountMeta(claim_pda, False, True),
+            AccountMeta(self.payer.pubkey(), True, True),
+            AccountMeta(quote_mint, False, False),
+            AccountMeta(issuer_ata, False, True),
+            AccountMeta(quote_vault, False, True),
+            AccountMeta(SYSTEM_PROGRAM_ID, False, False),
+            AccountMeta(TOKEN_PROGRAM_ID, False, False),
+            AccountMeta(ASSOCIATED_TOKEN_PROGRAM_ID, False, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        sig = submit_and_confirm(self.client, [ix], self.payer)
+        return claim_pda, sig
+
+    def redeem_claim(
+        self,
+        claim: Pubkey,
+        recipient_keypair: Optional[Keypair] = None,
+        recipient_quote_ata: Optional[Pubkey] = None,
+    ) -> str:
+        recipient = recipient_keypair or self.payer
+        claim_acc = self.fetch_claim(claim)
+        if claim_acc is None:
+            raise ValueError(f"Claim {claim} not found")
+
+        ata = recipient_quote_ata or ensure_ata(
+            self.client, self.payer, recipient.pubkey(), claim_acc.quote_mint
+        )
+
+        data = self._get_discriminator("redeem_claim")
+        keys = [
+            AccountMeta(claim, False, True),
+            AccountMeta(recipient.pubkey(), True, True),
+            AccountMeta(claim_acc.quote_vault, False, True),
+            AccountMeta(ata, False, True),
+            AccountMeta(TOKEN_PROGRAM_ID, False, False),
+        ]
+        ix = Instruction(self.program_id, data, keys)
+
+        extra_signers = [recipient] if recipient.pubkey() != self.payer.pubkey() else None
+        return submit_and_confirm(self.client, [ix], self.payer, signers=extra_signers)
 
     # -------------------------------------------------------------------------
     # Trading Flow
@@ -669,6 +821,108 @@ class ProphetClient:
             AccountMeta(SYSVAR_INSTRUCTIONS_ID, False, False),
         ]
 
+        resolve_ix = Instruction(self.program_id, data, keys)
+
+        payer = relayer_keypair or self.payer
+        return submit_and_confirm(self.client, [*ed_ixs, resolve_ix], payer, signers=None)
+
+    def resolve_claim_signed(
+        self,
+        claim: Pubkey,
+        outcome: ClaimOutcome,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+        oracle_keypair: Keypair,
+        relayer_keypair: Optional[Keypair] = None,
+    ) -> str:
+        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
+            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
+
+        claim_acc = self.fetch_claim(claim)
+        if claim_acc is None:
+            raise ValueError(f"Claim {claim} not found")
+        if oracle_keypair.pubkey() != claim_acc.oracle_authority:
+            raise ValueError("oracle_keypair does not match claim.oracle_authority")
+
+        msg = self._build_claim_resolve_message_v1(
+            claim=claim,
+            resolver_hash=claim_acc.resolver_hash,
+            issuer=claim_acc.issuer,
+            claim_id=claim_acc.claim_id,
+            resolve_ts=claim_acc.resolve_ts,
+            outcome=outcome,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
+        )
+
+        sig_bytes = bytes(oracle_keypair.sign_message(msg))
+        ed_ix = build_ed25519_ix(msg, sig_bytes, bytes(oracle_keypair.pubkey()))
+
+        data = self._get_discriminator("resolve_claim_signed")
+        data += struct.pack("B", self._claim_outcome_index(outcome))
+        data += proof_hash
+        data += public_inputs_hash
+        data += sig_bytes
+
+        keys = [
+            AccountMeta(claim, False, True),
+            AccountMeta(SYSVAR_INSTRUCTIONS_ID, False, False),
+        ]
+        resolve_ix = Instruction(self.program_id, data, keys)
+
+        payer = relayer_keypair or self.payer
+        return submit_and_confirm(self.client, [ed_ix, resolve_ix], payer, signers=None)
+
+    def resolve_claim_threshold(
+        self,
+        claim: Pubkey,
+        notary_config: Pubkey,
+        outcome: ClaimOutcome,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+        notary_keypairs: Sequence[Keypair],
+        relayer_keypair: Optional[Keypair] = None,
+    ) -> str:
+        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
+            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
+        if not notary_keypairs:
+            raise ValueError("at least one notary keypair is required")
+
+        claim_acc = self.fetch_claim(claim)
+        if claim_acc is None:
+            raise ValueError(f"Claim {claim} not found")
+        if notary_config == Pubkey.default():
+            raise ValueError("notary_config must not be default pubkey")
+        if claim_acc.notary_config != Pubkey.default() and claim_acc.notary_config != notary_config:
+            raise ValueError("provided notary_config does not match claim.notary_config")
+
+        msg = self._build_claim_resolve_message_v2(
+            claim=claim,
+            notary_config=notary_config,
+            resolver_hash=claim_acc.resolver_hash,
+            issuer=claim_acc.issuer,
+            claim_id=claim_acc.claim_id,
+            resolve_ts=claim_acc.resolve_ts,
+            outcome=outcome,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
+        )
+
+        ed_ixs: List[Instruction] = []
+        for kp in notary_keypairs:
+            sig_bytes = bytes(kp.sign_message(msg))
+            ed_ixs.append(build_ed25519_ix(msg, sig_bytes, bytes(kp.pubkey())))
+
+        data = self._get_discriminator("resolve_claim_threshold")
+        data += struct.pack("B", self._claim_outcome_index(outcome))
+        data += proof_hash
+        data += public_inputs_hash
+
+        keys = [
+            AccountMeta(claim, False, True),
+            AccountMeta(notary_config, False, False),
+            AccountMeta(SYSVAR_INSTRUCTIONS_ID, False, False),
+        ]
         resolve_ix = Instruction(self.program_id, data, keys)
 
         payer = relayer_keypair or self.payer

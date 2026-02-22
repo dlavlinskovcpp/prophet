@@ -2,7 +2,6 @@
 import base64
 import time
 import logging
-import struct
 import os
 import json
 from typing import List, Optional, Dict, Tuple
@@ -12,11 +11,24 @@ from solders.keypair import Keypair
 from cachetools import TTLCache
 
 from .solana_client import SolanaClient
-from .types import ResolveRequest, ResolveResponse, OutcomeEnum
+from .types import (
+    ClaimOutcomeEnum,
+    OutcomeEnum,
+    ResolveClaimRequest,
+    ResolveClaimResponse,
+    ResolveRequest,
+    ResolveResponse,
+)
 from .config import settings
 from .resolver import ResolverDefinition, evaluate_resolver
 from .zktls_verifier import make_verifier
 from .proof_fetcher import make_fetcher
+from .messages import (
+    build_claim_message_v1,
+    build_claim_message_v2,
+    build_market_message_v1,
+    build_market_message_v2,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +38,17 @@ OUTCOME_MAP = {
     OutcomeEnum.INVALID: 3,
 }
 
-DOMAIN_V1 = b"PROPHET_RESOLVE_V1"
-DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
+CLAIM_OUTCOME_MAP = {
+    ClaimOutcomeEnum.PASS: 1,
+    ClaimOutcomeEnum.FAIL: 2,
+    ClaimOutcomeEnum.INVALID: 3,
+}
 
+RESOLVER_TO_CLAIM_OUTCOME = {
+    OutcomeEnum.YES: ClaimOutcomeEnum.PASS,
+    OutcomeEnum.NO: ClaimOutcomeEnum.FAIL,
+    OutcomeEnum.INVALID: ClaimOutcomeEnum.INVALID,
+}
 
 def _load_keypair(path_or_str: str) -> Keypair:
     """Load a Solana Ed25519 keypair from:
@@ -124,14 +144,13 @@ class AttesterService:
         proof_hash: bytes,
         public_inputs_hash: bytes,
     ) -> bytes:
-        return (
-            DOMAIN_V1
-            + bytes(market_pubkey)
-            + resolver_hash
-            + struct.pack("<q", open_ts)
-            + struct.pack("B", outcome_idx)
-            + proof_hash
-            + public_inputs_hash
+        return build_market_message_v1(
+            market_pubkey=market_pubkey,
+            resolver_hash=resolver_hash,
+            open_ts=open_ts,
+            outcome_idx=outcome_idx,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
         )
 
     def _build_message_v2(
@@ -145,17 +164,64 @@ class AttesterService:
         proof_hash: bytes,
         public_inputs_hash: bytes,
     ) -> bytes:
-        return (
-            DOMAIN_V2
-            + bytes(self.client.program_id)
-            + bytes(market_pubkey)
-            + bytes(notary_config_pubkey)
-            + resolver_hash
-            + struct.pack("<q", open_ts)
-            + struct.pack("<q", resolve_ts)
-            + struct.pack("B", outcome_idx)
-            + proof_hash
-            + public_inputs_hash
+        return build_market_message_v2(
+            program_id=self.client.program_id,
+            market_pubkey=market_pubkey,
+            notary_config_pubkey=notary_config_pubkey,
+            resolver_hash=resolver_hash,
+            open_ts=open_ts,
+            resolve_ts=resolve_ts,
+            outcome_idx=outcome_idx,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
+        )
+
+    def _build_claim_message_v1(
+        self,
+        claim_pubkey: Pubkey,
+        resolver_hash: bytes,
+        issuer: Pubkey,
+        claim_id: int,
+        resolve_ts: int,
+        outcome_idx: int,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> bytes:
+        return build_claim_message_v1(
+            program_id=self.client.program_id,
+            claim_pubkey=claim_pubkey,
+            resolver_hash=resolver_hash,
+            issuer=issuer,
+            claim_id=claim_id,
+            resolve_ts=resolve_ts,
+            outcome_idx=outcome_idx,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
+        )
+
+    def _build_claim_message_v2(
+        self,
+        claim_pubkey: Pubkey,
+        notary_config_pubkey: Pubkey,
+        resolver_hash: bytes,
+        issuer: Pubkey,
+        claim_id: int,
+        resolve_ts: int,
+        outcome_idx: int,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> bytes:
+        return build_claim_message_v2(
+            program_id=self.client.program_id,
+            claim_pubkey=claim_pubkey,
+            notary_config_pubkey=notary_config_pubkey,
+            resolver_hash=resolver_hash,
+            issuer=issuer,
+            claim_id=claim_id,
+            resolve_ts=resolve_ts,
+            outcome_idx=outcome_idx,
+            proof_hash=proof_hash,
+            public_inputs_hash=public_inputs_hash,
         )
 
     async def resolve_market(self, req: ResolveRequest) -> ResolveResponse:
@@ -367,6 +433,211 @@ class AttesterService:
         except Exception as e:
             if market_str in self.inflight_cache:
                 del self.inflight_cache[market_str]
+            raise e
+
+    async def resolve_claim(self, req: ResolveClaimRequest) -> ResolveClaimResponse:
+        claim_str = str(req.claim)
+        claim_pubkey = Pubkey.from_string(claim_str)
+
+        state = self.client.get_claim_state_full(claim_pubkey)
+        if state is None:
+            raise LookupError(f"Claim {req.claim} not found")
+
+        # ClaimStatus::Open = 0, Resolved = 1, Redeemed = 2
+        if state["status"] != 0:
+            raise ValueError("Claim is not open (already resolved or redeemed)")
+        if claim_str in self.inflight_cache:
+            raise ValueError("Claim resolution in progress (in-flight)")
+
+        chain_time = self.client.get_chain_time()
+        if chain_time < state["resolve_ts"]:
+            raise ValueError("Claim not resolvable yet.")
+
+        pi_bytes = base64.b64decode(req.public_inputs_bytes_b64) if req.public_inputs_bytes_b64 else b""
+        proof_bytes = base64.b64decode(req.proof_bytes_b64) if req.proof_bytes_b64 else b""
+        proof_ref = (req.proof_ref or "").strip()
+
+        if proof_ref and (not proof_bytes or not pi_bytes):
+            try:
+                fetched = self.fetcher.fetch(proof_ref)
+                if not proof_bytes:
+                    proof_bytes = fetched.proof_bytes
+                if not pi_bytes:
+                    pi_bytes = fetched.public_inputs_bytes
+                logger.info(
+                    f"Fetched claim proof via ref provider={fetched.provider} "
+                    f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)}"
+                )
+            except Exception as e:
+                raise ValueError(f"Failed to fetch proof_ref: {e}")
+
+        proof_hash = self.client.sha256_digest(proof_bytes)
+        pi_hash = self.client.sha256_digest(pi_bytes)
+
+        try:
+            resolver_def = self._load_resolver(state["resolver_hash"])
+
+            if not pi_bytes:
+                resolver_outcome = OutcomeEnum.INVALID
+            else:
+                try:
+                    public_inputs = json.loads(pi_bytes)
+                    if not isinstance(public_inputs, dict) or not public_inputs:
+                        resolver_outcome = OutcomeEnum.INVALID
+                    else:
+                        resolver_outcome = evaluate_resolver(resolver_def, public_inputs)
+                except json.JSONDecodeError:
+                    resolver_outcome = OutcomeEnum.INVALID
+
+            computed_claim_outcome = RESOLVER_TO_CLAIM_OUTCOME[resolver_outcome]
+            if computed_claim_outcome != req.outcome:
+                raise ValueError(
+                    f"Outcome mismatch: Computed {computed_claim_outcome} but received request for {req.outcome}"
+                )
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Claim verification system error: {e}")
+            raise ValueError(f"Claim verification failed: {e}")
+
+        verify_res = self.verifier.verify(
+            resolver=resolver_def, proof_bytes=proof_bytes, public_inputs_bytes=pi_bytes
+        )
+        logger.info(
+            f"AUDIT_CLAIM_RESOLVE: claim={claim_str} "
+            f"issuer={str(state['issuer'])} claim_id={state['claim_id']} "
+            f"resolver={state['resolver_hash'].hex()} "
+            f"computed={computed_claim_outcome} req={req.outcome} "
+            f"zktls_mode={settings.ZKTLS_MODE} require={settings.REQUIRE_ZKTLS} "
+            f"provider={verify_res.provider} ok={verify_res.ok} reason={verify_res.reason} "
+            f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)} "
+            f"proof_hash={proof_hash.hex()} pi_hash={pi_hash.hex()} "
+            f"notary_config={str(state.get('notary_config', Pubkey.default()))}"
+        )
+
+        if settings.REQUIRE_ZKTLS and not verify_res.ok:
+            raise ValueError(f"zkTLS verification failed: {verify_res.reason}")
+        elif not verify_res.ok:
+            logger.warning(
+                f"zkTLS verification failed but REQUIRE_ZKTLS=False. Proceeding. Reason: {verify_res.reason}"
+            )
+
+        self.inflight_cache[claim_str] = True
+
+        try:
+            outcome_idx = CLAIM_OUTCOME_MAP[req.outcome]
+
+            try:
+                os.makedirs(settings.PROOF_STORE_DIR, exist_ok=True)
+                proof_file = os.path.join(
+                    settings.PROOF_STORE_DIR, f"{claim_str}_{proof_hash.hex()}_proof.bin"
+                )
+                pi_file = os.path.join(
+                    settings.PROOF_STORE_DIR, f"{claim_str}_{pi_hash.hex()}_public_inputs.bin"
+                )
+                with open(proof_file, "wb") as f:
+                    f.write(proof_bytes)
+                with open(pi_file, "wb") as f:
+                    f.write(pi_bytes)
+            except Exception as e:
+                logger.warning(f"Failed to persist claim proofs: {e}")
+
+            notary_cfg_pk: Pubkey = state.get("notary_config", Pubkey.default())
+            threshold_mode = notary_cfg_pk != Pubkey.default()
+
+            if threshold_mode:
+                cfg = self.client.get_notary_config(notary_cfg_pk)
+                if cfg is None:
+                    raise LookupError(f"NotaryConfig {str(notary_cfg_pk)} not found")
+
+                local_kps = _load_notary_keypairs_from_env()
+                local_by_pk: Dict[Pubkey, Keypair] = {kp.pubkey(): kp for kp in local_kps}
+
+                allowed = set(cfg["notary_keys"])
+                eligible: List[Keypair] = [kp for pk, kp in local_by_pk.items() if pk in allowed]
+
+                if len(eligible) < int(cfg["threshold"]):
+                    raise PermissionError(
+                        f"Not enough local notary keys. Have {len(eligible)} eligible, need {cfg['threshold']}"
+                    )
+
+                eligible.sort(key=lambda k: bytes(k.pubkey()))
+                chosen = eligible[: int(cfg["threshold"])]
+
+                msg = self._build_claim_message_v2(
+                    claim_pubkey=claim_pubkey,
+                    notary_config_pubkey=notary_cfg_pk,
+                    resolver_hash=state["resolver_hash"],
+                    issuer=state["issuer"],
+                    claim_id=state["claim_id"],
+                    resolve_ts=state["resolve_ts"],
+                    outcome_idx=outcome_idx,
+                    proof_hash=proof_hash,
+                    public_inputs_hash=pi_hash,
+                )
+
+                ed25519_ixs = []
+                for kp in chosen:
+                    sig_obj = kp.sign_message(msg)
+                    sig_bytes = bytes(sig_obj)
+                    ed25519_ixs.append(
+                        self.client.build_ed25519_ix(msg, sig_bytes, bytes(kp.pubkey()))
+                    )
+
+                resolve_ix = self.client.build_resolve_claim_threshold_ix(
+                    claim=claim_pubkey,
+                    notary_config=notary_cfg_pk,
+                    outcome_idx=outcome_idx,
+                    proof_hash=proof_hash,
+                    public_inputs_hash=pi_hash,
+                )
+
+                payer = self.client.relayer_kp or chosen[0]
+                sig = self.client.submit_and_confirm(ed25519_ixs + [resolve_ix], payer)
+            else:
+                if state["oracle_authority"] != self.client.oracle_kp.pubkey():
+                    raise PermissionError("Oracle mismatch.")
+
+                msg = self._build_claim_message_v1(
+                    claim_pubkey=claim_pubkey,
+                    resolver_hash=state["resolver_hash"],
+                    issuer=state["issuer"],
+                    claim_id=state["claim_id"],
+                    resolve_ts=state["resolve_ts"],
+                    outcome_idx=outcome_idx,
+                    proof_hash=proof_hash,
+                    public_inputs_hash=pi_hash,
+                )
+
+                sig_obj = self.client.oracle_kp.sign_message(msg)
+                sig_bytes = bytes(sig_obj)
+                ed25519_ix = self.client.build_ed25519_ix(msg, sig_bytes, bytes(self.client.oracle_kp.pubkey()))
+                resolve_ix = self.client.build_resolve_claim_signed_ix(
+                    claim=claim_pubkey,
+                    outcome_idx=outcome_idx,
+                    proof_hash=proof_hash,
+                    public_inputs_hash=pi_hash,
+                    oracle_sig=sig_bytes,
+                )
+                payer = self.client.relayer_kp or self.client.oracle_kp
+                sig = self.client.submit_and_confirm([ed25519_ix, resolve_ix], payer)
+
+            final_state = self.client.get_claim_state_full(claim_pubkey)
+            if final_state and final_state["status"] == 1:
+                self.resolved_cache[claim_str] = True
+                if claim_str in self.inflight_cache:
+                    del self.inflight_cache[claim_str]
+                return ResolveClaimResponse(
+                    signature=sig,
+                    proof_hash_hex=proof_hash.hex(),
+                    public_inputs_hash_hex=pi_hash.hex(),
+                    resolved_ts=final_state["resolved_ts"],
+                )
+
+            raise RuntimeError("Tx confirmed but claim status not Resolved")
+        except Exception as e:
+            if claim_str in self.inflight_cache:
+                del self.inflight_cache[claim_str]
             raise e
 
 

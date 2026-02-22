@@ -2,12 +2,19 @@ version: '3.8'
 
 services:
   validator:
-    image: solanalabs/solana:v1.17.0
-    command: solana-test-validator --reset --rpc-port 8899 --ws-port 8900 --ledger /ledger
+    image: solanalabs/solana:v1.18.20
+    command: >
+      solana-test-validator --reset
+      --ledger /ledger
+      --bind-address 0.0.0.0
+      --rpc-port 8899
+      --faucet-port 9901
+      --gossip-port 10256
+      --dynamic-port-range 10240-10300
     ports:
       - "8899:8899"
       - "8900:8900"
-      - "9900:9900" # Faucet
+      - "9901:9901" # Faucet
     volumes:
       - ./.anchor/test-ledger:/ledger
 

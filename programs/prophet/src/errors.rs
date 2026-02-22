@@ -88,4 +88,24 @@ pub enum ErrorCode {
     NotaryNotAllowed,
     #[msg("Unauthorized admin")]
     UnauthorizedAdmin,
+
+    // --- Claim flow ---
+    #[msg("Invalid bond amount")]
+    InvalidBondAmount,
+    #[msg("Claim is not resolved")]
+    ClaimNotResolved,
+    #[msg("Claim already redeemed")]
+    ClaimAlreadyRedeemed,
+    #[msg("Invalid claim recipient")]
+    InvalidClaimRecipient,
+    #[msg("Invalid claim outcome")]
+    InvalidClaimOutcome,
+    #[msg("Claim is not open")]
+    ClaimNotOpen,
+    #[msg("Claim not resolvable yet (check resolve_ts)")]
+    ClaimNotResolvableYet,
+    #[msg("Notary config is not set on this claim")]
+    ClaimNotaryConfigNotSet,
+    #[msg("Provided notary config does not match claim.notary_config")]
+    ClaimNotaryConfigMismatch,
 }

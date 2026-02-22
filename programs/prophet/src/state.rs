@@ -133,6 +133,33 @@ impl Position {
     pub const LEN: usize = 128;
 }
 
+#[account]
+pub struct Claim {
+    pub issuer: Pubkey,
+    pub pass_recipient: Pubkey,
+    pub fail_recipient: Pubkey,
+    pub oracle_authority: Pubkey,
+    pub quote_mint: Pubkey,
+    pub quote_vault: Pubkey,
+    pub notary_config: Pubkey,
+    pub resolver_hash: [u8; 32],
+    pub proof_hash: [u8; 32],
+    pub public_inputs_hash: [u8; 32],
+    pub claim_id: u64,
+    pub bond_atoms: u64,
+    pub created_ts: i64,
+    pub resolve_ts: i64,
+    pub resolved_ts: i64,
+    pub status: ClaimStatus,
+    pub outcome: ClaimOutcome,
+    pub bump: u8,
+    pub _reserved0: [u8; 5],
+}
+
+impl Claim {
+    pub const LEN: usize = 384;
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum MarketStatus {
     Open,
@@ -152,4 +179,19 @@ pub enum MarketOutcome {
 pub enum OrderSide {
     BuyYes,
     BuyNo,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum ClaimStatus {
+    Open,
+    Resolved,
+    Redeemed,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum ClaimOutcome {
+    Undecided,
+    Pass,
+    Fail,
+    Invalid,
 }

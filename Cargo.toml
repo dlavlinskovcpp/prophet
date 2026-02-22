@@ -1,7 +1,11 @@
 [workspace]
+resolver = "2"
 members = [
     "programs/prophet"
 ]
+
+[workspace.metadata.solana]
+tools-version = "v1.53"
 
 [profile.release]
 overflow-checks = true

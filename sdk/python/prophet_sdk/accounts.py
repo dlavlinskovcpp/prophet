@@ -1,10 +1,14 @@
 import base64
 from typing import Union
 
-from borsh_construct import Bytes, CStruct, I64, U8, U16, U32, U64
+from construct import Bytes
+from borsh_construct import CStruct, I64, U8, U16, U32, U64
 from solders.pubkey import Pubkey
 
 from .types import (
+    ClaimAccount,
+    ClaimOutcome,
+    ClaimStatus,
     MarketAccount,
     MarketOutcome,
     MarketStatus,
@@ -58,6 +62,28 @@ PositionLayout = CStruct(
     "pending_refunds_atoms" / U64,
     "open_orders" / U16,
     "redeemed" / U8,
+)
+
+ClaimLayout = CStruct(
+    "issuer" / Bytes(32),
+    "pass_recipient" / Bytes(32),
+    "fail_recipient" / Bytes(32),
+    "oracle_authority" / Bytes(32),
+    "quote_mint" / Bytes(32),
+    "quote_vault" / Bytes(32),
+    "notary_config" / Bytes(32),
+    "resolver_hash" / Bytes(32),
+    "proof_hash" / Bytes(32),
+    "public_inputs_hash" / Bytes(32),
+    "claim_id" / U64,
+    "bond_atoms" / U64,
+    "created_ts" / I64,
+    "resolve_ts" / I64,
+    "resolved_ts" / I64,
+    "status" / U8,
+    "outcome" / U8,
+    "bump" / U8,
+    "reserved0" / Bytes(5),
 )
 
 
@@ -132,4 +158,31 @@ def decode_position(data: bytes) -> PositionAccount:
         pending_refunds_atoms=parsed.pending_refunds_atoms,
         open_orders=parsed.open_orders,
         redeemed=bool(parsed.redeemed),
+    )
+
+
+def decode_claim(data: bytes) -> ClaimAccount:
+    if len(data) < 8:
+        raise ValueError("Account data too short")
+    parsed = ClaimLayout.parse(data[8:])
+    return ClaimAccount(
+        issuer=Pubkey.from_bytes(parsed.issuer),
+        pass_recipient=Pubkey.from_bytes(parsed.pass_recipient),
+        fail_recipient=Pubkey.from_bytes(parsed.fail_recipient),
+        oracle_authority=Pubkey.from_bytes(parsed.oracle_authority),
+        quote_mint=Pubkey.from_bytes(parsed.quote_mint),
+        quote_vault=Pubkey.from_bytes(parsed.quote_vault),
+        notary_config=Pubkey.from_bytes(parsed.notary_config),
+        resolver_hash=bytes(parsed.resolver_hash),
+        proof_hash=bytes(parsed.proof_hash),
+        public_inputs_hash=bytes(parsed.public_inputs_hash),
+        claim_id=parsed.claim_id,
+        bond_atoms=parsed.bond_atoms,
+        created_ts=parsed.created_ts,
+        resolve_ts=parsed.resolve_ts,
+        resolved_ts=parsed.resolved_ts,
+        status=ClaimStatus(parsed.status),
+        outcome=ClaimOutcome(parsed.outcome),
+        bump=parsed.bump,
+        reserved0=bytes(parsed.reserved0),
     )

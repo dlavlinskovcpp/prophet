@@ -7,6 +7,13 @@ class OutcomeEnum(str, Enum):
     NO = "NO"
     INVALID = "INVALID"
 
+
+class ClaimOutcomeEnum(str, Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    INVALID = "INVALID"
+
+
 class ResolveRequest(BaseModel):
     market: str = Field(..., description="Base58 public key of the market")
     outcome: OutcomeEnum
@@ -18,6 +25,24 @@ class ResolveRequest(BaseModel):
     )
 
 class ResolveResponse(BaseModel):
+    signature: str
+    proof_hash_hex: str
+    public_inputs_hash_hex: str
+    resolved_ts: int
+
+
+class ResolveClaimRequest(BaseModel):
+    claim: str = Field(..., description="Base58 public key of the claim")
+    outcome: ClaimOutcomeEnum
+    proof_bytes_b64: Optional[str] = Field(default="", description="Base64 encoded proof bytes")
+    public_inputs_bytes_b64: Optional[str] = Field(default="", description="Base64 encoded public inputs bytes")
+    proof_ref: Optional[str] = Field(
+        default="",
+        description="Optional proof reference for proof fetcher (e.g. file:<proof_path>:<pi_path> or provider ref)",
+    )
+
+
+class ResolveClaimResponse(BaseModel):
     signature: str
     proof_hash_hex: str
     public_inputs_hash_hex: str

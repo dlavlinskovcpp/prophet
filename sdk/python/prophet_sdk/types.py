@@ -21,6 +21,19 @@ class MarketOutcome(IntEnum):
     Invalid = 3
 
 
+class ClaimStatus(IntEnum):
+    Open = 0
+    Resolved = 1
+    Redeemed = 2
+
+
+class ClaimOutcome(IntEnum):
+    Undecided = 0
+    Pass = 1
+    Fail = 2
+    Invalid = 3
+
+
 @dataclass
 class MarketAccount:
     authority: Pubkey
@@ -68,3 +81,26 @@ class PositionAccount:
     pending_refunds_atoms: int
     open_orders: int
     redeemed: bool
+
+
+@dataclass
+class ClaimAccount:
+    issuer: Pubkey
+    pass_recipient: Pubkey
+    fail_recipient: Pubkey
+    oracle_authority: Pubkey
+    quote_mint: Pubkey
+    quote_vault: Pubkey
+    notary_config: Pubkey
+    resolver_hash: bytes
+    proof_hash: bytes
+    public_inputs_hash: bytes
+    claim_id: int
+    bond_atoms: int
+    created_ts: int
+    resolve_ts: int
+    resolved_ts: int
+    status: ClaimStatus
+    outcome: ClaimOutcome
+    bump: int
+    reserved0: bytes

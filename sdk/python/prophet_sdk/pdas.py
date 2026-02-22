@@ -53,6 +53,16 @@ def derive_notary_config_pda(
     return Pubkey.find_program_address(seeds, pid)
 
 
+def derive_claim_pda(
+    issuer: Pubkey,
+    claim_id: int,
+    program_id: Optional[Pubkey] = None,
+) -> Tuple[Pubkey, int]:
+    pid = get_program_id(program_id)
+    seeds = [b"claim", bytes(issuer), struct.pack("<Q", claim_id)]
+    return Pubkey.find_program_address(seeds, pid)
+
+
 def derive_associated_token_account(owner: Pubkey, mint: Pubkey) -> Pubkey:
     spl_associated_token_account_program_id = Pubkey.from_string(
         "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"

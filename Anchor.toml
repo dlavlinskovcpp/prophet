@@ -26,7 +26,9 @@ shutdown_wait = 2000
 [test.validator]
 bind_address = "127.0.0.1"
 gossip_host = "127.0.0.1"
-dynamic_port_range = "10240-10255"
+gossip_port = 10256
+dynamic_port_range = "10240-10300"
 # url = "https://api.mainnet-beta.solana.com"
 ledger = ".anchor/test-ledger"
 rpc_port = 8899
+faucet_port = 9901

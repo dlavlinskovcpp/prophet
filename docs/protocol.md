@@ -1,25 +1,25 @@
-# Prophet Protocol (MVP)
+# Prophet Protocol (Claim MVP)
 
-Prophet is a Solana/Anchor binary prediction market protocol optimized for bot execution.
+Prophet is a Solana/Anchor bonded-claims protocol.
 
-## On-Chain Components
+## Core On-Chain Components
 
 Program: `programs/prophet`
 
-Main accounts:
+Main claim-path accounts:
 
-- `Market`: lifecycle config, resolver hash, proof/public-input hashes, settlement state
-- `Order`: open order escrow + limit probability
-- `Position`: matched YES/NO shares + pending refunds + redemption status
-- `NotaryConfig`: threshold notary set for `resolve_market_threshold`
+- `Claim`: claim config, recipients, resolver hash, proof/public-input hashes, resolve/redeem status
+- `NotaryConfig`: threshold notary set for t-of-n resolution
 
-Main instructions:
+Main claim-path instructions:
 
-- Market setup: `initialize_market`, `initialize_market_v2`
+- Claim lifecycle: `create_claim`, `resolve_claim_signed`, `resolve_claim_threshold`, `redeem_claim`
 - Notary admin: `initialize_notary_config`, `update_notary_config`
-- Trading: `place_order`, `match_orders`, `cancel_order`
-- Funds: `claim_refunds`, `redeem`
-- Resolution: `resolve_market`, `resolve_market_signed`, `resolve_market_threshold`
+
+Claim PDA seed model:
+
+- `claim` PDA: `[b"claim", issuer, claim_id_le]`
+- `claim` vault: ATA with authority = `claim` PDA
 
 ## Off-Chain Components
 
@@ -27,25 +27,30 @@ Service: `apps/oracle-attester`
 
 Responsibilities:
 
-- Load market state and resolver definition
-- Verify resolver predicate against provided public inputs
-- Verify zkTLS payload using Reclaim HTTP verifier
-- Build resolve message/signatures
-- Submit permissionless resolve transaction
+- load claim state and resolver definition
+- evaluate resolver predicate against public inputs
+- optionally verify zkTLS provider evidence
+- build canonical claim resolve message/signatures
+- submit permissionless resolve transaction
 
-## Resolution Trust Model (MVP)
+## Trust / Verification Model
 
 - zkTLS verification is off-chain in attester.
-- On-chain verifies Ed25519 signatures and message canonicality.
-- On-chain stores `proof_hash` + `public_inputs_hash` for auditability.
-- Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
+- on-chain verifies Ed25519 signatures and exact canonical message bytes.
+- on-chain stores `proof_hash` and `public_inputs_hash` for auditability.
+- threshold mode reduces signer trust by requiring distinct t-of-n notary signatures.
 
-## Agent Integration
+## SDK Integration
 
 SDK: `sdk/python/prophet_sdk`
 
-Target usage:
+Primary claim-path methods:
 
-- place/match/cancel loops by autonomous agents
-- deterministic retries (`place_order_auto_seq`)
-- direct resolution flows for oracle/relayer agents
+- `create_claim(...)`
+- `resolve_claim_signed(...)`
+- `resolve_claim_threshold(...)`
+- `redeem_claim(...)`
+
+## Legacy Paths
+
+Market/CLOB instructions and SDK methods remain in the repository for backward compatibility, but claim-path development is the default focus.

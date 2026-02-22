@@ -48,6 +48,28 @@ MarketLayout = BStruct(
     "bump" / U8,
 )
 
+ClaimLayout = BStruct(
+    "issuer" / Bytes(32),
+    "pass_recipient" / Bytes(32),
+    "fail_recipient" / Bytes(32),
+    "oracle_authority" / Bytes(32),
+    "quote_mint" / Bytes(32),
+    "quote_vault" / Bytes(32),
+    "notary_config" / Bytes(32),
+    "resolver_hash" / Bytes(32),
+    "proof_hash" / Bytes(32),
+    "public_inputs_hash" / Bytes(32),
+    "claim_id" / U64,
+    "bond_atoms" / U64,
+    "created_ts" / I64,
+    "resolve_ts" / I64,
+    "resolved_ts" / I64,
+    "status" / U8,
+    "outcome" / U8,
+    "bump" / U8,
+    "reserved0" / Bytes(5),
+)
+
 
 class SolanaClient:
     def __init__(self):
@@ -62,12 +84,31 @@ class SolanaClient:
             return Keypair.from_bytes(bytes(__import__("json").load(f)))
 
     def extract_account_bytes(self, account_data) -> bytes:
+        if isinstance(account_data, (bytes, bytearray, memoryview)):
+            return bytes(account_data)
         if isinstance(account_data, (list, tuple)):
-            b64 = account_data[0]
-            return base64.b64decode(b64)
+            if len(account_data) >= 1 and isinstance(account_data[0], str):
+                return base64.b64decode(account_data[0])
         if isinstance(account_data, str):
             return base64.b64decode(account_data)
-        raise ValueError("Unknown account data format")
+        if hasattr(account_data, "decoded"):
+            decoded = getattr(account_data, "decoded")
+            if isinstance(decoded, (bytes, bytearray, memoryview)):
+                return bytes(decoded)
+            if isinstance(decoded, str):
+                return base64.b64decode(decoded)
+            if isinstance(decoded, (list, tuple)):
+                return self.extract_account_bytes(decoded)
+        if hasattr(account_data, "data"):
+            nested = getattr(account_data, "data")
+            return self.extract_account_bytes(nested)
+        try:
+            raw = bytes(account_data)
+            if raw:
+                return raw
+        except Exception:
+            pass
+        raise ValueError(f"Unknown account data format: {type(account_data)}")
 
     def get_discriminator(self, namespace: str, name: str) -> bytes:
         preimage = f"{namespace}:{name}".encode("utf-8")
@@ -101,6 +142,37 @@ class SolanaClient:
             "status": parsed.status,
             "proof_hash": bytes(parsed.proof_hash),
             "public_inputs_hash": bytes(parsed.public_inputs_hash)
+        }
+
+    def get_claim_state_full(self, claim: Pubkey) -> Optional[dict]:
+        resp = self.client.get_account_info(claim, commitment=Confirmed)
+        if not resp.value:
+            return None
+        raw_bytes = self.extract_account_bytes(resp.value.data)
+        if len(raw_bytes) < 8:
+            raise ValueError("Claim account data too short")
+
+        parsed = ClaimLayout.parse(raw_bytes[8:])
+
+        return {
+            "issuer": Pubkey.from_bytes(parsed.issuer),
+            "pass_recipient": Pubkey.from_bytes(parsed.pass_recipient),
+            "fail_recipient": Pubkey.from_bytes(parsed.fail_recipient),
+            "oracle_authority": Pubkey.from_bytes(parsed.oracle_authority),
+            "quote_mint": Pubkey.from_bytes(parsed.quote_mint),
+            "quote_vault": Pubkey.from_bytes(parsed.quote_vault),
+            "notary_config": Pubkey.from_bytes(parsed.notary_config),
+            "resolver_hash": bytes(parsed.resolver_hash),
+            "proof_hash": bytes(parsed.proof_hash),
+            "public_inputs_hash": bytes(parsed.public_inputs_hash),
+            "claim_id": parsed.claim_id,
+            "bond_atoms": parsed.bond_atoms,
+            "created_ts": parsed.created_ts,
+            "resolve_ts": parsed.resolve_ts,
+            "resolved_ts": parsed.resolved_ts,
+            "status": parsed.status,
+            "outcome": parsed.outcome,
+            "bump": parsed.bump,
         }
 
     def get_notary_config(self, cfg_pubkey: Pubkey) -> Optional[dict]:
@@ -250,9 +322,56 @@ class SolanaClient:
 
         return Instruction(program_id=self.program_id, accounts=accounts, data=data)
 
+    def build_resolve_claim_signed_ix(
+        self,
+        claim: Pubkey,
+        outcome_idx: int,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+        oracle_sig: bytes,
+    ) -> Instruction:
+        discriminator = self.get_discriminator("global", "resolve_claim_signed")
+
+        data = discriminator
+        data += struct.pack("B", outcome_idx)
+        data += proof_hash
+        data += public_inputs_hash
+        data += oracle_sig
+
+        accounts = [
+            AccountMeta(pubkey=claim, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=SYSVAR_INSTRUCTIONS_ID, is_signer=False, is_writable=False),
+        ]
+
+        return Instruction(program_id=self.program_id, accounts=accounts, data=data)
+
+    def build_resolve_claim_threshold_ix(
+        self,
+        claim: Pubkey,
+        notary_config: Pubkey,
+        outcome_idx: int,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> Instruction:
+        discriminator = self.get_discriminator("global", "resolve_claim_threshold")
+
+        data = discriminator
+        data += struct.pack("B", outcome_idx)
+        data += proof_hash
+        data += public_inputs_hash
+
+        accounts = [
+            AccountMeta(pubkey=claim, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=notary_config, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=SYSVAR_INSTRUCTIONS_ID, is_signer=False, is_writable=False),
+        ]
+
+        return Instruction(program_id=self.program_id, accounts=accounts, data=data)
+
     def submit_and_confirm(self, ixs: List[Instruction], payer: Keypair) -> str:
         latest = self.client.get_latest_blockhash().value
-        blockhash = Hash.from_string(latest.blockhash)
+        raw_blockhash = latest.blockhash
+        blockhash = raw_blockhash if isinstance(raw_blockhash, Hash) else Hash.from_string(str(raw_blockhash))
 
         msg = MessageV0.try_compile(
             payer=payer.pubkey(),
