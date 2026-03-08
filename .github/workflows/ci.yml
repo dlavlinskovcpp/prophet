@@ -84,6 +84,10 @@ jobs:
           solana airdrop 100 "$(solana address)" || true
           anchor build
           anchor deploy
+          mkdir -p target/idl target/types
+          anchor idl build -p prophet -o target/idl/prophet.json -t target/types/prophet.ts
+          test -f target/idl/prophet.json
+          test -f target/types/prophet.ts
 
       - name: Run Anchor TS suites
         run: |
