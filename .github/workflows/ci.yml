@@ -70,18 +70,24 @@ jobs:
             echo "Failed to read anchor_version from Anchor.toml"
             exit 1
           fi
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
+            aarch64|arm64) TARGET="aarch64-unknown-linux-gnu" ;;
+            *)
+              echo "Unsupported runner architecture: $ARCH"
+              exit 1
+              ;;
+          esac
 
-          # Prefer npm-distributed prebuilt binary to avoid Cargo toolchain conflicts in CI.
-          if ! npm install -g "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"; then
-            echo "Falling back to @coral-xyz/anchor-cli@0.31.0"
-            npm install -g "@coral-xyz/anchor-cli@0.31.0"
-          fi
-
-          if ! anchor --version; then
-            echo "Primary anchor binary failed, forcing fallback @0.31.0"
-            npm install -g "@coral-xyz/anchor-cli@0.31.0"
-            anchor --version
-          fi
+          mkdir -p "$HOME/.local/bin"
+          URL="https://github.com/coral-xyz/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-${TARGET}"
+          echo "Downloading Anchor CLI from: $URL"
+          curl -fsSL "$URL" -o "$HOME/.local/bin/anchor"
+          chmod +x "$HOME/.local/bin/anchor"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          anchor --version
 
       - name: Create test wallet
         run: |
