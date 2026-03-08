@@ -66,9 +66,10 @@ jobs:
       - name: Install Anchor CLI
         run: |
           rustup default stable
-          rustc --version
-          cargo --version
-          cargo +stable install --git https://github.com/coral-xyz/anchor avm --locked --force
+          rustup show active-toolchain
+          "$HOME/.cargo/bin/rustup" run stable rustc --version
+          "$HOME/.cargo/bin/rustup" run stable cargo --version
+          "$HOME/.cargo/bin/rustup" run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$HOME/.avm/bin:$PATH"
