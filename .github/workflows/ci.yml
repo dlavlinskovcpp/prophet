@@ -65,8 +65,19 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
-          npm install -g @coral-xyz/anchor-cli@latest
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$HOME/.avm/bin:$PATH"
+          ANCHOR_VERSION="$(awk -F'\"' '/^anchor_version[[:space:]]*=[[:space:]]*\"/{print $2}' Anchor.toml | head -n1)"
+          if [ -z "$ANCHOR_VERSION" ]; then
+            echo "Failed to read anchor_version from Anchor.toml"
+            exit 1
+          fi
+          avm install "$ANCHOR_VERSION"
+          avm use "$ANCHOR_VERSION"
           anchor --version
+          which anchor
 
       - name: Create test wallet
         run: |
