@@ -1,7 +1,15 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program, BN } from "@coral-xyz/anchor";
 import { Prophet } from "../target/types/prophet";
-import { PublicKey, Keypair, SystemProgram, Ed25519Program, SYSVAR_INSTRUCTIONS_PUBKEY, Transaction, TransactionInstruction } from "@solana/web3.js";
+import {
+  PublicKey,
+  Keypair,
+  SystemProgram,
+  Ed25519Program,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
+  Transaction,
+  TransactionInstruction,
+} from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createMint, getOrCreateAssociatedTokenAccount, mintTo, getAccount, getAssociatedTokenAddress } from "@solana/spl-token";
 import { assert } from "chai";
 import * as nacl from "tweetnacl";
@@ -124,23 +132,31 @@ describe("prophet-mvp-oracle-v0.2-e2e-final-robust", () => {
           `Vault Eq Failed: Act=${vaultBal} Exp=${expected} (Escrow=${sumOrderEscrow}, Ref=${sumRefunds}, OI=${openInterest})`);
   };
 
-  const createManualEd25519Ix = (message: Buffer, signature: Uint8Array, publicKey: Uint8Array) => {
+  const createManualEd25519Ix = (
+      message: Buffer,
+      signature: Uint8Array,
+      publicKey: Uint8Array,
+      indexes?: { sigIx?: number; pkIx?: number; msgIx?: number }
+  ) => {
       const pkOffset = 16;
       const sigOffset = 48;
       const msgOffset = 112;
       const msgLen = message.length;
+      const sigIx = indexes?.sigIx ?? 0xFFFF;
+      const pkIx = indexes?.pkIx ?? 0xFFFF;
+      const msgIx = indexes?.msgIx ?? 0xFFFF;
       
       const buffer = Buffer.alloc(16 + 32 + 64 + msgLen);
       
       buffer.writeUInt8(1, 0); 
       buffer.writeUInt8(0, 1); 
       buffer.writeUInt16LE(sigOffset, 2);
-      buffer.writeUInt16LE(0xFFFF, 4); 
+      buffer.writeUInt16LE(sigIx, 4); 
       buffer.writeUInt16LE(pkOffset, 6);
-      buffer.writeUInt16LE(0xFFFF, 8); 
+      buffer.writeUInt16LE(pkIx, 8); 
       buffer.writeUInt16LE(msgOffset, 10);
       buffer.writeUInt16LE(msgLen, 12);
-      buffer.writeUInt16LE(0xFFFF, 14); 
+      buffer.writeUInt16LE(msgIx, 14); 
       
       buffer.set(publicKey, pkOffset);
       buffer.set(signature, sigOffset);
@@ -412,6 +428,187 @@ describe("prophet-mvp-oracle-v0.2-e2e-final-robust", () => {
     const m = await program.account.market.fetch(marketKey);
     assert.deepEqual(m.status, { resolved: {} });
     assert.deepEqual(m.proofHash, [...proof]);
+  });
+
+  // --------------------------------------------------------------------------
+  // Signed Flow: Immediate-Previous Ed25519 Window
+  // --------------------------------------------------------------------------
+  it("Signed Flow: Requires the immediately previous ed25519 ix to match", async () => {
+    const safeNow = await getSafeChainNow();
+    const resolverHash = Buffer.alloc(32, 0xA7);
+    const openTs = new BN(safeNow - 220);
+    const lockTs = new BN(safeNow - 50);
+    const resolveTs = new BN(safeNow - 50);
+
+    const marketKey = deriveMarket(resolverHash, openTs);
+    const vaultKey = await getAssociatedTokenAddress(quoteMint, marketKey, true);
+
+    await program.methods.initializeMarket(
+      [...resolverHash], openTs, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096
+    ).accounts({
+      market: marketKey, authority: authority.publicKey, oracleAuthority: oracle.publicKey,
+      quoteMint, quoteVault: vaultKey, systemProgram: SystemProgram.programId,
+      tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
+    }).rpc();
+
+    const proof = Buffer.alloc(32, 11);
+    const pi = Buffer.alloc(32, 12);
+    const outcomeIdx = 1;
+
+    const goodMsg = Buffer.concat([
+      Buffer.from("PROPHET_RESOLVE_V1"),
+      marketKey.toBuffer(),
+      resolverHash,
+      openTs.toArrayLike(Buffer, "le", 8),
+      Buffer.from([outcomeIdx]),
+      proof,
+      pi
+    ]);
+    const goodSig = nacl.sign.detached(goodMsg, oracle.secretKey);
+    const edGood = createManualEd25519Ix(goodMsg, goodSig, oracle.publicKey.toBuffer());
+
+    const decoyProof = Buffer.alloc(32, 13);
+    const decoyMsg = Buffer.concat([
+      Buffer.from("PROPHET_RESOLVE_V1"),
+      marketKey.toBuffer(),
+      resolverHash,
+      openTs.toArrayLike(Buffer, "le", 8),
+      Buffer.from([outcomeIdx]),
+      decoyProof,
+      pi
+    ]);
+    const decoySig = nacl.sign.detached(decoyMsg, oracle.secretKey);
+    const edDecoy = createManualEd25519Ix(decoyMsg, decoySig, oracle.publicKey.toBuffer());
+
+    const resolveIx = await program.methods.resolveMarketSigned(
+      { yes: {} }, [...proof], [...pi], [...goodSig]
+    ).accounts({
+      market: marketKey,
+      instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY
+    }).instruction();
+
+    const tx = new Transaction().add(edGood).add(edDecoy).add(resolveIx);
+    let threw = false;
+    try {
+      await sendAndConfirm(tx, relayer);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "expected failure when latest ed25519 ix is a decoy");
+  });
+
+  // --------------------------------------------------------------------------
+  // Signed Flow: Reject Cross-Instruction Ed25519 Indexes
+  // --------------------------------------------------------------------------
+  it("Signed Flow: Rejects ed25519 ix that references other instruction indexes", async () => {
+    const safeNow = await getSafeChainNow();
+    const resolverHash = Buffer.alloc(32, 0xA8);
+    const openTs = new BN(safeNow - 240);
+    const lockTs = new BN(safeNow - 50);
+    const resolveTs = new BN(safeNow - 50);
+
+    const marketKey = deriveMarket(resolverHash, openTs);
+    const vaultKey = await getAssociatedTokenAddress(quoteMint, marketKey, true);
+
+    await program.methods.initializeMarket(
+      [...resolverHash], openTs, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096
+    ).accounts({
+      market: marketKey, authority: authority.publicKey, oracleAuthority: oracle.publicKey,
+      quoteMint, quoteVault: vaultKey, systemProgram: SystemProgram.programId,
+      tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
+    }).rpc();
+
+    const proof = Buffer.alloc(32, 14);
+    const pi = Buffer.alloc(32, 15);
+    const outcomeIdx = 1;
+    const msg = Buffer.concat([
+      Buffer.from("PROPHET_RESOLVE_V1"),
+      marketKey.toBuffer(),
+      resolverHash,
+      openTs.toArrayLike(Buffer, "le", 8),
+      Buffer.from([outcomeIdx]),
+      proof,
+      pi
+    ]);
+    const sig = nacl.sign.detached(msg, oracle.secretKey);
+
+    const ed25519Ix = createManualEd25519Ix(
+      msg,
+      sig,
+      oracle.publicKey.toBuffer(),
+      { sigIx: 0, pkIx: 0, msgIx: 0 }
+    );
+
+    const resolveIx = await program.methods.resolveMarketSigned(
+      { yes: {} }, [...proof], [...pi], [...sig]
+    ).accounts({
+      market: marketKey,
+      instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY
+    }).instruction();
+
+    const tx = new Transaction().add(ed25519Ix).add(resolveIx);
+    let threw = false;
+    try {
+      await sendAndConfirm(tx, relayer);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "expected failure for non-self ed25519 index references");
+  });
+
+  // --------------------------------------------------------------------------
+  // Signed Flow: Stale Signature Payload
+  // --------------------------------------------------------------------------
+  it("Signed Flow: Fails when a stale signature is reused with new payload hashes", async () => {
+    const safeNow = await getSafeChainNow();
+    const resolverHash = Buffer.alloc(32, 0xA9);
+    const openTs = new BN(safeNow - 260);
+    const lockTs = new BN(safeNow - 50);
+    const resolveTs = new BN(safeNow - 50);
+
+    const marketKey = deriveMarket(resolverHash, openTs);
+    const vaultKey = await getAssociatedTokenAddress(quoteMint, marketKey, true);
+
+    await program.methods.initializeMarket(
+      [...resolverHash], openTs, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096
+    ).accounts({
+      market: marketKey, authority: authority.publicKey, oracleAuthority: oracle.publicKey,
+      quoteMint, quoteVault: vaultKey, systemProgram: SystemProgram.programId,
+      tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID
+    }).rpc();
+
+    const proofA = Buffer.alloc(32, 21);
+    const piA = Buffer.alloc(32, 22);
+    const proofB = Buffer.alloc(32, 23); // stale-signature mismatch target
+    const outcomeIdx = 1;
+
+    const msgA = Buffer.concat([
+      Buffer.from("PROPHET_RESOLVE_V1"),
+      marketKey.toBuffer(),
+      resolverHash,
+      openTs.toArrayLike(Buffer, "le", 8),
+      Buffer.from([outcomeIdx]),
+      proofA,
+      piA
+    ]);
+    const sigA = nacl.sign.detached(msgA, oracle.secretKey);
+    const ed25519Ix = createManualEd25519Ix(msgA, sigA, oracle.publicKey.toBuffer());
+
+    const resolveIx = await program.methods.resolveMarketSigned(
+      { yes: {} }, [...proofB], [...piA], [...sigA]
+    ).accounts({
+      market: marketKey,
+      instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY
+    }).instruction();
+
+    const tx = new Transaction().add(ed25519Ix).add(resolveIx);
+    let threw = false;
+    try {
+      await sendAndConfirm(tx, relayer);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "expected stale signature payload mismatch to fail");
   });
   
   // --------------------------------------------------------------------------

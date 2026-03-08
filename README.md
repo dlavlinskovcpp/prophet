@@ -85,6 +85,8 @@ bash scripts/check_zktls.sh
 
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
+- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer (KMS/HSM/remote signer API).
+- `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
 - Do not commit private keys.
 
 ## License
