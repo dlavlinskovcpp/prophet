@@ -1,7 +1,8 @@
 import base64
 from typing import Union
 
-from borsh_construct import Bytes, CStruct, I64, U8, U16, U32, U64
+from construct import Bytes
+from borsh_construct import CStruct, I64, U8, U16, U32, U64
 from solders.pubkey import Pubkey
 
 from .types import (

@@ -1,18 +1,19 @@
 import os
 import pytest
-import asyncio
 import base64
 import hashlib
 from solders.pubkey import Pubkey
-from src.attester import service
 from src.types import ResolveRequest, OutcomeEnum
-from src.solana_client import SolanaClient
 
 @pytest.mark.asyncio
 async def test_resolve_flow_e2e():
     market_str = os.getenv("MARKET_PUBKEY")
     if not market_str:
         pytest.skip("MARKET_PUBKEY not set. Skipping E2E test.")
+
+    # Import runtime-bound components only when E2E is actually executed.
+    from src.attester import service
+    from src.solana_client import SolanaClient
     
     print(f"\n[E2E] Resolving market: {market_str}")
     
