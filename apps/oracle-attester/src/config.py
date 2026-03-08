@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     REMOTE_SIGNER_API_KEY: str = os.getenv("REMOTE_SIGNER_API_KEY", "")
     REMOTE_SIGNER_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_TIMEOUT_S", 5.0)
     REMOTE_SIGNER_REQUIRE_TLS: bool = _env_bool("REMOTE_SIGNER_REQUIRE_TLS", True)
+    REMOTE_SIGNER_REQUIRE_AUTH: bool = _env_bool("REMOTE_SIGNER_REQUIRE_AUTH", True)
+    REMOTE_SIGNER_ALLOWED_PUBKEYS: str = os.getenv("REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
+    REMOTE_SIGNER_MAX_MESSAGE_BYTES: int = _env_int("REMOTE_SIGNER_MAX_MESSAGE_BYTES", 10_000)
 
     # API hardening
     REQUIRE_API_AUTH: bool = _env_bool("REQUIRE_API_AUTH", True)

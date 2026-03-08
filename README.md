@@ -60,6 +60,13 @@ Alternative:
 docker-compose -f docker-compose.localnet.yml up -d oracle-attester
 ```
 
+Remote signer (for managed notary flow):
+
+```bash
+cd apps/oracle-attester
+uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+```
+
 ## Testing
 
 Anchor tests:
@@ -87,6 +94,7 @@ bash scripts/check_zktls.sh
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
 - Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer (KMS/HSM/remote signer API).
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
+- Remote signer endpoint is `POST /sign` with bearer auth and optional signer allowlist.
 - Do not commit private keys.
 
 ## License
