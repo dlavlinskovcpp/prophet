@@ -5,7 +5,7 @@ import logging
 import struct
 import os
 import json
-from typing import List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict, Tuple
 
 import httpx
 from solders.pubkey import Pubkey
@@ -477,4 +477,21 @@ class AttesterService:
             raise e
 
 
-service = AttesterService()
+_service_instance: Optional[AttesterService] = None
+
+
+def get_service() -> AttesterService:
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = AttesterService()
+    return _service_instance
+
+
+class _ServiceProxy:
+    """Lazy proxy to avoid runtime setup at import-time in tests."""
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(get_service(), item)
+
+
+service = _ServiceProxy()
