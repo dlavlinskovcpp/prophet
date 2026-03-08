@@ -13,7 +13,7 @@ if rg -n "ZKTLS_MODE=mock|REQUIRE_ZKTLS=0|ALLOW_MOCK_ZKTLS=1" apps/oracle-attest
 fi
 
 # 2) Runtime code should not contain mock artifacts in active paths.
-if rg -n "mock-proof-id|mock_sig|MockZkTlsVerifier" sdk/python/examples zktls apps/oracle-attester/src; then
+if rg -n "mock-proof-id|mock_sig|MockZkTlsVerifier" sdk/python/examples sdk/python/prophet_sdk apps/oracle-attester/src; then
   echo "[zktls-audit] mock zkTLS artifacts found in runtime code"
   exit 1
 fi

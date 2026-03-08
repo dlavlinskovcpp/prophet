@@ -1,18 +1,14 @@
 import os
-import sys
 import time
 import json
 import urllib.request
-
-# Add repository root to path so we can import 'zktls'
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
-from zktls.reclaim_client import ReclaimClient
 
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
 from prophet_sdk import ProphetClient, OrderSide, MarketOutcome
 from prophet_sdk.pdas import derive_market_pda, derive_order_pda, derive_position_pda, derive_associated_token_account
 from prophet_sdk.ata import ensure_ata
+from prophet_sdk.zktls.reclaim_client import ReclaimClient
 
 def rpc_post(url: str, method: str, params: list, timeout_s: int = 2) -> dict:
     try:

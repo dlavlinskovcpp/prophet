@@ -74,7 +74,7 @@ impl Market {
     // + max_open_orders_per_user (2)
     // + quote_decimals/status/outcome/bump (4)
     //
-    // Total = 324 bytes. Round up for headroom/alignment.
+    // Total fields = 324 bytes; allocate 336 bytes for headroom/alignment.
     pub const LEN: usize = 336;
 }
 

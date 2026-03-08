@@ -19,7 +19,8 @@ def submit_and_confirm(
     signers: List[Keypair] = None,
     timeout_s: int = 30,
     compute_unit_limit: Optional[int] = None,
-    compute_unit_price_micro_lamports: Optional[int] = None
+    compute_unit_price_micro_lamports: Optional[int] = None,
+    skip_preflight: bool = False,
 ) -> str:
     # 1. Prepend Compute Budget Instructions if requested
     final_ixs = []
@@ -32,12 +33,15 @@ def submit_and_confirm(
         
     final_ixs.extend(instructions)
 
-    # 2. Deduplicate signers
-    signer_set = {payer}
-    if signers:
-        for s in signers:
-            signer_set.add(s)
-    all_signers = list(signer_set)
+    # 2. Deduplicate signers by pubkey bytes (not object hashability/identity)
+    all_signers: List[Keypair] = []
+    seen_signers = set()
+    for s in [payer] + (signers or []):
+        signer_key = bytes(s.pubkey())
+        if signer_key in seen_signers:
+            continue
+        seen_signers.add(signer_key)
+        all_signers.append(s)
     
     last_err = None
     for attempt in range(4):
@@ -54,7 +58,10 @@ def submit_and_confirm(
             
             tx = VersionedTransaction(msg, all_signers)
             
-            send_resp = client.send_raw_transaction(bytes(tx), opts=TxOpts(skip_preflight=True))
+            send_resp = client.send_raw_transaction(
+                bytes(tx),
+                opts=TxOpts(skip_preflight=skip_preflight),
+            )
             sig = send_resp.value
             
             logger.info(f"Tx sent: {sig}. Polling confirmation...")
