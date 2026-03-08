@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - initial-project
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-and-audit:
+    name: Rust + zkTLS Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run zkTLS guardrail audit
+        run: bash scripts/check_zktls.sh
+
+      - name: Cargo check (program)
+        run: cargo check -p prophet
+
+  sdk-python:
+    name: SDK Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install SDK dependencies
+        working-directory: sdk/python
+        run: poetry install --no-interaction
+
+      - name: Run SDK tests
+        working-directory: sdk/python
+        run: poetry run pytest -q tests/test_smoke.py tests/test_tx_submit.py
+
+  oracle-attester:
+    name: Oracle Attester Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install attester dependencies
+        working-directory: apps/oracle-attester
+        run: poetry install --no-interaction --no-root
+
+      - name: Run attester tests (exclude e2e)
+        working-directory: apps/oracle-attester
+        run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
