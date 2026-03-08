@@ -65,23 +65,23 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
-          rustup default stable
-          rustup show active-toolchain
-          "$HOME/.cargo/bin/rustup" run stable rustc --version
-          "$HOME/.cargo/bin/rustup" run stable cargo --version
-          "$HOME/.cargo/bin/rustup" run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$HOME/.avm/bin:$PATH"
           ANCHOR_VERSION="$(awk -F'\"' '/^anchor_version[[:space:]]*=[[:space:]]*\"/{print $2}' Anchor.toml | head -n1)"
           if [ -z "$ANCHOR_VERSION" ]; then
             echo "Failed to read anchor_version from Anchor.toml"
             exit 1
           fi
-          avm install "$ANCHOR_VERSION"
-          avm use "$ANCHOR_VERSION"
-          anchor --version
-          which anchor
+
+          # Prefer npm-distributed prebuilt binary to avoid Cargo toolchain conflicts in CI.
+          if ! npm install -g "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"; then
+            echo "Falling back to @coral-xyz/anchor-cli@0.31.0"
+            npm install -g "@coral-xyz/anchor-cli@0.31.0"
+          fi
+
+          if ! anchor --version; then
+            echo "Primary anchor binary failed, forcing fallback @0.31.0"
+            npm install -g "@coral-xyz/anchor-cli@0.31.0"
+            anchor --version
+          fi
 
       - name: Create test wallet
         run: |
