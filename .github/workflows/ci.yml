@@ -57,9 +57,11 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Setup Solana CLI
-        uses: anza-xyz/setup-solana@v3
-        with:
-          solana-version: "2.1.16"
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.16/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
 
       - name: Install Anchor CLI
         run: npm install -g @coral-xyz/anchor-cli@0.32.1
