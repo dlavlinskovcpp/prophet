@@ -14,7 +14,6 @@ programs/prophet/          Anchor program
 tests/                     TypeScript integration tests
 sdk/python/                Python SDK and examples
 apps/oracle-attester/      FastAPI attester service
-zktls/                     zkTLS proof client/helpers
 scripts/                   helper scripts
 docs/                      protocol and SDK docs
 ```

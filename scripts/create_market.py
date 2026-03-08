@@ -3,15 +3,29 @@ import sys
 import time
 import argparse
 import json
+import hashlib
 from solders.pubkey import Pubkey
-from solders.keypair import Keypair
 
 # Ensure we can import the SDK from root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../sdk/python")))
 from prophet_sdk import ProphetClient, derive_market_pda
 
+def compute_resolver_hash(definition: dict) -> bytes:
+    canonical_json = json.dumps(definition, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical_json.encode("utf-8")).digest()
+
+def load_resolver_definition(path: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Resolver file missing: {path}")
+    with open(path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Resolver definition must be a JSON object")
+    return data
+
 def main():
     parser = argparse.ArgumentParser(description="Create a new Prophet Market")
+    parser.add_argument("--resolver-file", required=True, help="Path to resolver definition JSON file")
     parser.add_argument("--oracle", required=True, help="Oracle Authority Pubkey (Base58)")
     parser.add_argument("--mint", required=True, help="Quote Token Mint (Base58)")
     parser.add_argument("--duration", type=int, default=3600, help="Duration in seconds until resolution")
@@ -27,12 +41,16 @@ def main():
 
     client = ProphetClient(rpc_url=rpc_url, payer_keypair_path=payer_path)
     
+    try:
+        resolver_def = load_resolver_definition(args.resolver_file)
+        resolver_hash = compute_resolver_hash(resolver_def)
+    except Exception as e:
+        print(f"Error loading resolver definition: {e}")
+        sys.exit(1)
+
     oracle_auth = Pubkey.from_string(args.oracle)
     quote_mint = Pubkey.from_string(args.mint)
-    
-    # Generate unique resolver hash (random for this script)
-    resolver_hash = os.urandom(32)
-    
+
     now = int(time.time())
     open_ts = now
     lock_ts = now + args.duration
@@ -41,6 +59,8 @@ def main():
     print(f"Creating Market...")
     print(f"  Oracle: {oracle_auth}")
     print(f"  Mint:   {quote_mint}")
+    print(f"  Resolver File: {args.resolver_file}")
+    print(f"  Resolver Hash: {resolver_hash.hex()}")
     print(f"  Lock:   {lock_ts}")
 
     try:

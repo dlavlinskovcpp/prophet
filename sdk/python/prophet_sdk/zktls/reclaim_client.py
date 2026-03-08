@@ -2,28 +2,35 @@ import base64
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+
 import httpx
-from .proof_formats import normalize_public_inputs, calculate_hash
+
+from .proof_formats import calculate_hash, normalize_public_inputs
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class ZkProof:
     proof_bytes: bytes
     public_inputs_bytes: bytes
-    
+
     @property
     def proof_b64(self) -> str:
-        return base64.b64encode(self.proof_bytes).decode('utf-8')
+        return base64.b64encode(self.proof_bytes).decode("utf-8")
+
     @property
     def public_inputs_b64(self) -> str:
-        return base64.b64encode(self.public_inputs_bytes).decode('utf-8')
+        return base64.b64encode(self.public_inputs_bytes).decode("utf-8")
+
     @property
     def proof_hash(self) -> bytes:
         return calculate_hash(self.proof_bytes)
+
     @property
     def public_inputs_hash(self) -> bytes:
         return calculate_hash(self.public_inputs_bytes)
+
 
 class ReclaimClient:
     def __init__(
