@@ -5,16 +5,17 @@ import types
 from fastapi.testclient import TestClient
 
 from src.config import settings
+from src.types import ResolveResponse
 
 
 class _DummyService:
     async def resolve_market(self, _req):
-        return {
-            "signature": "sig-123",
-            "proof_hash_hex": "aa",
-            "public_inputs_hash_hex": "bb",
-            "resolved_ts": 1,
-        }
+        return ResolveResponse(
+            signature="sig-123",
+            proof_hash_hex="aa",
+            public_inputs_hash_hex="bb",
+            resolved_ts=1,
+        )
 
 
 def _load_main(monkeypatch, dummy_service):
