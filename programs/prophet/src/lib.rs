@@ -645,7 +645,7 @@ pub mod prophet {
             _ => 0,
         };
 
-        let mut expected_msg = Vec::with_capacity(18 + 32 + 32 + 32 + 32 + 8 + 8 + 1 + 32 + 32);
+        let mut expected_msg = Vec::with_capacity(18 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1 + 32 + 32);
         expected_msg.extend_from_slice(b"PROPHET_RESOLVE_V2");
         expected_msg.extend_from_slice(crate::ID.as_ref());
         expected_msg.extend_from_slice(market.key().as_ref());
@@ -653,6 +653,7 @@ pub mod prophet {
         expected_msg.extend_from_slice(&market.resolver_hash);
         expected_msg.extend_from_slice(&market.open_ts.to_le_bytes());
         expected_msg.extend_from_slice(&market.resolve_ts.to_le_bytes());
+        expected_msg.extend_from_slice(&cfg.version.to_le_bytes());
         expected_msg.push(outcome_byte);
         expected_msg.extend_from_slice(&proof_hash);
         expected_msg.extend_from_slice(&public_inputs_hash);

@@ -43,9 +43,10 @@ Byte layout:
 5. `resolver_hash` (32)
 6. `open_ts` little-endian i64 (8)
 7. `resolve_ts` little-endian i64 (8)
-8. `outcome` u8 (`1=Yes`, `2=No`, `3=Invalid`)
-9. `proof_hash` (32)
-10. `public_inputs_hash` (32)
+8. `notary_config_version` little-endian u64 (8)
+9. `outcome` u8 (`1=Yes`, `2=No`, `3=Invalid`)
+10. `proof_hash` (32)
+11. `public_inputs_hash` (32)
 
 Used by:
 

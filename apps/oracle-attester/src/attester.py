@@ -7,6 +7,7 @@ import os
 import json
 from typing import List, Optional, Dict, Tuple
 
+import httpx
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
 from cachetools import TTLCache
@@ -69,14 +70,14 @@ def _load_keypair(path_or_str: str) -> Keypair:
     return kp
 
 
-def _load_notary_keypairs_from_env() -> List[Keypair]:
-    """Loads notary keypairs for threshold mode.
+def _load_notary_keypairs_from_config() -> List[Keypair]:
+    """Loads local notary keypairs for threshold mode.
 
-    Env:
+    Config:
       - NOTARY_KEYPAIR_PATHS: comma-separated list of file paths or inline keypair strings.
-        If missing, falls back to ORACLE_KEYPAIR_PATH (single key) to keep local dev simple.
+        If empty, falls back to ORACLE_KEYPAIR_PATH for local/dev compatibility.
     """
-    raw = os.getenv("NOTARY_KEYPAIR_PATHS", "").strip()
+    raw = (settings.NOTARY_KEYPAIR_PATHS or "").strip()
     paths: List[str]
     if raw:
         paths = [p.strip() for p in raw.split(",") if p.strip()]
@@ -92,6 +93,66 @@ def _load_notary_keypairs_from_env() -> List[Keypair]:
     return kps
 
 
+class RemoteNotarySigner:
+    """HTTP remote signer adapter.
+
+    Expected request:
+      POST REMOTE_SIGNER_URL
+      { "public_key": "<base58>", "message_b64": "<base64>", "context": {...} }
+
+    Expected response:
+      { "signature_b64": "<base64(64 bytes)>", "public_key": "<optional echo>" }
+    """
+
+    def __init__(self, url: str, api_key: str, timeout_s: float):
+        self.url = url
+        self.api_key = api_key
+        self.timeout_s = timeout_s
+
+    def sign(self, pubkey: Pubkey, message: bytes, context: Dict[str, str]) -> bytes:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        body = {
+            "public_key": str(pubkey),
+            "message_b64": base64.b64encode(message).decode("ascii"),
+            "context": context,
+        }
+
+        try:
+            with httpx.Client(timeout=self.timeout_s) as client:
+                resp = client.post(self.url, json=body, headers=headers)
+        except Exception as e:
+            raise RuntimeError(f"remote signer request failed: {e}")
+
+        if resp.status_code >= 300:
+            raise RuntimeError(f"remote signer returned {resp.status_code}: {resp.text[:200]}")
+
+        try:
+            payload = resp.json()
+        except Exception as e:
+            raise RuntimeError(f"remote signer returned invalid JSON: {e}")
+
+        sig_b64 = str(payload.get("signature_b64", "")).strip()
+        if not sig_b64:
+            raise RuntimeError("remote signer response missing signature_b64")
+
+        try:
+            sig = base64.b64decode(sig_b64, validate=True)
+        except Exception as e:
+            raise RuntimeError(f"remote signer signature is not valid base64: {e}")
+
+        if len(sig) != 64:
+            raise RuntimeError(f"remote signer signature length invalid: {len(sig)}")
+
+        echoed_pk = str(payload.get("public_key", "")).strip()
+        if echoed_pk and echoed_pk != str(pubkey):
+            raise RuntimeError("remote signer returned signature for unexpected public key")
+
+        return sig
+
+
 class AttesterService:
     def __init__(self):
         self.client = SolanaClient()
@@ -99,6 +160,16 @@ class AttesterService:
         self.resolved_cache = TTLCache(maxsize=1000, ttl=600)
         self.verifier = make_verifier()
         self.fetcher = make_fetcher()
+        self.notary_signer_mode = (settings.NOTARY_SIGNER_MODE or "remote").strip().lower()
+        self.remote_notary_signer = (
+            RemoteNotarySigner(
+                url=settings.REMOTE_SIGNER_URL,
+                api_key=settings.REMOTE_SIGNER_API_KEY,
+                timeout_s=settings.REMOTE_SIGNER_TIMEOUT_S,
+            )
+            if self.notary_signer_mode == "remote"
+            else None
+        )
 
     def _load_resolver(self, resolver_hash: bytes) -> ResolverDefinition:
         hash_hex = resolver_hash.hex()
@@ -141,6 +212,7 @@ class AttesterService:
         resolver_hash: bytes,
         open_ts: int,
         resolve_ts: int,
+        notary_config_version: int,
         outcome_idx: int,
         proof_hash: bytes,
         public_inputs_hash: bytes,
@@ -153,6 +225,7 @@ class AttesterService:
             + resolver_hash
             + struct.pack("<q", open_ts)
             + struct.pack("<q", resolve_ts)
+            + struct.pack("<Q", notary_config_version)
             + struct.pack("B", outcome_idx)
             + proof_hash
             + public_inputs_hash
@@ -280,40 +353,75 @@ class AttesterService:
                 if cfg is None:
                     raise LookupError(f"NotaryConfig {str(notary_cfg_pk)} not found")
 
-                # Load local notaries (for now: local file-based). This is intentionally simple for MVP.
-                local_kps = _load_notary_keypairs_from_env()
-                local_by_pk: Dict[Pubkey, Keypair] = {kp.pubkey(): kp for kp in local_kps}
-
-                allowed = set(cfg["notary_keys"])
-                eligible: List[Keypair] = [kp for pk, kp in local_by_pk.items() if pk in allowed]
-
-                if len(eligible) < int(cfg["threshold"]):
-                    raise PermissionError(
-                        f"Not enough local notary keys. Have {len(eligible)} eligible, need {cfg['threshold']}"
-                    )
-
-                # Use first `threshold` keys (deterministic ordering by pubkey bytes for reproducibility)
-                eligible.sort(key=lambda k: bytes(k.pubkey()))
-                chosen = eligible[: int(cfg["threshold"])]
-
                 msg = self._build_message_v2(
                     market_pubkey=market_pubkey,
                     notary_config_pubkey=notary_cfg_pk,
                     resolver_hash=state["resolver_hash"],
                     open_ts=state["open_ts"],
                     resolve_ts=state["resolve_ts"],
+                    notary_config_version=int(cfg["version"]),
                     outcome_idx=outcome_idx,
                     proof_hash=proof_hash,
                     public_inputs_hash=pi_hash,
                 )
 
+                threshold = int(cfg["threshold"])
+                allowed_sorted = sorted(list(cfg["notary_keys"]), key=lambda pk: bytes(pk))
                 ed25519_ixs = []
-                for kp in chosen:
-                    sig_obj = kp.sign_message(msg)
-                    sig_bytes = bytes(sig_obj)
-                    ed25519_ixs.append(
-                        self.client.build_ed25519_ix(msg, sig_bytes, bytes(kp.pubkey()))
-                    )
+
+                if self.notary_signer_mode == "remote":
+                    if self.remote_notary_signer is None:
+                        raise RuntimeError("remote notary signer is not configured")
+
+                    signed_count = 0
+                    for pk in allowed_sorted:
+                        if signed_count >= threshold:
+                            break
+                        try:
+                            sig_bytes = self.remote_notary_signer.sign(
+                                pubkey=pk,
+                                message=msg,
+                                context={
+                                    "market": market_str,
+                                    "notary_config": str(notary_cfg_pk),
+                                    "notary_config_version": str(int(cfg["version"])),
+                                },
+                            )
+                            ed25519_ixs.append(self.client.build_ed25519_ix(msg, sig_bytes, bytes(pk)))
+                            signed_count += 1
+                        except Exception as e:
+                            logger.warning(f"Remote signer failed for notary {str(pk)}: {e}")
+
+                    if signed_count < threshold:
+                        raise PermissionError(
+                            f"Not enough remote notary signatures. Have {signed_count}, need {threshold}"
+                        )
+
+                    payer = self.client.relayer_kp or self.client.oracle_kp
+                else:
+                    local_kps = _load_notary_keypairs_from_config()
+                    local_by_pk: Dict[Pubkey, Keypair] = {kp.pubkey(): kp for kp in local_kps}
+                    eligible: List[Keypair] = [local_by_pk[pk] for pk in allowed_sorted if pk in local_by_pk]
+
+                    if len(eligible) < threshold:
+                        raise PermissionError(
+                            f"Not enough local notary keys. Have {len(eligible)} eligible, need {threshold}"
+                        )
+
+                    eligible.sort(key=lambda k: bytes(k.pubkey()))
+                    chosen = eligible[:threshold]
+
+                    for kp in chosen:
+                        sig_obj = kp.sign_message(msg)
+                        sig_bytes = bytes(sig_obj)
+                        ed25519_ixs.append(
+                            self.client.build_ed25519_ix(msg, sig_bytes, bytes(kp.pubkey()))
+                        )
+
+                    payer = self.client.relayer_kp or chosen[0]
+
+                if payer is None:
+                    raise PermissionError("No payer available for threshold resolve transaction")
 
                 resolve_ix = self.client.build_resolve_threshold_ix(
                     market=market_pubkey,
@@ -323,7 +431,6 @@ class AttesterService:
                     public_inputs_hash=pi_hash,
                 )
 
-                payer = self.client.relayer_kp or chosen[0]
                 sig = self.client.submit_and_confirm(ed25519_ixs + [resolve_ix], payer)
 
             else:

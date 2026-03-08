@@ -112,6 +112,7 @@ class ProphetClient:
         resolver_hash: bytes,
         open_ts: int,
         resolve_ts: int,
+        notary_config_version: int,
         outcome: MarketOutcome,
         proof_hash: bytes,
         public_inputs_hash: bytes,
@@ -124,10 +125,20 @@ class ProphetClient:
             + resolver_hash
             + struct.pack("<q", open_ts)
             + struct.pack("<q", resolve_ts)
+            + struct.pack("<Q", int(notary_config_version))
             + struct.pack("B", self._outcome_index(outcome))
             + proof_hash
             + public_inputs_hash
         )
+
+    def _fetch_notary_config_version(self, notary_config: Pubkey) -> int:
+        resp = self.client.get_account_info(notary_config, commitment=Confirmed)
+        if not resp.value:
+            raise ValueError(f"Notary config {notary_config} not found")
+        raw = extract_account_bytes(resp.value.data)
+        if len(raw) < 8 + 48:
+            raise ValueError("Notary config account data too short")
+        return int(struct.unpack_from("<Q", raw, 8 + 40)[0])
 
     # -------------------------------------------------------------------------
     # Fetch Helpers
@@ -634,6 +645,7 @@ class ProphetClient:
         public_inputs_hash: bytes,
         notary_keypairs: Sequence[Keypair],
         relayer_keypair: Optional[Keypair] = None,
+        notary_config_version: Optional[int] = None,
     ) -> str:
         if len(resolver_hash) != 32:
             raise ValueError("resolver_hash must be 32 bytes")
@@ -641,6 +653,11 @@ class ProphetClient:
             raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
         if not notary_keypairs:
             raise ValueError("at least one notary keypair is required")
+        cfg_version = (
+            int(notary_config_version)
+            if notary_config_version is not None
+            else self._fetch_notary_config_version(notary_config)
+        )
 
         msg = self._build_resolve_message_v2(
             market=market,
@@ -648,6 +665,7 @@ class ProphetClient:
             resolver_hash=resolver_hash,
             open_ts=open_ts,
             resolve_ts=resolve_ts,
+            notary_config_version=cfg_version,
             outcome=outcome,
             proof_hash=proof_hash,
             public_inputs_hash=public_inputs_hash,
