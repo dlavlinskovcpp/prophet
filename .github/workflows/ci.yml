@@ -64,7 +64,9 @@ jobs:
           solana --version
 
       - name: Install Anchor CLI
-        run: npm install -g @coral-xyz/anchor-cli@0.32.1
+        run: |
+          npm install -g @coral-xyz/anchor-cli@latest
+          anchor --version
 
       - name: Create test wallet
         run: |
