@@ -8,6 +8,8 @@ test-ledger
 *.json
 !id.json
 !oracle-keypair.json
+!package.json
+!tsconfig.json
 __pycache__
 *.pyc
 venv

@@ -17,7 +17,7 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 # Long timeout for warpSlot and integration tests
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "yarn run test"
 
 [test]
 startup_wait = 30000 
