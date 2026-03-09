@@ -11,7 +11,9 @@ def main():
     parser = argparse.ArgumentParser(description="Create Markets from Resolver Def")
     parser.add_argument("--resolver-file", required=True)
     parser.add_argument("--quote-mint", required=True)
-    parser.add_argument("--oracle", required=True)
+    parser.add_argument("--notary-config", default="")
+    parser.add_argument("--oracle", default="")
+    parser.add_argument("--legacy", action="store_true")
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--spacing-s", type=int, default=60)
     parser.add_argument("--open-delay-s", type=int, default=5)
@@ -26,7 +28,8 @@ def main():
     resolver_hash_hex = resolver_hash.hex()
     
     quote_mint = Pubkey.from_string(args.quote_mint)
-    oracle_auth = Pubkey.from_string(args.oracle)
+    oracle_auth = Pubkey.from_string(args.oracle) if args.oracle else client.payer.pubkey()
+    notary_config = Pubkey.from_string(args.notary_config) if args.notary_config else None
     
     try:
         slot = client.client.get_slot().value
@@ -45,14 +48,29 @@ def main():
         if resolve_ts < lock_ts: resolve_ts = lock_ts
         
         try:
-            sig = client.initialize_market(
-                resolver_hash=resolver_hash,
-                open_ts=open_ts,
-                lock_ts=lock_ts,
-                resolve_ts=resolve_ts,
-                oracle_authority=oracle_auth,
-                quote_mint=quote_mint
-            )
+            if args.legacy:
+                if not args.oracle:
+                    raise ValueError("--oracle is required when --legacy is set")
+                sig = client.initialize_market(
+                    resolver_hash=resolver_hash,
+                    open_ts=open_ts,
+                    lock_ts=lock_ts,
+                    resolve_ts=resolve_ts,
+                    oracle_authority=oracle_auth,
+                    quote_mint=quote_mint,
+                )
+            else:
+                if not notary_config:
+                    raise ValueError("v2 market creation requires --notary-config. Use --legacy --oracle for compatibility mode.")
+                sig = client.initialize_market_v2(
+                    resolver_hash=resolver_hash,
+                    open_ts=open_ts,
+                    lock_ts=lock_ts,
+                    resolve_ts=resolve_ts,
+                    notary_config=notary_config,
+                    oracle_authority=oracle_auth,
+                    quote_mint=quote_mint,
+                )
             
             market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
             print(f"[{i+1}/{args.count}] Created {market_pda} (Tx: {sig})")
@@ -64,7 +82,9 @@ def main():
                 "lock_ts": lock_ts,
                 "resolve_ts": resolve_ts,
                 "quote_mint": str(quote_mint),
-                "oracle": str(oracle_auth)
+                "oracle": str(oracle_auth),
+                "notary_config": str(notary_config) if notary_config else "",
+                "mode": "legacy" if args.legacy else "v2",
             }
             created.append(entry)
             

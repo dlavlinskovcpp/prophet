@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     RECLAIM_VERIFY_URL: str = os.getenv("RECLAIM_VERIFY_URL", "")
     RECLAIM_API_KEY: str = os.getenv("RECLAIM_API_KEY", "")
     ZKTLS_HTTP_TIMEOUT_S: float = float(os.getenv("ZKTLS_HTTP_TIMEOUT_S", "10"))
-    ALLOW_MOCK_ZKTLS: bool = _env_bool("ALLOW_MOCK_ZKTLS", False)
 
     # Proof Fetcher Settings
     PROOF_FETCH_MODE: str = os.getenv("PROOF_FETCH_MODE", "local")  # "local" or "http"
@@ -54,6 +53,7 @@ class Settings(BaseSettings):
     # Notary signer mode
     NOTARY_SIGNER_MODE: str = os.getenv("NOTARY_SIGNER_MODE", "remote")  # "remote" or "local"
     ALLOW_LOCAL_NOTARY_KEYS: bool = _env_bool("ALLOW_LOCAL_NOTARY_KEYS", False)
+    ALLOW_LEGACY_SINGLE_ORACLE: bool = _env_bool("ALLOW_LEGACY_SINGLE_ORACLE", False)
     NOTARY_KEYPAIR_PATHS: str = os.getenv("NOTARY_KEYPAIR_PATHS", "")
     REMOTE_SIGNER_URL: str = os.getenv("REMOTE_SIGNER_URL", "")
     REMOTE_SIGNER_API_KEY: str = os.getenv("REMOTE_SIGNER_API_KEY", "")
@@ -108,16 +108,6 @@ class Settings(BaseSettings):
 
     def validate_zktls_runtime(self) -> None:
         mode = (self.ZKTLS_MODE or "").strip().lower()
-        env = (self.APP_ENV or "production").strip().lower()
-        is_dev_env = env in {"dev", "development", "local", "test"}
-
-        if mode == "mock":
-            if not (is_dev_env and self.ALLOW_MOCK_ZKTLS):
-                raise ValueError(
-                    "ZKTLS_MODE=mock is disabled. Use a real verifier mode "
-                    "or explicitly set APP_ENV=development and ALLOW_MOCK_ZKTLS=1."
-                )
-            return
 
         if mode != "reclaim_http":
             raise ValueError(
