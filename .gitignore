@@ -24,5 +24,6 @@ markets.jsonl
 validator.log
 .logs/
 apps/matching-keeper/state/
+ops/backups/
 releases/*
 !releases/.gitkeep
