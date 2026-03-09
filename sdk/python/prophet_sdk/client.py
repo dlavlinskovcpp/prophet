@@ -560,6 +560,80 @@ class ProphetClient:
         return submit_and_confirm(self.client, [ix], self.payer)
 
     # -------------------------------------------------------------------------
+    # Governance / Lifecycle Flow
+    # -------------------------------------------------------------------------
+
+    def transfer_market_authority(self, market: Pubkey, new_authority: Pubkey) -> str:
+        data = self._get_discriminator("transfer_market_authority")
+        data += bytes(new_authority)
+
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def lock_market(self, market: Pubkey) -> str:
+        data = self._get_discriminator("lock_market")
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def unlock_market(self, market: Pubkey) -> str:
+        data = self._get_discriminator("unlock_market")
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def sync_market_status(self, market: Pubkey) -> str:
+        data = self._get_discriminator("sync_market_status")
+        keys = [AccountMeta(market, False, True)]
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def update_market_schedule(self, market: Pubkey, new_lock_ts: int, new_resolve_ts: int) -> str:
+        data = self._get_discriminator("update_market_schedule")
+        data += struct.pack("<q", int(new_lock_ts))
+        data += struct.pack("<q", int(new_resolve_ts))
+
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def emergency_resolve_invalid(
+        self,
+        market: Pubkey,
+        proof_hash: bytes,
+        public_inputs_hash: bytes,
+    ) -> str:
+        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
+            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
+
+        data = self._get_discriminator("emergency_resolve_invalid")
+        data += proof_hash
+        data += public_inputs_hash
+
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    # -------------------------------------------------------------------------
     # Resolution Flow
     # -------------------------------------------------------------------------
 

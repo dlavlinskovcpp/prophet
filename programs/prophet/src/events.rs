@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::{OrderSide, MarketOutcome};
+use crate::state::{MarketOutcome, MarketStatus, OrderSide};
 
 #[event]
 pub struct OrderPlaced {
@@ -50,6 +50,32 @@ pub struct MarketResolved {
     pub resolved_ts: i64,
     pub proof_hash: [u8; 32],
     pub public_inputs_hash: [u8; 32],
+}
+
+#[event]
+pub struct MarketStatusChanged {
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub old_status: MarketStatus,
+    pub new_status: MarketStatus,
+    pub effective_ts: i64,
+}
+
+#[event]
+pub struct MarketScheduleUpdated {
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub old_lock_ts: i64,
+    pub new_lock_ts: i64,
+    pub old_resolve_ts: i64,
+    pub new_resolve_ts: i64,
+}
+
+#[event]
+pub struct MarketAuthorityTransferred {
+    pub market: Pubkey,
+    pub old_authority: Pubkey,
+    pub new_authority: Pubkey,
 }
 
 #[event]

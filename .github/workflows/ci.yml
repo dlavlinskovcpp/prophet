@@ -118,6 +118,10 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry install --no-interaction --no-root
 
+      - name: Install SDK Python dependencies
+        working-directory: sdk/python
+        run: poetry install --no-interaction
+
       - name: Create test wallet
         run: |
           mkdir -p "$HOME/.config/solana"
@@ -201,6 +205,16 @@ jobs:
             exit 1
           fi
 
+          if ! (cd sdk/python && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PAYER_KEYPAIR_PATH="$ANCHOR_WALLET" ORACLE_KEYPAIR_PATH="$ANCHOR_WALLET" QUOTE_MINT="So11111111111111111111111111111111111111112" poetry run pytest -q tests/test_localnet_e2e.py); then
+            echo "SDK localnet threshold e2e failed; validator log follows:"
+            if [ -f "${VALIDATOR_LOG}" ]; then
+              cat "${VALIDATOR_LOG}" || true
+            else
+              echo "Validator log file not found at ${VALIDATOR_LOG}"
+            fi
+            exit 1
+          fi
+
   sdk-python:
     name: SDK Python Tests
     runs-on: ubuntu-latest
@@ -227,6 +241,33 @@ jobs:
       - name: Run SDK tests
         working-directory: sdk/python
         run: poetry run pytest -q tests/test_smoke.py tests/test_tx_submit.py
+
+  matching-keeper:
+    name: Matching Keeper Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install keeper dependencies
+        working-directory: apps/matching-keeper
+        run: poetry install --no-interaction
+
+      - name: Run keeper tests
+        working-directory: apps/matching-keeper
+        run: poetry run pytest -q tests/test_engine.py tests/test_storage.py
 
   oracle-attester:
     name: Oracle Attester Tests

@@ -30,6 +30,10 @@ export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 - `match_orders(...)`
 - `cancel_order(...)`
 - `claim_refunds(...)`
+- `transfer_market_authority(...)`
+- `lock_market(...)` / `unlock_market(...)` / `sync_market_status(...)`
+- `update_market_schedule(...)`
+- `emergency_resolve_invalid(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
 - `initialize_market(...)` / `resolve_market_signed(...)` / `resolve_market(...)` remain available for legacy compatibility
@@ -87,6 +91,7 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 
 - Preferred v2 relayer example: `sdk/python/examples/resolve_threshold_relayer.py`
 - Legacy compatibility relayer example: `sdk/python/examples/resolve_signed_relayer.py`
+- Operated matching service: `docs/matching_keeper.md`
 
 ## Attester Helper Script
 

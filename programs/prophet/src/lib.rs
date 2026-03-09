@@ -200,6 +200,142 @@ pub mod prophet {
     }
 
     // -------------------------------------------------------------------------
+    // 1.4 Transfer Market Authority
+    // -------------------------------------------------------------------------
+    pub fn transfer_market_authority(
+        ctx: Context<UpdateMarketAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(new_authority != Pubkey::default(), ErrorCode::InvalidNewAuthority);
+        require!(new_authority != market.authority, ErrorCode::InvalidNewAuthority);
+
+        let old_authority = market.authority;
+        market.authority = new_authority;
+
+        emit!(MarketAuthorityTransferred {
+            market: market.key(),
+            old_authority,
+            new_authority,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.5 Lock Market
+    // -------------------------------------------------------------------------
+    pub fn lock_market(ctx: Context<UpdateMarketAuthority>) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+
+        let old_status = market.status;
+        if old_status != MarketStatus::Locked {
+            let now = Clock::get()?.unix_timestamp;
+            market.status = MarketStatus::Locked;
+            emit!(MarketStatusChanged {
+                market: market.key(),
+                authority: ctx.accounts.authority.key(),
+                old_status,
+                new_status: market.status,
+                effective_ts: now,
+            });
+        }
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.6 Unlock Market
+    // -------------------------------------------------------------------------
+    pub fn unlock_market(ctx: Context<UpdateMarketAuthority>) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+
+        let now = Clock::get()?.unix_timestamp;
+        require!(now < market.lock_ts, ErrorCode::CannotUnlockAfterLockTs);
+
+        let old_status = market.status;
+        if old_status != MarketStatus::Open {
+            market.status = MarketStatus::Open;
+            emit!(MarketStatusChanged {
+                market: market.key(),
+                authority: ctx.accounts.authority.key(),
+                old_status,
+                new_status: market.status,
+                effective_ts: now,
+            });
+        }
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.7 Sync Market Status To Locked
+    // -------------------------------------------------------------------------
+    pub fn sync_market_status(ctx: Context<SyncMarketStatus>) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        if market.status != MarketStatus::Open {
+            return Ok(());
+        }
+
+        let now = Clock::get()?.unix_timestamp;
+        if now < market.lock_ts {
+            return Ok(());
+        }
+
+        let old_status = market.status;
+        market.status = MarketStatus::Locked;
+        emit!(MarketStatusChanged {
+            market: market.key(),
+            authority: market.authority,
+            old_status,
+            new_status: market.status,
+            effective_ts: now,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 1.8 Update Market Schedule
+    // -------------------------------------------------------------------------
+    pub fn update_market_schedule(
+        ctx: Context<UpdateMarketAuthority>,
+        new_lock_ts: i64,
+        new_resolve_ts: i64,
+    ) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+
+        let now = Clock::get()?.unix_timestamp;
+        require!(now < market.lock_ts, ErrorCode::InvalidStage);
+        require!(market.open_orders_total == 0, ErrorCode::MarketHasOpenOrders);
+        require!(new_lock_ts >= market.open_ts, ErrorCode::InvalidTimeRange);
+        require!(new_resolve_ts >= new_lock_ts, ErrorCode::InvalidTimeRange);
+
+        let old_lock_ts = market.lock_ts;
+        let old_resolve_ts = market.resolve_ts;
+        market.lock_ts = new_lock_ts;
+        market.resolve_ts = new_resolve_ts;
+
+        emit!(MarketScheduleUpdated {
+            market: market.key(),
+            authority: ctx.accounts.authority.key(),
+            old_lock_ts,
+            new_lock_ts,
+            old_resolve_ts,
+            new_resolve_ts,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
     // 2. Place Order
     // -------------------------------------------------------------------------
     pub fn place_order(
@@ -830,6 +966,36 @@ pub mod prophet {
 
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // 8. Emergency Resolve Invalid (Authority)
+    // -------------------------------------------------------------------------
+    pub fn emergency_resolve_invalid(
+        ctx: Context<UpdateMarketAuthority>,
+        proof_hash: [u8; 32],
+        public_inputs_hash: [u8; 32],
+    ) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(market.status == MarketStatus::Locked, ErrorCode::MarketNotLocked);
+
+        let now = Clock::get()?.unix_timestamp;
+        market.status = MarketStatus::Resolved;
+        market.outcome = MarketOutcome::Invalid;
+        market.proof_hash = proof_hash;
+        market.public_inputs_hash = public_inputs_hash;
+        market.resolved_ts = now;
+
+        emit!(MarketResolved {
+            market: market.key(),
+            outcome: MarketOutcome::Invalid,
+            resolved_ts: now,
+            proof_hash,
+            public_inputs_hash,
+        });
+
+        Ok(())
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -850,6 +1016,11 @@ fn mul_div_ceil(a: u128, b: u128, den: u128) -> Result<u64> {
     let num_plus = num.checked_add(den_minus_one).ok_or(ErrorCode::MathOverflow)?;
     let res = num_plus.checked_div(den).ok_or(ErrorCode::MathOverflow)?;
     Ok(res as u64)
+}
+
+fn require_market_authority(market: &Market, authority: &Pubkey) -> Result<()> {
+    require!(market.authority == *authority, ErrorCode::UnauthorizedMarketAuthority);
+    Ok(())
 }
 
 // -------------------------------------------------------------------------
@@ -948,6 +1119,19 @@ pub struct InitializeMarketV2<'info> {
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct UpdateMarketAuthority<'info> {
+    #[account(mut)]
+    pub market: Account<'info, Market>,
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SyncMarketStatus<'info> {
+    #[account(mut)]
+    pub market: Account<'info, Market>,
 }
 
 #[derive(Accounts)]

@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "matching-keeper"
+version = "0.1.0"
+description = "Persistent order matching keeper for Prophet markets"
+authors = ["Prophet Protocol <dev@prophet.xyz>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.6.0"
+pydantic-settings = "^2.1.0"
+solana = "^0.32.0"
+solders = ">=0.20.0,<0.21.0"
+httpx = ">=0.23.0,<0.24.0"
+prophet-sdk = {path = "../../sdk/python", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+prophet-matching-keeper = "src.main:serve"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

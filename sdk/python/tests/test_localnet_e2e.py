@@ -8,8 +8,15 @@ from solders.keypair import Keypair
 import json
 import time
 
+@pytest.mark.parametrize(
+    ("resolver_fill", "proof_fill", "pi_fill", "outcome"),
+    [
+        (0xCC, 0x01, 0x02, MarketOutcome.Yes),
+        (0xCD, 0x03, 0x04, MarketOutcome.Invalid),
+    ],
+)
 @pytest.mark.skipif(not os.getenv("RUN_LOCALNET"), reason="Skipping localnet e2e")
-def test_localnet_resolve_flow():
+def test_localnet_resolve_flow(resolver_fill, proof_fill, pi_fill, outcome):
     rpc_url = os.getenv("RPC_URL", "http://localhost:8899")
     payer_kp = os.getenv("PAYER_KEYPAIR_PATH")
     oracle_kp_path = os.getenv("ORACLE_KEYPAIR_PATH")
@@ -26,7 +33,7 @@ def test_localnet_resolve_flow():
 
     ensure_ata(client.client, client.payer, client.payer.pubkey(), mint)
 
-    resolver = bytes([0xCC]*32)
+    resolver = bytes([resolver_fill] * 32)
     try:
         slot = client.client.get_slot().value
         now = client.client.get_block_time(slot).value or int(time.time())
@@ -54,8 +61,8 @@ def test_localnet_resolve_flow():
     
     market, _ = derive_market_pda(resolver, open_ts, client.program_id)
     
-    proof_hash = bytes([1]*32)
-    pi_hash = bytes([2]*32)
+    proof_hash = bytes([proof_fill] * 32)
+    pi_hash = bytes([pi_fill] * 32)
 
     client.resolve_market_threshold(
         market=market,
@@ -63,7 +70,7 @@ def test_localnet_resolve_flow():
         resolver_hash=resolver,
         open_ts=open_ts,
         resolve_ts=resolve_ts,
-        outcome=MarketOutcome.Yes,
+        outcome=outcome,
         proof_hash=proof_hash,
         public_inputs_hash=pi_hash,
         notary_keypairs=[oracle_kp],
@@ -73,6 +80,6 @@ def test_localnet_resolve_flow():
     acct = client.fetch_market(market)
     assert acct is not None
     assert acct.status == MarketStatus.Resolved
-    assert acct.outcome == MarketOutcome.Yes
+    assert acct.outcome == outcome
     assert acct.proof_hash == proof_hash
     assert acct.public_inputs_hash == pi_hash
