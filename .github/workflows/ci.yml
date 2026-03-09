@@ -35,6 +35,9 @@ jobs:
       - name: Cargo check (program)
         run: cargo check -p prophet
 
+      - name: Cargo test (program reliability)
+        run: cargo test -p prophet --lib
+
   anchor-ts:
     name: Anchor TS Integration
     runs-on: ubuntu-latest

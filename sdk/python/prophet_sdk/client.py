@@ -575,6 +575,54 @@ class ProphetClient:
         ix = Instruction(self.program_id, data, keys)
         return submit_and_confirm(self.client, [ix], self.payer)
 
+    def set_market_fee_config(self, market: Pubkey, fee_recipient: Pubkey, protocol_fee_bps: int) -> str:
+        data = self._get_discriminator("set_market_fee_config")
+        data += bytes(fee_recipient)
+        data += struct.pack("<H", int(protocol_fee_bps))
+
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
+    def withdraw_protocol_fees(
+        self,
+        market: Pubkey,
+        quote_vault: Pubkey,
+        amount_atoms: int,
+        fee_recipient_quote_ata: Optional[Pubkey] = None,
+        quote_mint: Optional[Pubkey] = None,
+    ) -> str:
+        market_account = self.fetch_market(market)
+        if market_account is None:
+            raise ValueError(f"Market {market} not found")
+
+        if fee_recipient_quote_ata is None:
+            resolved_quote_mint = quote_mint or market_account.quote_mint
+            fee_recipient_quote_ata = ensure_ata(
+                self.client,
+                self.payer,
+                market_account.fee_recipient,
+                resolved_quote_mint,
+            )
+
+        data = self._get_discriminator("withdraw_protocol_fees")
+        data += struct.pack("<Q", int(amount_atoms))
+
+        keys = [
+            AccountMeta(market, False, True),
+            AccountMeta(self.payer.pubkey(), True, False),
+            AccountMeta(quote_vault, False, True),
+            AccountMeta(fee_recipient_quote_ata, False, True),
+            AccountMeta(TOKEN_PROGRAM_ID, False, False),
+        ]
+
+        ix = Instruction(self.program_id, data, keys)
+        return submit_and_confirm(self.client, [ix], self.payer)
+
     def emergency_resolve_invalid(
         self,
         market: Pubkey,

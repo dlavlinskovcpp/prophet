@@ -3,6 +3,7 @@
 Prophet is a Solana/Anchor prediction market protocol with:
 
 - on-chain order placement, matching, refunds, and redemption
+- per-market protocol fee config, taker-fee accrual, and treasury withdrawal
 - authority-governed lifecycle controls for lock/unlock, schedule updates, and emergency invalidation
 - permissionless threshold-notary v2 resolution
 - an off-chain attester service for zkTLS verification and resolve transaction assembly
@@ -121,6 +122,12 @@ zkTLS config guardrails:
 bash scripts/check_zktls.sh
 ```
 
+Program reliability sweep:
+
+```bash
+make reliability
+```
+
 ## Release And Deploy
 
 Release environments are defined in `deploy/environments/*.json` for `localnet`, `devnet`, and `mainnet-beta`.
@@ -160,6 +167,7 @@ For the full procedure, including rollback expectations, see `docs/release_runbo
 - Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.
 - The AWS KMS backend preloads configured Ed25519 key IDs, derives Solana pubkeys from `GetPublicKey`, and signs raw resolution messages with `Sign`.
 - Release bundles now archive the program binary, IDL, TS types, and release manifest for rollback.
+- Market authorities can set a treasury recipient plus protocol fee bps before the first order. Fee reserve is prefunded with each order, fees accrue only on taker executions, and unused reserve is returned through normal refund flows.
 - Do not commit private keys.
 
 ## License

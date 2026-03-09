@@ -98,4 +98,14 @@ pub enum ErrorCode {
     MarketNotLocked,
     #[msg("Invalid new authority")]
     InvalidNewAuthority,
+    #[msg("Protocol fee bps is invalid")]
+    InvalidProtocolFeeBps,
+    #[msg("Market fee config is frozen after the first order")]
+    FeeConfigFrozen,
+    #[msg("No protocol fees available")]
+    NoProtocolFees,
+    #[msg("Invalid protocol fee recipient")]
+    InvalidFeeRecipient,
+    #[msg("Match quantity is too small to settle safely under rounding constraints")]
+    MatchQtyTooSmallForRounding,
 }

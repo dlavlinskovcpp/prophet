@@ -13,6 +13,8 @@ def test_sdk_has_new_helpers():
     assert hasattr(ProphetClient, "unlock_market")
     assert hasattr(ProphetClient, "sync_market_status")
     assert hasattr(ProphetClient, "update_market_schedule")
+    assert hasattr(ProphetClient, "set_market_fee_config")
+    assert hasattr(ProphetClient, "withdraw_protocol_fees")
     assert hasattr(ProphetClient, "emergency_resolve_invalid")
     assert hasattr(ProphetClient, "initialize_market_v2")
     assert hasattr(ProphetClient, "initialize_notary_config")

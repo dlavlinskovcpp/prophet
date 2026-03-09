@@ -2,6 +2,7 @@
 use anchor_lang::prelude::*;
 
 pub const PROBABILITY_SCALE: u32 = 100_000_000; // 1e8
+pub const MAX_PROTOCOL_FEE_BPS: u16 = 1_000; // 10%
 
 /// Maximum number of notaries allowed in a NotaryConfig.
 /// Kept small to bound account size and on-chain scanning/lookup.
@@ -22,6 +23,8 @@ pub struct Market {
     pub quote_mint: Pubkey,
     // 32
     pub quote_vault: Pubkey,
+    // 32
+    pub fee_recipient: Pubkey,
 
     // 32 (threshold notary config; Pubkey::default() means not configured)
     pub notary_config: Pubkey,
@@ -40,6 +43,8 @@ pub struct Market {
     // 8 * 2 = 16
     pub min_order_qty_atoms: u64,
     pub min_escrow_atoms: u64,
+    // 8
+    pub accrued_protocol_fees_atoms: u64,
 
     // 8
     pub next_order_seq: u64,
@@ -51,6 +56,10 @@ pub struct Market {
 
     // 2
     pub max_open_orders_per_user: u16,
+    // 2
+    pub protocol_fee_bps: u16,
+    // 6
+    pub _reserved0: [u8; 6],
 
     // 1
     pub quote_decimals: u8,
@@ -66,27 +75,27 @@ impl Market {
     // Discriminator (8) + fields.
     //
     // authority(32) + oracle_authority(32) + quote_mint(32) + quote_vault(32)
-    // + notary_config(32)
+    // + fee_recipient(32) + notary_config(32)
     // + resolver/proof/public_inputs (96)
     // + times (32)
-    // + mins (16)
+    // + mins (16) + accrued_protocol_fees_atoms (8)
     // + next_order_seq (8)
     // + open_orders_total (4) + max_open_orders_total (4)
-    // + max_open_orders_per_user (2)
+    // + max_open_orders_per_user (2) + protocol_fee_bps (2) + reserved0 (6)
     // + quote_decimals/status/outcome/bump (4)
     //
-    // Total fields = 324 bytes; allocate 336 bytes for headroom/alignment.
-    pub const LEN: usize = 336;
+    // Total fields = 372 bytes; allocate 384 bytes for headroom/alignment.
+    pub const LEN: usize = 384;
 }
 
 #[account]
 pub struct NotaryConfig {
-    pub admin: Pubkey, // 32
-    pub threshold: u8, // 1
-    pub notary_count: u8, // 1
-    pub bump: u8, // 1
-    pub _reserved0: [u8; 5], // 5 (padding + future flags)
-    pub version: u64, // 8
+    pub admin: Pubkey,                       // 32
+    pub threshold: u8,                       // 1
+    pub notary_count: u8,                    // 1
+    pub bump: u8,                            // 1
+    pub _reserved0: [u8; 5],                 // 5 (padding + future flags)
+    pub version: u64,                        // 8
     pub notary_keys: [Pubkey; MAX_NOTARIES], // MAX_NOTARIES * 32
 }
 
@@ -112,6 +121,7 @@ pub struct Order {
     pub limit_p_yes_e8: u32,
     pub qty_remaining_atoms: u64,
     pub escrow_remaining_atoms: u64,
+    pub fee_remaining_atoms: u64,
     pub created_ts: i64,
 }
 
@@ -134,14 +144,14 @@ impl Position {
     pub const LEN: usize = 128;
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum MarketStatus {
     Open,
     Locked,
     Resolved,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum MarketOutcome {
     Undecided,
     Yes,
@@ -149,7 +159,7 @@ pub enum MarketOutcome {
     Invalid,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace, Debug)]
 pub enum OrderSide {
     BuyYes,
     BuyNo,

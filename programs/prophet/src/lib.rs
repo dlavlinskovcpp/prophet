@@ -1,20 +1,47 @@
 // programs/prophet/src/lib.rs
+use crate::errors::ErrorCode;
+use crate::events::*;
+use crate::state::*;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::ed25519_program::ID as ED25519_ID_NATIVE;
 use anchor_lang::solana_program::sysvar::instructions::{
     load_instruction_at_checked, ID as INSTRUCTIONS_ID,
 };
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
-use crate::state::*;
-use crate::errors::ErrorCode;
-use crate::events::*;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
-pub mod state;
 pub mod errors;
 pub mod events;
+pub mod state;
 
 declare_id!("913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A");
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MatchOrderState {
+    side: OrderSide,
+    seq: u64,
+    limit_p_yes_e8: u32,
+    qty_remaining_atoms: u64,
+    escrow_remaining_atoms: u64,
+    fee_remaining_atoms: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MatchSettlement {
+    maker_seq: u64,
+    taker_side: OrderSide,
+    p_exec_e8: u32,
+    qty_atoms: u64,
+    cost_yes_atoms: u64,
+    cost_no_atoms: u64,
+    refund_yes_atoms: u64,
+    refund_no_atoms: u64,
+    fee_refund_yes_atoms: u64,
+    fee_refund_no_atoms: u64,
+    protocol_fee_yes_atoms: u64,
+    protocol_fee_no_atoms: u64,
+    total_protocol_fee_atoms: u64,
+}
 
 #[program]
 pub mod prophet {
@@ -31,14 +58,23 @@ pub mod prophet {
         let cfg = &mut ctx.accounts.notary_config;
 
         require!(!notary_keys.is_empty(), ErrorCode::InvalidNotarySet);
-        require!(notary_keys.len() <= MAX_NOTARIES, ErrorCode::InvalidNotarySet);
+        require!(
+            notary_keys.len() <= MAX_NOTARIES,
+            ErrorCode::InvalidNotarySet
+        );
         require!(threshold > 0, ErrorCode::InvalidNotaryThreshold);
-        require!((threshold as usize) <= notary_keys.len(), ErrorCode::InvalidNotaryThreshold);
+        require!(
+            (threshold as usize) <= notary_keys.len(),
+            ErrorCode::InvalidNotaryThreshold
+        );
 
         // Ensure unique keys
         for i in 0..notary_keys.len() {
             for j in (i + 1)..notary_keys.len() {
-                require!(notary_keys[i] != notary_keys[j], ErrorCode::DuplicateNotaryKey);
+                require!(
+                    notary_keys[i] != notary_keys[j],
+                    ErrorCode::DuplicateNotaryKey
+                );
             }
         }
 
@@ -67,16 +103,28 @@ pub mod prophet {
     ) -> Result<()> {
         let cfg = &mut ctx.accounts.notary_config;
 
-        require!(ctx.accounts.admin.key() == cfg.admin, ErrorCode::UnauthorizedAdmin);
+        require!(
+            ctx.accounts.admin.key() == cfg.admin,
+            ErrorCode::UnauthorizedAdmin
+        );
 
         require!(!notary_keys.is_empty(), ErrorCode::InvalidNotarySet);
-        require!(notary_keys.len() <= MAX_NOTARIES, ErrorCode::InvalidNotarySet);
+        require!(
+            notary_keys.len() <= MAX_NOTARIES,
+            ErrorCode::InvalidNotarySet
+        );
         require!(threshold > 0, ErrorCode::InvalidNotaryThreshold);
-        require!((threshold as usize) <= notary_keys.len(), ErrorCode::InvalidNotaryThreshold);
+        require!(
+            (threshold as usize) <= notary_keys.len(),
+            ErrorCode::InvalidNotaryThreshold
+        );
 
         for i in 0..notary_keys.len() {
             for j in (i + 1)..notary_keys.len() {
-                require!(notary_keys[i] != notary_keys[j], ErrorCode::DuplicateNotaryKey);
+                require!(
+                    notary_keys[i] != notary_keys[j],
+                    ErrorCode::DuplicateNotaryKey
+                );
             }
         }
 
@@ -112,11 +160,12 @@ pub mod prophet {
         require!(resolve_ts >= lock_ts, ErrorCode::InvalidTimeRange);
 
         market.authority = ctx.accounts.authority.key();
-    // deprecated field retained for account layout compatibility; unused in threshold flow
+        // deprecated field retained for account layout compatibility; unused in threshold flow
         market.oracle_authority = ctx.accounts.oracle_authority.key();
 
         market.quote_mint = ctx.accounts.quote_mint.key();
         market.quote_vault = ctx.accounts.quote_vault.key();
+        market.fee_recipient = ctx.accounts.authority.key();
         market.quote_decimals = ctx.accounts.quote_mint.decimals;
 
         market.notary_config = ctx.accounts.notary_config.key();
@@ -132,8 +181,11 @@ pub mod prophet {
 
         market.min_order_qty_atoms = min_order_qty_atoms;
         market.min_escrow_atoms = min_escrow_atoms;
+        market.accrued_protocol_fees_atoms = 0;
         market.max_open_orders_per_user = max_open_orders_per_user;
         market.max_open_orders_total = max_open_orders_total;
+        market.protocol_fee_bps = 0;
+        market._reserved0 = [0; 6];
 
         market.next_order_seq = 0;
         market.open_orders_total = 0;
@@ -155,8 +207,14 @@ pub mod prophet {
     ) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_market_authority(market, &ctx.accounts.authority.key())?;
-        require!(new_authority != Pubkey::default(), ErrorCode::InvalidNewAuthority);
-        require!(new_authority != market.authority, ErrorCode::InvalidNewAuthority);
+        require!(
+            new_authority != Pubkey::default(),
+            ErrorCode::InvalidNewAuthority
+        );
+        require!(
+            new_authority != market.authority,
+            ErrorCode::InvalidNewAuthority
+        );
 
         let old_authority = market.authority;
         market.authority = new_authority;
@@ -176,7 +234,10 @@ pub mod prophet {
     pub fn lock_market(ctx: Context<UpdateMarketAuthority>) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_market_authority(market, &ctx.accounts.authority.key())?;
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+        require!(
+            market.status != MarketStatus::Resolved,
+            ErrorCode::InvalidStage
+        );
 
         let old_status = market.status;
         if old_status != MarketStatus::Locked {
@@ -200,7 +261,10 @@ pub mod prophet {
     pub fn unlock_market(ctx: Context<UpdateMarketAuthority>) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_market_authority(market, &ctx.accounts.authority.key())?;
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+        require!(
+            market.status != MarketStatus::Resolved,
+            ErrorCode::InvalidStage
+        );
 
         let now = Clock::get()?.unix_timestamp;
         require!(now < market.lock_ts, ErrorCode::CannotUnlockAfterLockTs);
@@ -257,11 +321,17 @@ pub mod prophet {
     ) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_market_authority(market, &ctx.accounts.authority.key())?;
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
+        require!(
+            market.status != MarketStatus::Resolved,
+            ErrorCode::InvalidStage
+        );
 
         let now = Clock::get()?.unix_timestamp;
         require!(now < market.lock_ts, ErrorCode::InvalidStage);
-        require!(market.open_orders_total == 0, ErrorCode::MarketHasOpenOrders);
+        require!(
+            market.open_orders_total == 0,
+            ErrorCode::MarketHasOpenOrders
+        );
         require!(new_lock_ts >= market.open_ts, ErrorCode::InvalidTimeRange);
         require!(new_resolve_ts >= new_lock_ts, ErrorCode::InvalidTimeRange);
 
@@ -283,6 +353,47 @@ pub mod prophet {
     }
 
     // -------------------------------------------------------------------------
+    // 1.9 Update Market Fee Config
+    // -------------------------------------------------------------------------
+    pub fn set_market_fee_config(
+        ctx: Context<UpdateMarketAuthority>,
+        fee_recipient: Pubkey,
+        protocol_fee_bps: u16,
+    ) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(
+            market.status != MarketStatus::Resolved,
+            ErrorCode::InvalidStage
+        );
+        require!(market.next_order_seq == 0, ErrorCode::FeeConfigFrozen);
+        require!(
+            fee_recipient != Pubkey::default(),
+            ErrorCode::InvalidFeeRecipient
+        );
+        require!(
+            protocol_fee_bps <= MAX_PROTOCOL_FEE_BPS,
+            ErrorCode::InvalidProtocolFeeBps
+        );
+
+        let old_fee_recipient = market.fee_recipient;
+        let old_protocol_fee_bps = market.protocol_fee_bps;
+        market.fee_recipient = fee_recipient;
+        market.protocol_fee_bps = protocol_fee_bps;
+
+        emit!(MarketFeeConfigUpdated {
+            market: market.key(),
+            authority: ctx.accounts.authority.key(),
+            old_fee_recipient,
+            new_fee_recipient: fee_recipient,
+            old_protocol_fee_bps,
+            new_protocol_fee_bps: protocol_fee_bps,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
     // 2. Place Order
     // -------------------------------------------------------------------------
     pub fn place_order(
@@ -298,24 +409,53 @@ pub mod prophet {
         let owner = &ctx.accounts.owner;
         let now = Clock::get()?.unix_timestamp;
 
-        require!(market.status == MarketStatus::Open, ErrorCode::MarketNotOpen);
+        require!(
+            market.status == MarketStatus::Open,
+            ErrorCode::MarketNotOpen
+        );
         require!(now >= market.open_ts, ErrorCode::MarketNotOpenYet);
         require!(now < market.lock_ts, ErrorCode::MarketLocked);
 
-        require!(order_seq == market.next_order_seq, ErrorCode::InvalidOrderSeq);
-        require!(qty_atoms >= market.min_order_qty_atoms, ErrorCode::OrderQtyTooSmall);
-        require!(limit_p_yes_e8 <= PROBABILITY_SCALE, ErrorCode::InvalidProbability);
-        require!(position.open_orders < market.max_open_orders_per_user, ErrorCode::UserOpenOrdersLimit);
-        require!(market.open_orders_total < market.max_open_orders_total, ErrorCode::GlobalOpenOrdersLimit);
+        require!(
+            order_seq == market.next_order_seq,
+            ErrorCode::InvalidOrderSeq
+        );
+        require!(
+            qty_atoms >= market.min_order_qty_atoms,
+            ErrorCode::OrderQtyTooSmall
+        );
+        require!(
+            limit_p_yes_e8 <= PROBABILITY_SCALE,
+            ErrorCode::InvalidProbability
+        );
+        require!(
+            position.open_orders < market.max_open_orders_per_user,
+            ErrorCode::UserOpenOrdersLimit
+        );
+        require!(
+            market.open_orders_total < market.max_open_orders_total,
+            ErrorCode::GlobalOpenOrdersLimit
+        );
 
         let escrow_atoms = if side == OrderSide::BuyYes {
-            mul_div_ceil(qty_atoms as u128, limit_p_yes_e8 as u128, PROBABILITY_SCALE as u128)?
+            mul_div_ceil(
+                qty_atoms as u128,
+                limit_p_yes_e8 as u128,
+                PROBABILITY_SCALE as u128,
+            )?
         } else {
             let p_no = PROBABILITY_SCALE - limit_p_yes_e8;
             mul_div_ceil(qty_atoms as u128, p_no as u128, PROBABILITY_SCALE as u128)?
         };
+        let fee_reserve_atoms = compute_protocol_fee_ceil(escrow_atoms, market.protocol_fee_bps)?;
+        let total_deposit_atoms = escrow_atoms
+            .checked_add(fee_reserve_atoms)
+            .ok_or(ErrorCode::MathOverflow)?;
 
-        require!(escrow_atoms >= market.min_escrow_atoms, ErrorCode::EscrowTooSmall);
+        require!(
+            escrow_atoms >= market.min_escrow_atoms,
+            ErrorCode::EscrowTooSmall
+        );
 
         token::transfer(
             CpiContext::new(
@@ -326,7 +466,7 @@ pub mod prophet {
                     authority: owner.to_account_info(),
                 },
             ),
-            escrow_atoms,
+            total_deposit_atoms,
         )?;
 
         order.market = market.key();
@@ -336,6 +476,7 @@ pub mod prophet {
         order.limit_p_yes_e8 = limit_p_yes_e8;
         order.qty_remaining_atoms = qty_atoms;
         order.escrow_remaining_atoms = escrow_atoms;
+        order.fee_remaining_atoms = fee_reserve_atoms;
         order.created_ts = now;
 
         if position.market == Pubkey::default() {
@@ -343,9 +484,18 @@ pub mod prophet {
             position.owner = owner.key();
         }
 
-        position.open_orders = position.open_orders.checked_add(1).ok_or(ErrorCode::MathOverflow)?;
-        market.next_order_seq = market.next_order_seq.checked_add(1).ok_or(ErrorCode::MathOverflow)?;
-        market.open_orders_total = market.open_orders_total.checked_add(1).ok_or(ErrorCode::MathOverflow)?;
+        position.open_orders = position
+            .open_orders
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        market.next_order_seq = market
+            .next_order_seq
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        market.open_orders_total = market
+            .open_orders_total
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         emit!(OrderPlaced {
             market: market.key(),
@@ -356,6 +506,7 @@ pub mod prophet {
             limit_p_yes_e8,
             qty_atoms,
             escrow_atoms,
+            fee_reserve_atoms,
         });
 
         Ok(())
@@ -364,10 +515,7 @@ pub mod prophet {
     // -------------------------------------------------------------------------
     // 3. Match Orders
     // -------------------------------------------------------------------------
-    pub fn match_orders(
-        ctx: Context<MatchOrders>,
-        max_qty_atoms: u64,
-    ) -> Result<()> {
+    pub fn match_orders(ctx: Context<MatchOrders>, max_qty_atoms: u64) -> Result<()> {
         let market = &mut ctx.accounts.market;
         let order_yes = &mut ctx.accounts.order_yes;
         let order_no = &mut ctx.accounts.order_no;
@@ -378,7 +526,10 @@ pub mod prophet {
 
         let now = Clock::get()?.unix_timestamp;
 
-        require!(market.status == MarketStatus::Open, ErrorCode::MarketNotOpen);
+        require!(
+            market.status == MarketStatus::Open,
+            ErrorCode::MarketNotOpen
+        );
         require!(now >= market.open_ts, ErrorCode::MarketNotOpenYet);
         require!(now < market.lock_ts, ErrorCode::MarketLocked);
 
@@ -388,96 +539,110 @@ pub mod prophet {
         require!(order_no.market == market.key(), ErrorCode::InvalidMarket);
 
         // Prevent self-matching (wash trading)
-        require!(order_yes.owner != order_no.owner, ErrorCode::SelfMatchNotAllowed);
+        require!(
+            order_yes.owner != order_no.owner,
+            ErrorCode::SelfMatchNotAllowed
+        );
 
-        let p_bid = order_yes.limit_p_yes_e8;
-        let p_ask = order_no.limit_p_yes_e8;
-        require!(p_bid >= p_ask, ErrorCode::NoCross);
-
-        let (maker_seq, p_exec_e8) = if order_yes.seq < order_no.seq {
-            (order_yes.seq, order_yes.limit_p_yes_e8)
-        } else {
-            (order_no.seq, order_no.limit_p_yes_e8)
+        let mut order_yes_state = MatchOrderState {
+            side: order_yes.side,
+            seq: order_yes.seq,
+            limit_p_yes_e8: order_yes.limit_p_yes_e8,
+            qty_remaining_atoms: order_yes.qty_remaining_atoms,
+            escrow_remaining_atoms: order_yes.escrow_remaining_atoms,
+            fee_remaining_atoms: order_yes.fee_remaining_atoms,
+        };
+        let mut order_no_state = MatchOrderState {
+            side: order_no.side,
+            seq: order_no.seq,
+            limit_p_yes_e8: order_no.limit_p_yes_e8,
+            qty_remaining_atoms: order_no.qty_remaining_atoms,
+            escrow_remaining_atoms: order_no.escrow_remaining_atoms,
+            fee_remaining_atoms: order_no.fee_remaining_atoms,
         };
 
-        let match_qty = std::cmp::min(
+        let settlement = settle_crossing_orders(
+            &mut order_yes_state,
+            &mut order_no_state,
+            market.protocol_fee_bps,
             max_qty_atoms,
-            std::cmp::min(order_yes.qty_remaining_atoms, order_no.qty_remaining_atoms),
-        );
-        require!(match_qty > 0, ErrorCode::ZeroMatchQty);
-
-        let cost_yes = mul_div_floor(match_qty as u128, p_exec_e8 as u128, PROBABILITY_SCALE as u128)?;
-        let cost_no = match_qty.checked_sub(cost_yes).ok_or(ErrorCode::MathOverflow)?;
-
-        // Update Orders (Debit with checked math)
-        order_yes.qty_remaining_atoms = order_yes.qty_remaining_atoms.checked_sub(match_qty)
-            .ok_or(ErrorCode::MathOverflow)?;
-        order_yes.escrow_remaining_atoms = order_yes.escrow_remaining_atoms.checked_sub(cost_yes)
-            .ok_or(ErrorCode::InsufficientEscrow)?;
-
-        order_no.qty_remaining_atoms = order_no.qty_remaining_atoms.checked_sub(match_qty)
-            .ok_or(ErrorCode::MathOverflow)?;
-        order_no.escrow_remaining_atoms = order_no.escrow_remaining_atoms.checked_sub(cost_no)
-            .ok_or(ErrorCode::InsufficientEscrow)?;
-
-        // Refunds
-        let escrow_req_yes = mul_div_ceil(
-            order_yes.qty_remaining_atoms as u128,
-            order_yes.limit_p_yes_e8 as u128,
-            PROBABILITY_SCALE as u128
         )?;
-        let refund_yes = if order_yes.escrow_remaining_atoms > escrow_req_yes {
-            let diff = order_yes.escrow_remaining_atoms - escrow_req_yes;
-            order_yes.escrow_remaining_atoms = escrow_req_yes;
-            diff
-        } else { 0 };
 
-        let p_no_limit = PROBABILITY_SCALE - order_no.limit_p_yes_e8;
-        let escrow_req_no = mul_div_ceil(
-            order_no.qty_remaining_atoms as u128,
-            p_no_limit as u128,
-            PROBABILITY_SCALE as u128
-        )?;
-        let refund_no = if order_no.escrow_remaining_atoms > escrow_req_no {
-            let diff = order_no.escrow_remaining_atoms - escrow_req_no;
-            order_no.escrow_remaining_atoms = escrow_req_no;
-            diff
-        } else { 0 };
+        order_yes.qty_remaining_atoms = order_yes_state.qty_remaining_atoms;
+        order_yes.escrow_remaining_atoms = order_yes_state.escrow_remaining_atoms;
+        order_yes.fee_remaining_atoms = order_yes_state.fee_remaining_atoms;
+
+        order_no.qty_remaining_atoms = order_no_state.qty_remaining_atoms;
+        order_no.escrow_remaining_atoms = order_no_state.escrow_remaining_atoms;
+        order_no.fee_remaining_atoms = order_no_state.fee_remaining_atoms;
+        market.accrued_protocol_fees_atoms = market
+            .accrued_protocol_fees_atoms
+            .checked_add(settlement.total_protocol_fee_atoms)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // Update Positions
-        position_yes.pending_refunds_atoms = position_yes.pending_refunds_atoms.checked_add(refund_yes)
+        position_yes.pending_refunds_atoms = position_yes
+            .pending_refunds_atoms
+            .checked_add(settlement.refund_yes_atoms)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_add(settlement.fee_refund_yes_atoms)
             .ok_or(ErrorCode::MathOverflow)?;
-        position_no.pending_refunds_atoms = position_no.pending_refunds_atoms.checked_add(refund_no)
+        position_no.pending_refunds_atoms = position_no
+            .pending_refunds_atoms
+            .checked_add(settlement.refund_no_atoms)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_add(settlement.fee_refund_no_atoms)
             .ok_or(ErrorCode::MathOverflow)?;
 
-        position_yes.yes_shares_atoms = position_yes.yes_shares_atoms.checked_add(match_qty)
+        position_yes.yes_shares_atoms = position_yes
+            .yes_shares_atoms
+            .checked_add(settlement.qty_atoms)
             .ok_or(ErrorCode::MathOverflow)?;
-        position_no.no_shares_atoms = position_no.no_shares_atoms.checked_add(match_qty)
+        position_no.no_shares_atoms = position_no
+            .no_shares_atoms
+            .checked_add(settlement.qty_atoms)
             .ok_or(ErrorCode::MathOverflow)?;
 
         emit!(OrdersMatched {
             market: market.key(),
             order_yes: order_yes.key(),
             order_no: order_no.key(),
-            maker_order_seq: maker_seq,
-            p_exec_e8,
-            qty_atoms: match_qty,
-            cost_yes_atoms: cost_yes,
-            cost_no_atoms: cost_no,
-            refund_yes_atoms: refund_yes,
-            refund_no_atoms: refund_no,
+            maker_order_seq: settlement.maker_seq,
+            taker_side: settlement.taker_side,
+            p_exec_e8: settlement.p_exec_e8,
+            qty_atoms: settlement.qty_atoms,
+            cost_yes_atoms: settlement.cost_yes_atoms,
+            cost_no_atoms: settlement.cost_no_atoms,
+            refund_yes_atoms: settlement.refund_yes_atoms,
+            refund_no_atoms: settlement.refund_no_atoms,
+            fee_refund_yes_atoms: settlement.fee_refund_yes_atoms,
+            fee_refund_no_atoms: settlement.fee_refund_no_atoms,
+            protocol_fee_yes_atoms: settlement.protocol_fee_yes_atoms,
+            protocol_fee_no_atoms: settlement.protocol_fee_no_atoms,
         });
 
         // Close filled orders
         if order_yes.qty_remaining_atoms == 0 {
-            market.open_orders_total = market.open_orders_total.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
-            position_yes.open_orders = position_yes.open_orders.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
+            market.open_orders_total = market
+                .open_orders_total
+                .checked_sub(1)
+                .ok_or(ErrorCode::MathOverflow)?;
+            position_yes.open_orders = position_yes
+                .open_orders
+                .checked_sub(1)
+                .ok_or(ErrorCode::MathOverflow)?;
             order_yes.close(ctx.accounts.owner_yes.to_account_info())?;
         }
 
         if order_no.qty_remaining_atoms == 0 {
-            market.open_orders_total = market.open_orders_total.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
-            position_no.open_orders = position_no.open_orders.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
+            market.open_orders_total = market
+                .open_orders_total
+                .checked_sub(1)
+                .ok_or(ErrorCode::MathOverflow)?;
+            position_no.open_orders = position_no
+                .open_orders
+                .checked_sub(1)
+                .ok_or(ErrorCode::MathOverflow)?;
             order_no.close(ctx.accounts.owner_no.to_account_info())?;
         }
 
@@ -492,14 +657,26 @@ pub mod prophet {
         let position = &mut ctx.accounts.position;
         let market = &mut ctx.accounts.market;
 
-        let refund = order.escrow_remaining_atoms;
+        let fee_refund = order.fee_remaining_atoms;
+        let refund = order
+            .escrow_remaining_atoms
+            .checked_add(fee_refund)
+            .ok_or(ErrorCode::MathOverflow)?;
         let qty_remaining = order.qty_remaining_atoms;
 
-        position.pending_refunds_atoms = position.pending_refunds_atoms.checked_add(refund)
+        position.pending_refunds_atoms = position
+            .pending_refunds_atoms
+            .checked_add(refund)
             .ok_or(ErrorCode::MathOverflow)?;
 
-        market.open_orders_total = market.open_orders_total.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
-        position.open_orders = position.open_orders.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
+        market.open_orders_total = market
+            .open_orders_total
+            .checked_sub(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        position.open_orders = position
+            .open_orders
+            .checked_sub(1)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         emit!(OrderCancelled {
             market: market.key(),
@@ -507,6 +684,7 @@ pub mod prophet {
             owner: ctx.accounts.owner.key(),
             qty_remaining_atoms: qty_remaining,
             refund_atoms: refund,
+            fee_refund_atoms: fee_refund,
         });
 
         order.close(ctx.accounts.owner.to_account_info())?;
@@ -524,17 +702,18 @@ pub mod prophet {
         let claim_amount = std::cmp::min(amount_atoms, position.pending_refunds_atoms);
         require!(claim_amount > 0, ErrorCode::NoRefunds);
 
-        position.pending_refunds_atoms = position.pending_refunds_atoms.checked_sub(claim_amount)
+        position.pending_refunds_atoms = position
+            .pending_refunds_atoms
+            .checked_sub(claim_amount)
             .ok_or(ErrorCode::MathOverflow)?;
 
-        let open_ts_bytes = market.open_ts.to_le_bytes();
-        let seeds = &[
+        let open_ts_bytes = market_signer_open_ts_bytes(market);
+        let signer_seeds = &[
             b"market".as_ref(),
             market.resolver_hash.as_ref(),
             open_ts_bytes.as_ref(),
-            &[market.bump]
+            std::slice::from_ref(&market.bump),
         ];
-        let signer = &[&seeds[..]];
 
         token::transfer(
             CpiContext::new_with_signer(
@@ -544,7 +723,7 @@ pub mod prophet {
                     to: ctx.accounts.owner_quote_ata.to_account_info(),
                     authority: market.to_account_info(),
                 },
-                signer,
+                &[signer_seeds],
             ),
             claim_amount,
         )?;
@@ -553,6 +732,76 @@ pub mod prophet {
             market: market.key(),
             owner: position.owner,
             amount_atoms: claim_amount,
+        });
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // 5.1 Withdraw Protocol Fees
+    // -------------------------------------------------------------------------
+    pub fn withdraw_protocol_fees(
+        ctx: Context<WithdrawProtocolFees>,
+        amount_atoms: u64,
+    ) -> Result<()> {
+        let market = &mut ctx.accounts.market;
+        require_market_authority(market, &ctx.accounts.authority.key())?;
+        require!(
+            ctx.accounts.quote_vault.key() == market.quote_vault,
+            ErrorCode::InvalidFeeRecipient
+        );
+        require!(
+            ctx.accounts.quote_vault.mint == market.quote_mint,
+            ErrorCode::InvalidFeeRecipient
+        );
+        require!(
+            ctx.accounts.quote_vault.owner == market.key(),
+            ErrorCode::InvalidFeeRecipient
+        );
+        require!(
+            ctx.accounts.fee_recipient_quote_ata.owner == market.fee_recipient,
+            ErrorCode::InvalidFeeRecipient
+        );
+        require!(
+            ctx.accounts.fee_recipient_quote_ata.mint == market.quote_mint,
+            ErrorCode::InvalidFeeRecipient
+        );
+
+        let withdraw_amount = std::cmp::min(amount_atoms, market.accrued_protocol_fees_atoms);
+        require!(withdraw_amount > 0, ErrorCode::NoProtocolFees);
+
+        market.accrued_protocol_fees_atoms = market
+            .accrued_protocol_fees_atoms
+            .checked_sub(withdraw_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        let open_ts_bytes = market_signer_open_ts_bytes(market);
+        let signer_seeds = &[
+            b"market".as_ref(),
+            market.resolver_hash.as_ref(),
+            open_ts_bytes.as_ref(),
+            std::slice::from_ref(&market.bump),
+        ];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.quote_vault.to_account_info(),
+                    to: ctx.accounts.fee_recipient_quote_ata.to_account_info(),
+                    authority: market.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            withdraw_amount,
+        )?;
+
+        emit!(ProtocolFeesWithdrawn {
+            market: market.key(),
+            authority: ctx.accounts.authority.key(),
+            fee_recipient: market.fee_recipient,
+            amount_atoms: withdraw_amount,
+            remaining_accrued_atoms: market.accrued_protocol_fees_atoms,
         });
 
         Ok(())
@@ -572,14 +821,29 @@ pub mod prophet {
         let now = Clock::get()?.unix_timestamp;
 
         require!(now >= market.resolve_ts, ErrorCode::MarketNotResolvableYet);
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
-        require!(outcome != MarketOutcome::Undecided, ErrorCode::InvalidOutcome);
+        require!(
+            market.status != MarketStatus::Resolved,
+            ErrorCode::InvalidStage
+        );
+        require!(
+            outcome != MarketOutcome::Undecided,
+            ErrorCode::InvalidOutcome
+        );
 
-        require!(market.notary_config != Pubkey::default(), ErrorCode::NotaryConfigNotSet);
-        require!(market.notary_config == cfg.key(), ErrorCode::NotaryConfigMismatch);
+        require!(
+            market.notary_config != Pubkey::default(),
+            ErrorCode::NotaryConfigNotSet
+        );
+        require!(
+            market.notary_config == cfg.key(),
+            ErrorCode::NotaryConfigMismatch
+        );
 
         require!(cfg.threshold > 0, ErrorCode::InvalidNotaryThreshold);
-        require!((cfg.threshold as usize) <= (cfg.notary_count as usize), ErrorCode::InvalidNotaryThreshold);
+        require!(
+            (cfg.threshold as usize) <= (cfg.notary_count as usize),
+            ErrorCode::InvalidNotaryThreshold
+        );
 
         // Build expected canonical message (V2)
         let outcome_byte: u8 = match outcome {
@@ -605,7 +869,9 @@ pub mod prophet {
         // Scan a bounded window of prior instructions for Ed25519 verify ixs.
         let sysvar_info = ctx.accounts.instructions_sysvar.to_account_info();
         let current_index =
-            anchor_lang::solana_program::sysvar::instructions::load_current_index_checked(&sysvar_info)?;
+            anchor_lang::solana_program::sysvar::instructions::load_current_index_checked(
+                &sysvar_info,
+            )?;
 
         require!(current_index > 0, ErrorCode::MissingEd25519Ix);
 
@@ -637,13 +903,41 @@ pub mod prophet {
                 continue;
             }
 
-            let sig_offset = u16::from_le_bytes(data[2..4].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let sig_ix = u16::from_le_bytes(data[4..6].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let pk_offset = u16::from_le_bytes(data[6..8].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let pk_ix = u16::from_le_bytes(data[8..10].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let msg_offset = u16::from_le_bytes(data[10..12].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let msg_size = u16::from_le_bytes(data[12..14].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-            let msg_ix = u16::from_le_bytes(data[14..16].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
+            let sig_offset = u16::from_le_bytes(
+                data[2..4]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let sig_ix = u16::from_le_bytes(
+                data[4..6]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let pk_offset = u16::from_le_bytes(
+                data[6..8]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let pk_ix = u16::from_le_bytes(
+                data[8..10]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let msg_offset = u16::from_le_bytes(
+                data[10..12]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let msg_size = u16::from_le_bytes(
+                data[12..14]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
+            let msg_ix = u16::from_le_bytes(
+                data[14..16]
+                    .try_into()
+                    .map_err(|_| ErrorCode::InvalidEd25519Data)?,
+            );
 
             // Require self-contained message/sig/pubkey within the ed25519 instruction.
             require!(sig_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
@@ -651,11 +945,17 @@ pub mod prophet {
             require!(msg_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
 
             let sig_start = sig_offset as usize;
-            let sig_end = sig_start.checked_add(64).ok_or(ErrorCode::InvalidEd25519Data)?;
+            let sig_end = sig_start
+                .checked_add(64)
+                .ok_or(ErrorCode::InvalidEd25519Data)?;
             let pk_start = pk_offset as usize;
-            let pk_end = pk_start.checked_add(32).ok_or(ErrorCode::InvalidEd25519Data)?;
+            let pk_end = pk_start
+                .checked_add(32)
+                .ok_or(ErrorCode::InvalidEd25519Data)?;
             let msg_start = msg_offset as usize;
-            let msg_end = msg_start.checked_add(msg_size as usize).ok_or(ErrorCode::InvalidEd25519Data)?;
+            let msg_end = msg_start
+                .checked_add(msg_size as usize)
+                .ok_or(ErrorCode::InvalidEd25519Data)?;
 
             if sig_end > data.len() || pk_end > data.len() || msg_end > data.len() {
                 i -= 1;
@@ -718,7 +1018,10 @@ pub mod prophet {
         let market = &ctx.accounts.market;
         let position = &mut ctx.accounts.position;
 
-        require!(market.status == MarketStatus::Resolved, ErrorCode::MarketNotResolved);
+        require!(
+            market.status == MarketStatus::Resolved,
+            ErrorCode::MarketNotResolved
+        );
 
         // Capture values BEFORE zeroing for event emission
         let yes = position.yes_shares_atoms;
@@ -727,10 +1030,11 @@ pub mod prophet {
         let payout = match market.outcome {
             MarketOutcome::Yes => yes,
             MarketOutcome::No => no,
-            MarketOutcome::Invalid => {
-                yes.checked_add(no).ok_or(ErrorCode::MathOverflow)?
-                   .checked_div(2).ok_or(ErrorCode::MathOverflow)?
-            },
+            MarketOutcome::Invalid => yes
+                .checked_add(no)
+                .ok_or(ErrorCode::MathOverflow)?
+                .checked_div(2)
+                .ok_or(ErrorCode::MathOverflow)?,
             _ => 0,
         };
 
@@ -744,7 +1048,7 @@ pub mod prophet {
                 b"market".as_ref(),
                 market.resolver_hash.as_ref(),
                 open_ts_bytes.as_ref(),
-                &[market.bump]
+                &[market.bump],
             ];
             let signer = &[&seeds[..]];
 
@@ -785,7 +1089,10 @@ pub mod prophet {
     ) -> Result<()> {
         let market = &mut ctx.accounts.market;
         require_market_authority(market, &ctx.accounts.authority.key())?;
-        require!(market.status == MarketStatus::Locked, ErrorCode::MarketNotLocked);
+        require!(
+            market.status == MarketStatus::Locked,
+            ErrorCode::MarketNotLocked
+        );
 
         let now = Clock::get()?.unix_timestamp;
         market.status = MarketStatus::Resolved;
@@ -812,22 +1119,217 @@ pub mod prophet {
 
 fn mul_div_floor(a: u128, b: u128, den: u128) -> Result<u64> {
     let res = (a.checked_mul(b).ok_or(ErrorCode::MathOverflow)?)
-        .checked_div(den).ok_or(ErrorCode::MathOverflow)?;
+        .checked_div(den)
+        .ok_or(ErrorCode::MathOverflow)?;
     Ok(res as u64)
 }
 
 fn mul_div_ceil(a: u128, b: u128, den: u128) -> Result<u64> {
-    if den == 0 { return Err(ErrorCode::MathOverflow.into()); }
+    if den == 0 {
+        return Err(ErrorCode::MathOverflow.into());
+    }
     let num = a.checked_mul(b).ok_or(ErrorCode::MathOverflow)?;
-    if num == 0 { return Ok(0); }
+    if num == 0 {
+        return Ok(0);
+    }
     let den_minus_one = den.checked_sub(1).ok_or(ErrorCode::MathOverflow)?;
-    let num_plus = num.checked_add(den_minus_one).ok_or(ErrorCode::MathOverflow)?;
+    let num_plus = num
+        .checked_add(den_minus_one)
+        .ok_or(ErrorCode::MathOverflow)?;
     let res = num_plus.checked_div(den).ok_or(ErrorCode::MathOverflow)?;
     Ok(res as u64)
 }
 
+fn compute_protocol_fee_floor(amount_atoms: u64, fee_bps: u16) -> Result<u64> {
+    mul_div_floor(amount_atoms as u128, fee_bps as u128, 10_000)
+}
+
+fn compute_protocol_fee_ceil(amount_atoms: u64, fee_bps: u16) -> Result<u64> {
+    mul_div_ceil(amount_atoms as u128, fee_bps as u128, 10_000)
+}
+
+fn required_escrow_atoms(side: OrderSide, qty_atoms: u64, limit_p_yes_e8: u32) -> Result<u64> {
+    match side {
+        OrderSide::BuyYes => mul_div_ceil(
+            qty_atoms as u128,
+            limit_p_yes_e8 as u128,
+            PROBABILITY_SCALE as u128,
+        ),
+        OrderSide::BuyNo => {
+            let p_no = PROBABILITY_SCALE
+                .checked_sub(limit_p_yes_e8)
+                .ok_or(ErrorCode::MathOverflow)?;
+            mul_div_ceil(qty_atoms as u128, p_no as u128, PROBABILITY_SCALE as u128)
+        }
+    }
+}
+
+fn settle_crossing_orders(
+    order_yes: &mut MatchOrderState,
+    order_no: &mut MatchOrderState,
+    protocol_fee_bps: u16,
+    max_qty_atoms: u64,
+) -> Result<MatchSettlement> {
+    require!(order_yes.side == OrderSide::BuyYes, ErrorCode::InvalidSide);
+    require!(order_no.side == OrderSide::BuyNo, ErrorCode::InvalidSide);
+    require!(
+        order_yes.limit_p_yes_e8 <= PROBABILITY_SCALE,
+        ErrorCode::InvalidProbability
+    );
+    require!(
+        order_no.limit_p_yes_e8 <= PROBABILITY_SCALE,
+        ErrorCode::InvalidProbability
+    );
+    require!(
+        order_yes.limit_p_yes_e8 >= order_no.limit_p_yes_e8,
+        ErrorCode::NoCross
+    );
+
+    let (maker_seq, p_exec_e8, taker_side) = if order_yes.seq < order_no.seq {
+        (order_yes.seq, order_yes.limit_p_yes_e8, OrderSide::BuyNo)
+    } else {
+        (order_no.seq, order_no.limit_p_yes_e8, OrderSide::BuyYes)
+    };
+
+    let qty_atoms = std::cmp::min(
+        max_qty_atoms,
+        std::cmp::min(order_yes.qty_remaining_atoms, order_no.qty_remaining_atoms),
+    );
+    require!(qty_atoms > 0, ErrorCode::ZeroMatchQty);
+
+    let escrow_yes_after = required_escrow_atoms(
+        order_yes.side,
+        order_yes
+            .qty_remaining_atoms
+            .checked_sub(qty_atoms)
+            .ok_or(ErrorCode::MathOverflow)?,
+        order_yes.limit_p_yes_e8,
+    )?;
+    let escrow_no_after = required_escrow_atoms(
+        order_no.side,
+        order_no
+            .qty_remaining_atoms
+            .checked_sub(qty_atoms)
+            .ok_or(ErrorCode::MathOverflow)?,
+        order_no.limit_p_yes_e8,
+    )?;
+    let release_yes_total = order_yes
+        .escrow_remaining_atoms
+        .checked_sub(escrow_yes_after)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+    let release_no_total = order_no
+        .escrow_remaining_atoms
+        .checked_sub(escrow_no_after)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+    let total_release = release_yes_total
+        .checked_add(release_no_total)
+        .ok_or(ErrorCode::MathOverflow)?;
+    require!(
+        total_release >= qty_atoms,
+        ErrorCode::MatchQtyTooSmallForRounding
+    );
+
+    let target_cost_yes_atoms = mul_div_floor(
+        qty_atoms as u128,
+        p_exec_e8 as u128,
+        PROBABILITY_SCALE as u128,
+    )?;
+    let min_cost_yes_atoms = qty_atoms.saturating_sub(release_no_total);
+    let max_cost_yes_atoms = std::cmp::min(release_yes_total, qty_atoms);
+    require!(
+        min_cost_yes_atoms <= max_cost_yes_atoms,
+        ErrorCode::MatchQtyTooSmallForRounding
+    );
+    let cost_yes_atoms = target_cost_yes_atoms.clamp(min_cost_yes_atoms, max_cost_yes_atoms);
+    let cost_no_atoms = qty_atoms
+        .checked_sub(cost_yes_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+    let protocol_fee_yes_atoms = if taker_side == OrderSide::BuyYes {
+        compute_protocol_fee_floor(cost_yes_atoms, protocol_fee_bps)?
+    } else {
+        0
+    };
+    let protocol_fee_no_atoms = if taker_side == OrderSide::BuyNo {
+        compute_protocol_fee_floor(cost_no_atoms, protocol_fee_bps)?
+    } else {
+        0
+    };
+    let total_protocol_fee_atoms = protocol_fee_yes_atoms
+        .checked_add(protocol_fee_no_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+
+    order_yes.qty_remaining_atoms = order_yes
+        .qty_remaining_atoms
+        .checked_sub(qty_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+    order_yes.escrow_remaining_atoms = order_yes
+        .escrow_remaining_atoms
+        .checked_sub(cost_yes_atoms)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+    order_yes.fee_remaining_atoms = order_yes
+        .fee_remaining_atoms
+        .checked_sub(protocol_fee_yes_atoms)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+
+    order_no.qty_remaining_atoms = order_no
+        .qty_remaining_atoms
+        .checked_sub(qty_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+    order_no.escrow_remaining_atoms = order_no
+        .escrow_remaining_atoms
+        .checked_sub(cost_no_atoms)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+    order_no.fee_remaining_atoms = order_no
+        .fee_remaining_atoms
+        .checked_sub(protocol_fee_no_atoms)
+        .ok_or(ErrorCode::InsufficientEscrow)?;
+
+    let refund_yes_atoms = release_yes_total
+        .checked_sub(cost_yes_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+    let refund_no_atoms = release_no_total
+        .checked_sub(cost_no_atoms)
+        .ok_or(ErrorCode::MathOverflow)?;
+    order_yes.escrow_remaining_atoms = escrow_yes_after;
+    order_no.escrow_remaining_atoms = escrow_no_after;
+
+    let mut fee_refund_yes_atoms = 0;
+    let mut fee_refund_no_atoms = 0;
+    if order_yes.qty_remaining_atoms == 0 && order_yes.fee_remaining_atoms > 0 {
+        fee_refund_yes_atoms = order_yes.fee_remaining_atoms;
+        order_yes.fee_remaining_atoms = 0;
+    }
+    if order_no.qty_remaining_atoms == 0 && order_no.fee_remaining_atoms > 0 {
+        fee_refund_no_atoms = order_no.fee_remaining_atoms;
+        order_no.fee_remaining_atoms = 0;
+    }
+
+    Ok(MatchSettlement {
+        maker_seq,
+        taker_side,
+        p_exec_e8,
+        qty_atoms,
+        cost_yes_atoms,
+        cost_no_atoms,
+        refund_yes_atoms,
+        refund_no_atoms,
+        fee_refund_yes_atoms,
+        fee_refund_no_atoms,
+        protocol_fee_yes_atoms,
+        protocol_fee_no_atoms,
+        total_protocol_fee_atoms,
+    })
+}
+
+fn market_signer_open_ts_bytes(market: &Market) -> [u8; 8] {
+    market.open_ts.to_le_bytes()
+}
+
 fn require_market_authority(market: &Market, authority: &Pubkey) -> Result<()> {
-    require!(market.authority == *authority, ErrorCode::UnauthorizedMarketAuthority);
+    require!(
+        market.authority == *authority,
+        ErrorCode::UnauthorizedMarketAuthority
+    );
     Ok(())
 }
 
@@ -1016,6 +1518,18 @@ pub struct ClaimRefunds<'info> {
 }
 
 #[derive(Accounts)]
+pub struct WithdrawProtocolFees<'info> {
+    #[account(mut)]
+    pub market: Account<'info, Market>,
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub quote_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub fee_recipient_quote_ata: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
 pub struct ResolveMarketThreshold<'info> {
     #[account(mut)]
     pub market: Account<'info, Market>,
@@ -1047,4 +1561,271 @@ pub struct Redeem<'info> {
     )]
     pub owner_quote_ata: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reserve_for_order(
+        side: OrderSide,
+        qty_atoms: u64,
+        limit_p_yes_e8: u32,
+        fee_bps: u16,
+    ) -> u64 {
+        let escrow = required_escrow_atoms(side, qty_atoms, limit_p_yes_e8).unwrap();
+        compute_protocol_fee_ceil(escrow, fee_bps).unwrap()
+    }
+
+    #[test]
+    fn fee_reserve_covers_sampled_worst_case_taker_fees() {
+        let qty_samples = [1_u64, 2, 3, 7, 10, 37, 99, 100, 101, 10_000];
+        let limit_samples = [
+            0_u32,
+            1,
+            1_000_000,
+            25_000_000,
+            50_000_000,
+            75_000_000,
+            PROBABILITY_SCALE - 1,
+            PROBABILITY_SCALE,
+        ];
+        let fee_bps_samples = [0_u16, 1, 5, 50, 250, 500, MAX_PROTOCOL_FEE_BPS];
+
+        for fee_bps in fee_bps_samples {
+            for qty_atoms in qty_samples {
+                for limit_p_yes_e8 in limit_samples {
+                    let yes_reserve =
+                        reserve_for_order(OrderSide::BuyYes, qty_atoms, limit_p_yes_e8, fee_bps);
+                    for exec_p_yes_e8 in [0_u32, limit_p_yes_e8 / 2, limit_p_yes_e8] {
+                        let cost_yes = mul_div_floor(
+                            qty_atoms as u128,
+                            exec_p_yes_e8 as u128,
+                            PROBABILITY_SCALE as u128,
+                        )
+                        .unwrap();
+                        let fee_yes = compute_protocol_fee_floor(cost_yes, fee_bps).unwrap();
+                        assert!(
+                            fee_yes <= yes_reserve,
+                            "yes reserve underfunded: fee={} reserve={} qty={} limit={} exec={} bps={}",
+                            fee_yes,
+                            yes_reserve,
+                            qty_atoms,
+                            limit_p_yes_e8,
+                            exec_p_yes_e8,
+                            fee_bps
+                        );
+                    }
+
+                    let no_reserve =
+                        reserve_for_order(OrderSide::BuyNo, qty_atoms, limit_p_yes_e8, fee_bps);
+                    for exec_p_yes_e8 in [
+                        limit_p_yes_e8,
+                        limit_p_yes_e8
+                            .checked_add((PROBABILITY_SCALE - limit_p_yes_e8) / 2)
+                            .unwrap(),
+                        std::cmp::min(limit_p_yes_e8.saturating_add(1), PROBABILITY_SCALE),
+                        PROBABILITY_SCALE,
+                    ] {
+                        let cost_yes = mul_div_floor(
+                            qty_atoms as u128,
+                            exec_p_yes_e8 as u128,
+                            PROBABILITY_SCALE as u128,
+                        )
+                        .unwrap();
+                        let cost_no = qty_atoms - cost_yes;
+                        let fee_no = compute_protocol_fee_floor(cost_no, fee_bps).unwrap();
+                        assert!(
+                            fee_no <= no_reserve,
+                            "no reserve underfunded: fee={} reserve={} qty={} limit={} exec={} bps={}",
+                            fee_no,
+                            no_reserve,
+                            qty_atoms,
+                            limit_p_yes_e8,
+                            exec_p_yes_e8,
+                            fee_bps
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn settlement_sweep_conserves_value_and_charges_only_taker() {
+        let yes_limits = [
+            1_u32, 10_000_000, 40_000_000, 50_000_000, 60_000_000, 99_999_999,
+        ];
+        let no_limits = [0_u32, 1, 10_000_000, 40_000_000, 50_000_000, 60_000_000];
+        let qty_samples = [1_u64, 2, 3, 7, 10, 25, 100];
+        let max_qty_samples = [1_u64, 2, 5, 10, 100];
+        let fee_bps_samples = [0_u16, 1, 50, 500, MAX_PROTOCOL_FEE_BPS];
+
+        for fee_bps in fee_bps_samples {
+            for yes_limit in yes_limits {
+                for no_limit in no_limits {
+                    if yes_limit < no_limit {
+                        continue;
+                    }
+                    for yes_qty in qty_samples {
+                        for no_qty in qty_samples {
+                            for max_qty in max_qty_samples {
+                                for yes_is_maker in [true, false] {
+                                    let yes_seq = if yes_is_maker { 1 } else { 2 };
+                                    let no_seq = if yes_is_maker { 2 } else { 1 };
+                                    let yes_escrow = required_escrow_atoms(
+                                        OrderSide::BuyYes,
+                                        yes_qty,
+                                        yes_limit,
+                                    )
+                                    .unwrap();
+                                    let no_escrow =
+                                        required_escrow_atoms(OrderSide::BuyNo, no_qty, no_limit)
+                                            .unwrap();
+                                    let mut order_yes = MatchOrderState {
+                                        side: OrderSide::BuyYes,
+                                        seq: yes_seq,
+                                        limit_p_yes_e8: yes_limit,
+                                        qty_remaining_atoms: yes_qty,
+                                        escrow_remaining_atoms: yes_escrow,
+                                        fee_remaining_atoms: compute_protocol_fee_ceil(
+                                            yes_escrow, fee_bps,
+                                        )
+                                        .unwrap(),
+                                    };
+                                    let mut order_no = MatchOrderState {
+                                        side: OrderSide::BuyNo,
+                                        seq: no_seq,
+                                        limit_p_yes_e8: no_limit,
+                                        qty_remaining_atoms: no_qty,
+                                        escrow_remaining_atoms: no_escrow,
+                                        fee_remaining_atoms: compute_protocol_fee_ceil(
+                                            no_escrow, fee_bps,
+                                        )
+                                        .unwrap(),
+                                    };
+
+                                    let before_total = order_yes
+                                        .escrow_remaining_atoms
+                                        .checked_add(order_yes.fee_remaining_atoms)
+                                        .unwrap()
+                                        .checked_add(order_no.escrow_remaining_atoms)
+                                        .unwrap()
+                                        .checked_add(order_no.fee_remaining_atoms)
+                                        .unwrap();
+
+                                    let requested_qty =
+                                        std::cmp::min(max_qty, std::cmp::min(yes_qty, no_qty));
+                                    let yes_after = required_escrow_atoms(
+                                        OrderSide::BuyYes,
+                                        yes_qty - requested_qty,
+                                        yes_limit,
+                                    )
+                                    .unwrap();
+                                    let no_after = required_escrow_atoms(
+                                        OrderSide::BuyNo,
+                                        no_qty - requested_qty,
+                                        no_limit,
+                                    )
+                                    .unwrap();
+                                    let total_release =
+                                        (yes_escrow - yes_after) + (no_escrow - no_after);
+
+                                    let settlement = match settle_crossing_orders(
+                                        &mut order_yes,
+                                        &mut order_no,
+                                        fee_bps,
+                                        max_qty,
+                                    ) {
+                                        Ok(settlement) => settlement,
+                                        Err(err) => {
+                                            assert!(
+                                                total_release < requested_qty,
+                                                "unexpected settlement error: {}",
+                                                err
+                                            );
+                                            assert!(
+                                                err.to_string().contains(
+                                                    "Match quantity is too small to settle safely under rounding constraints"
+                                                ),
+                                                "unexpected error: {}",
+                                                err
+                                            );
+                                            continue;
+                                        }
+                                    };
+
+                                    let after_total = order_yes
+                                        .escrow_remaining_atoms
+                                        .checked_add(order_yes.fee_remaining_atoms)
+                                        .unwrap()
+                                        .checked_add(order_no.escrow_remaining_atoms)
+                                        .unwrap()
+                                        .checked_add(order_no.fee_remaining_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.refund_yes_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.refund_no_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.fee_refund_yes_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.fee_refund_no_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.total_protocol_fee_atoms)
+                                        .unwrap()
+                                        .checked_add(settlement.qty_atoms)
+                                        .unwrap();
+
+                                    assert_eq!(
+                                        before_total, after_total,
+                                        "value not conserved for yes_limit={} no_limit={} yes_qty={} no_qty={} max_qty={} fee_bps={} yes_maker={}",
+                                        yes_limit, no_limit, yes_qty, no_qty, max_qty, fee_bps, yes_is_maker
+                                    );
+                                    assert_eq!(
+                                        settlement.cost_yes_atoms + settlement.cost_no_atoms,
+                                        settlement.qty_atoms
+                                    );
+
+                                    match settlement.taker_side {
+                                        OrderSide::BuyYes => {
+                                            assert_eq!(settlement.protocol_fee_no_atoms, 0);
+                                        }
+                                        OrderSide::BuyNo => {
+                                            assert_eq!(settlement.protocol_fee_yes_atoms, 0);
+                                        }
+                                    }
+
+                                    assert_eq!(
+                                        order_yes.escrow_remaining_atoms,
+                                        required_escrow_atoms(
+                                            OrderSide::BuyYes,
+                                            order_yes.qty_remaining_atoms,
+                                            order_yes.limit_p_yes_e8,
+                                        )
+                                        .unwrap()
+                                    );
+                                    assert_eq!(
+                                        order_no.escrow_remaining_atoms,
+                                        required_escrow_atoms(
+                                            OrderSide::BuyNo,
+                                            order_no.qty_remaining_atoms,
+                                            order_no.limit_p_yes_e8,
+                                        )
+                                        .unwrap()
+                                    );
+
+                                    if order_yes.qty_remaining_atoms == 0 {
+                                        assert_eq!(order_yes.fee_remaining_atoms, 0);
+                                    }
+                                    if order_no.qty_remaining_atoms == 0 {
+                                        assert_eq!(order_no.fee_remaining_atoms, 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

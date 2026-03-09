@@ -1,5 +1,5 @@
-use anchor_lang::prelude::*;
 use crate::state::{MarketOutcome, MarketStatus, OrderSide};
+use anchor_lang::prelude::*;
 
 #[event]
 pub struct OrderPlaced {
@@ -11,6 +11,7 @@ pub struct OrderPlaced {
     pub limit_p_yes_e8: u32,
     pub qty_atoms: u64,
     pub escrow_atoms: u64,
+    pub fee_reserve_atoms: u64,
 }
 
 #[event]
@@ -19,12 +20,17 @@ pub struct OrdersMatched {
     pub order_yes: Pubkey,
     pub order_no: Pubkey,
     pub maker_order_seq: u64,
+    pub taker_side: OrderSide,
     pub p_exec_e8: u32,
     pub qty_atoms: u64,
     pub cost_yes_atoms: u64,
     pub cost_no_atoms: u64,
     pub refund_yes_atoms: u64,
     pub refund_no_atoms: u64,
+    pub fee_refund_yes_atoms: u64,
+    pub fee_refund_no_atoms: u64,
+    pub protocol_fee_yes_atoms: u64,
+    pub protocol_fee_no_atoms: u64,
 }
 
 #[event]
@@ -34,6 +40,7 @@ pub struct OrderCancelled {
     pub owner: Pubkey,
     pub qty_remaining_atoms: u64,
     pub refund_atoms: u64,
+    pub fee_refund_atoms: u64,
 }
 
 #[event]
@@ -76,6 +83,25 @@ pub struct MarketAuthorityTransferred {
     pub market: Pubkey,
     pub old_authority: Pubkey,
     pub new_authority: Pubkey,
+}
+
+#[event]
+pub struct MarketFeeConfigUpdated {
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub old_fee_recipient: Pubkey,
+    pub new_fee_recipient: Pubkey,
+    pub old_protocol_fee_bps: u16,
+    pub new_protocol_fee_bps: u16,
+}
+
+#[event]
+pub struct ProtocolFeesWithdrawn {
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub fee_recipient: Pubkey,
+    pub amount_atoms: u64,
+    pub remaining_accrued_atoms: u64,
 }
 
 #[event]
