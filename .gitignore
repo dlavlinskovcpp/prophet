@@ -20,3 +20,4 @@ markets.jsonl
 .localnet.pid
 validator.log
 .logs/
+apps/matching-keeper/state/

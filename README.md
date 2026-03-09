@@ -3,6 +3,7 @@
 Prophet is a Solana/Anchor prediction market protocol with:
 
 - on-chain order placement, matching, refunds, and redemption
+- authority-governed lifecycle controls for lock/unlock, schedule updates, and emergency invalidation
 - permissionless signed resolution, with threshold notary v2 as the primary path and single-oracle as compatibility mode
 - an off-chain attester service for zkTLS verification and resolve transaction assembly
 - a Python SDK intended for agent/bot integration
@@ -14,6 +15,7 @@ programs/prophet/          Anchor program
 tests/                     TypeScript integration tests
 sdk/python/                Python SDK and examples
 apps/oracle-attester/      FastAPI attester service
+apps/matching-keeper/      Persistent matching keeper/indexer service
 scripts/                   helper scripts
 docs/                      protocol and SDK docs
 ```
@@ -24,6 +26,7 @@ docs/                      protocol and SDK docs
 - `docs/resolver_spec.md`
 - `docs/attestation_format.md`
 - `docs/sdk_quickstart.md`
+- `docs/matching_keeper.md`
 
 ## Prerequisites
 
@@ -65,6 +68,15 @@ Remote signer (for managed notary flow):
 ```bash
 cd apps/oracle-attester
 uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+```
+
+Matching keeper:
+
+```bash
+cd apps/matching-keeper
+poetry install
+cp .env.example .env
+poetry run prophet-matching-keeper
 ```
 
 ## Testing

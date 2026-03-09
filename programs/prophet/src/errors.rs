@@ -88,4 +88,14 @@ pub enum ErrorCode {
     NotaryNotAllowed,
     #[msg("Unauthorized admin")]
     UnauthorizedAdmin,
+    #[msg("Unauthorized market authority")]
+    UnauthorizedMarketAuthority,
+    #[msg("Market still has open orders")]
+    MarketHasOpenOrders,
+    #[msg("Locked market cannot be reopened after lock_ts")]
+    CannotUnlockAfterLockTs,
+    #[msg("Market must be locked for this action")]
+    MarketNotLocked,
+    #[msg("Invalid new authority")]
+    InvalidNewAuthority,
 }
