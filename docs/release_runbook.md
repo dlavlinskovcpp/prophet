@@ -1,0 +1,123 @@
+# Release Runbook
+
+This runbook covers the repo-supported release path for Prophet.
+
+## Scope
+
+The release flow now has three explicit stages:
+
+- `plan`: generate a versioned release manifest from the current build artifacts
+- `bundle`: archive the program binary, IDL, TS types, config, and manifest under `releases/`
+- `deploy`: build, deploy, sync the IDL, verify the program, and archive the release bundle
+
+The source of truth for environments is `deploy/environments/*.json`.
+
+## Environments
+
+Tracked environment configs:
+
+- `deploy/environments/localnet.json`
+- `deploy/environments/devnet.json`
+- `deploy/environments/mainnet-beta.json`
+
+Each config pins:
+
+- cluster / RPC target
+- wallet path
+- program keypair path
+- build artifact paths
+- expected program id
+- service endpoint metadata for the release manifest
+
+## Preconditions
+
+Before any non-localnet release:
+
+1. CI should be green.
+2. `target/deploy/prophet.so`, `target/idl/prophet.json`, and `target/types/prophet.ts` must exist.
+3. The git tree should be clean.
+4. The wallet in the selected environment config must hold the upgrade authority and enough SOL for deployment.
+5. The environment config's `expected_program_id` should match the actual program keypair and IDL address.
+
+## Commands
+
+Plan a release:
+
+```bash
+python3 scripts/release.py plan --environment devnet --release-tag v0.2.3
+```
+
+Create a rollback bundle:
+
+```bash
+python3 scripts/release.py bundle --environment devnet --release-tag v0.2.3
+```
+
+Deploy and archive:
+
+```bash
+python3 scripts/release.py deploy --environment devnet --release-tag v0.2.3
+```
+
+Mainnet deploys require an explicit confirmation flag:
+
+```bash
+python3 scripts/release.py deploy --environment mainnet-beta --release-tag v0.2.3 --yes
+```
+
+Equivalent make targets:
+
+- `make release-plan ENV=devnet TAG=v0.2.3`
+- `make release-bundle ENV=devnet TAG=v0.2.3`
+- `make release-deploy ENV=devnet TAG=v0.2.3`
+
+## What The Bundle Contains
+
+Each release bundle is written to:
+
+`releases/<TAG>/<ENV>/`
+
+It includes:
+
+- `manifest.json`
+- `target/deploy/prophet.so`
+- `target/idl/prophet.json`
+- `target/types/prophet.ts`
+- `target/deploy/prophet-keypair.json`
+- environment config used for the release
+- version source files (`Anchor.toml`, relevant `pyproject.toml`, `Cargo.toml`, `package.json`)
+
+That bundle is the rollback artifact set.
+
+## Post-Deploy Checks
+
+After deploy:
+
+1. Confirm `solana program show` succeeds for the deployed program.
+2. Confirm the bundled `manifest.json` has the expected tag, environment, program id, and hashes.
+3. Update downstream runtime config:
+   - `PROPHET_PROGRAM_ID`
+   - attester / SDK / keeper RPC endpoints if they changed
+4. Run the environment-specific smoke path before traffic cutover.
+
+## Rollback
+
+Rollback means redeploying the previous archived program binary and re-syncing its matching IDL.
+
+Use the previous bundle, for example:
+
+`releases/v0.2.2/devnet/`
+
+Rollback procedure:
+
+1. Identify the last known good bundle.
+2. Redeploy its `target/deploy/prophet.so` with the same upgrade-authority wallet and program id.
+3. Re-apply its `target/idl/prophet.json`.
+4. Revert runtime config and operators to the previous release's manifest if any addresses or endpoints changed.
+5. Re-run post-deploy checks.
+
+This repo does not automate rollback execution because that is a destructive production action. The bundle is what makes rollback deterministic.
+
+## CI Role
+
+CI now validates the release path by generating release bundles for the tracked environments from the built artifacts and uploading them as workflow artifacts. That keeps the release manifest format and bundle contents exercised continuously even when no live deploy is happening.

@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit
+.PHONY: validator build deploy test attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -11,6 +11,18 @@ build:
 
 deploy:
 	anchor deploy --provider.cluster localnet
+
+release-plan:
+	# Usage: make release-plan ENV=devnet TAG=v0.2.3
+	python3 scripts/release.py plan --environment $(ENV) --release-tag $(TAG)
+
+release-bundle:
+	# Usage: make release-bundle ENV=devnet TAG=v0.2.3
+	python3 scripts/release.py bundle --environment $(ENV) --release-tag $(TAG)
+
+release-deploy:
+	# Usage: make release-deploy ENV=devnet TAG=v0.2.3
+	python3 scripts/release.py deploy --environment $(ENV) --release-tag $(TAG)
 
 test:
 	anchor test

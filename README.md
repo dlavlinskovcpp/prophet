@@ -27,6 +27,7 @@ docs/                      protocol and SDK docs
 - `docs/attestation_format.md`
 - `docs/sdk_quickstart.md`
 - `docs/matching_keeper.md`
+- `docs/release_runbook.md`
 
 ## Prerequisites
 
@@ -120,6 +121,30 @@ zkTLS config guardrails:
 bash scripts/check_zktls.sh
 ```
 
+## Release And Deploy
+
+Release environments are defined in `deploy/environments/*.json` for `localnet`, `devnet`, and `mainnet-beta`.
+
+Generate a release manifest from the current build artifacts:
+
+```bash
+make release-plan ENV=devnet TAG=v0.2.3
+```
+
+Archive a rollback bundle under `releases/<TAG>/<ENV>/`:
+
+```bash
+make release-bundle ENV=devnet TAG=v0.2.3
+```
+
+Build, deploy, sync the IDL, verify the program, and archive the release bundle:
+
+```bash
+make release-deploy ENV=devnet TAG=v0.2.3
+```
+
+For the full procedure, including rollback expectations, see `docs/release_runbook.md`.
+
 ## Security Notes
 
 - zkTLS proof verification is off-chain in the attester.
@@ -133,6 +158,7 @@ bash scripts/check_zktls.sh
 - The local compose stack exercises the production-shaped path: attester -> remote signer over HTTP and attester -> resolver registry over HTTP.
 - The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.
 - Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.
+- Release bundles now archive the program binary, IDL, TS types, and release manifest for rollback.
 - Do not commit private keys.
 
 ## License
