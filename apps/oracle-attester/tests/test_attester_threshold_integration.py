@@ -9,8 +9,10 @@ from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
 from src.attester import AttesterService
+from src.audit import JsonlAuditLogger
 from src.config import settings
 from src.resolver import compute_resolver_hash
+from src.resolver_registry import make_resolver_registry
 from src.types import OutcomeEnum, ResolveRequest
 from src.zktls_verifier import ZkTlsVerifyResult
 
@@ -129,13 +131,15 @@ class _FakeSolanaClient:
         return "sig-threshold-123"
 
 
-def _make_service(*, client, verifier, remote_signer) -> AttesterService:
+def _make_service(*, client, verifier, remote_signer, audit_log_path: Path) -> AttesterService:
     svc = object.__new__(AttesterService)
     svc.client = client
     svc.inflight_cache = TTLCache(maxsize=1000, ttl=60)
     svc.resolved_cache = TTLCache(maxsize=1000, ttl=600)
     svc.verifier = verifier
     svc.fetcher = object()
+    svc.resolver_registry = make_resolver_registry()
+    svc.audit_log = JsonlAuditLogger(str(audit_log_path), "oracle-attester")
     svc.notary_signer_mode = "remote"
     svc.remote_notary_signer = remote_signer
     return svc
@@ -153,12 +157,15 @@ async def test_attester_resolves_threshold_market_via_remote_signer(tmp_path, mo
     resolver_hash = compute_resolver_hash(resolver_def)
     resolver_store = tmp_path / "resolver_store"
     proof_store = tmp_path / "proof_store"
+    audit_log = tmp_path / "audit" / "attester.jsonl"
     resolver_store.mkdir()
     proof_store.mkdir()
     (resolver_store / f"{resolver_hash.hex()}.json").write_text(json.dumps(resolver_def), encoding="utf-8")
 
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
+    monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
     monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
 
@@ -183,7 +190,12 @@ async def test_attester_resolves_threshold_market_via_remote_signer(tmp_path, mo
         payer=payer,
     )
     remote_signer = _FakeRemoteSigner()
-    svc = _make_service(client=fake_client, verifier=_FakeVerifier(), remote_signer=remote_signer)
+    svc = _make_service(
+        client=fake_client,
+        verifier=_FakeVerifier(),
+        remote_signer=remote_signer,
+        audit_log_path=audit_log,
+    )
 
     proof_bytes = b"proof-bytes"
     public_inputs_bytes = json.dumps({"data": {"answer": 42}}).encode("utf-8")
@@ -222,6 +234,9 @@ async def test_attester_resolves_threshold_market_via_remote_signer(tmp_path, mo
     pi_files = list(Path(proof_store).glob(f"{market}_*_public_inputs.bin"))
     assert len(proof_files) == 1
     assert len(pi_files) == 1
+    audit_lines = audit_log.read_text(encoding="utf-8").strip().splitlines()
+    assert any('"event":"resolve_verified"' in line for line in audit_lines)
+    assert any('"event":"resolve_submitted"' in line for line in audit_lines)
 
 
 @pytest.mark.asyncio
@@ -236,12 +251,15 @@ async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_sig
     resolver_hash = compute_resolver_hash(resolver_def)
     resolver_store = tmp_path / "resolver_store"
     proof_store = tmp_path / "proof_store"
+    audit_log = tmp_path / "audit" / "attester.jsonl"
     resolver_store.mkdir()
     proof_store.mkdir()
     (resolver_store / f"{resolver_hash.hex()}.json").write_text(json.dumps(resolver_def), encoding="utf-8")
 
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
+    monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
     monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
 
@@ -266,7 +284,12 @@ async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_sig
         payer=payer,
     )
     remote_signer = _FakeRemoteSigner()
-    svc = _make_service(client=fake_client, verifier=_FakeVerifier(), remote_signer=remote_signer)
+    svc = _make_service(
+        client=fake_client,
+        verifier=_FakeVerifier(),
+        remote_signer=remote_signer,
+        audit_log_path=audit_log,
+    )
 
     proof_bytes = b"proof-bytes-invalid"
     public_inputs_bytes = json.dumps({"data": {"unexpected": 7}}).encode("utf-8")
@@ -303,3 +326,6 @@ async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_sig
     pi_files = list(Path(proof_store).glob(f"{market}_*_public_inputs.bin"))
     assert len(proof_files) == 1
     assert len(pi_files) == 1
+    audit_lines = audit_log.read_text(encoding="utf-8").strip().splitlines()
+    assert any('"event":"resolve_verified"' in line for line in audit_lines)
+    assert any('"event":"resolve_submitted"' in line for line in audit_lines)

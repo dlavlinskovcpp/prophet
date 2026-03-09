@@ -104,9 +104,11 @@ bash scripts/check_zktls.sh
 
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
-- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer (KMS/HSM/remote signer API).
+- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer now supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
 - The attester defaults to threshold-notary v2 markets; set `ALLOW_LEGACY_SINGLE_ORACLE=1` only for compatibility with older single-oracle markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
+- Resolver definitions can be sourced from a local directory or an HTTP resolver registry, but are always re-hashed before use.
+- Both the attester and remote signer persist append-only JSONL audit logs by default.
 - Remote signer endpoint is `POST /sign` with bearer auth and optional signer allowlist.
 - Do not commit private keys.
 

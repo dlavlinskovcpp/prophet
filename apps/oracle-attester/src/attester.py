@@ -12,10 +12,12 @@ from solders.pubkey import Pubkey
 from solders.keypair import Keypair
 from cachetools import TTLCache
 
+from .audit import JsonlAuditLogger
 from .solana_client import SolanaClient
 from .types import ResolveRequest, ResolveResponse, OutcomeEnum
 from .config import settings
 from .resolver import ResolverDefinition, evaluate_resolver
+from .resolver_registry import make_resolver_registry
 from .zktls_verifier import make_verifier
 from .proof_fetcher import make_fetcher
 
@@ -160,6 +162,11 @@ class AttesterService:
         self.resolved_cache = TTLCache(maxsize=1000, ttl=600)
         self.verifier = make_verifier()
         self.fetcher = make_fetcher()
+        self.resolver_registry = make_resolver_registry()
+        self.audit_log = JsonlAuditLogger(
+            settings.ATTESTER_AUDIT_LOG_PATH,
+            "oracle-attester",
+        )
         self.notary_signer_mode = (settings.NOTARY_SIGNER_MODE or "remote").strip().lower()
         self.remote_notary_signer = (
             RemoteNotarySigner(
@@ -183,19 +190,7 @@ class AttesterService:
         )
 
     def _load_resolver(self, resolver_hash: bytes) -> ResolverDefinition:
-        hash_hex = resolver_hash.hex()
-        path = os.path.join(settings.RESOLVER_STORE_DIR, f"{hash_hex}.json")
-
-        if not os.path.exists(path):
-            raise ValueError(f"Resolver definition not found for hash: {hash_hex}")
-
-        with open(path, "r") as f:
-            data = json.load(f)
-            from .resolver import compute_resolver_hash
-
-            if compute_resolver_hash(data) != resolver_hash:
-                raise ValueError(f"Integrity check failed for resolver {hash_hex}")
-            return ResolverDefinition(**data)
+        return self.resolver_registry.load(resolver_hash)
 
     def _build_message_v1(
         self,
@@ -245,99 +240,143 @@ class AttesterService:
     async def resolve_market(self, req: ResolveRequest) -> ResolveResponse:
         market_str = str(req.market)
         market_pubkey = Pubkey.from_string(market_str)
+        state: Optional[Dict[str, Any]] = None
+        proof_hash = bytes(32)
+        pi_hash = bytes(32)
+        verify_provider = ""
+        verify_ok = False
+        verify_reason = ""
+        threshold_mode = False
 
-        # 1) Fetch Chain State
-        state = self.client.get_market_state_full(market_pubkey)
-        if state is None:
-            raise LookupError(f"Market {req.market} not found")
+        audit_base: Dict[str, Any] = {
+            "market": market_str,
+            "requested_outcome": str(req.outcome),
+            "notary_signer_mode": self.notary_signer_mode,
+            "resolver_registry_mode": self.resolver_registry.health().get("mode", "unknown"),
+        }
 
-        # status == 2 => Resolved (per program enum order)
-        if state["status"] == 2:
-            raise ValueError("Market is already resolved (on-chain)")
-        if market_str in self.inflight_cache:
-            raise ValueError("Market resolution in progress (in-flight)")
-        self._enforce_resolution_mode_policy(state)
-
-        chain_time = self.client.get_chain_time()
-        if chain_time < state["resolve_ts"]:
-            raise ValueError("Market not resolvable yet.")
-
-        # Decode Inputs Early (direct payloads and/or proof_ref fetch)
-        pi_bytes = base64.b64decode(req.public_inputs_bytes_b64) if req.public_inputs_bytes_b64 else b""
-        proof_bytes = base64.b64decode(req.proof_bytes_b64) if req.proof_bytes_b64 else b""
-        proof_ref = (req.proof_ref or "").strip()
-
-        if proof_ref and (not proof_bytes or not pi_bytes):
-            try:
-                fetched = self.fetcher.fetch(proof_ref)
-                if not proof_bytes:
-                    proof_bytes = fetched.proof_bytes
-                if not pi_bytes:
-                    pi_bytes = fetched.public_inputs_bytes
-                logger.info(
-                    f"Fetched proof via ref provider={fetched.provider} "
-                    f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)}"
-                )
-            except Exception as e:
-                raise ValueError(f"Failed to fetch proof_ref: {e}")
-
-        # Compute hashes early for logging
-        proof_hash = self.client.sha256_digest(proof_bytes)
-        pi_hash = self.client.sha256_digest(pi_bytes)
-
-        # 2) Deterministic Verification (Logic)
         try:
-            resolver_def = self._load_resolver(state["resolver_hash"])
+            # 1) Fetch Chain State
+            state = self.client.get_market_state_full(market_pubkey)
+            if state is None:
+                raise LookupError(f"Market {req.market} not found")
 
-            if not pi_bytes:
-                computed_outcome = OutcomeEnum.INVALID
-            else:
-                try:
-                    public_inputs = json.loads(pi_bytes)
-                    if not isinstance(public_inputs, dict) or not public_inputs:
-                        computed_outcome = OutcomeEnum.INVALID
-                    else:
-                        computed_outcome = evaluate_resolver(resolver_def, public_inputs)
-                except json.JSONDecodeError:
-                    computed_outcome = OutcomeEnum.INVALID
-
-            if computed_outcome != req.outcome:
-                raise ValueError(
-                    f"Outcome mismatch: Computed {computed_outcome} but received request for {req.outcome}"
-                )
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Verification system error: {e}")
-            raise ValueError(f"Verification failed: {e}")
-
-        # 3) zkTLS Verification (Provider)
-        verify_res = self.verifier.verify(
-            resolver=resolver_def, proof_bytes=proof_bytes, public_inputs_bytes=pi_bytes
-        )
-
-        logger.info(
-            f"AUDIT_RESOLVE: market={market_str} "
-            f"resolver={state['resolver_hash'].hex()} "
-            f"computed={computed_outcome} req={req.outcome} "
-            f"zktls_mode={settings.ZKTLS_MODE} require={settings.REQUIRE_ZKTLS} "
-            f"provider={verify_res.provider} ok={verify_res.ok} reason={verify_res.reason} "
-            f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)} "
-            f"proof_hash={proof_hash.hex()} pi_hash={pi_hash.hex()} "
-            f"notary_config={str(state.get('notary_config', Pubkey.default()))}"
-        )
-
-        if settings.REQUIRE_ZKTLS and not verify_res.ok:
-            raise ValueError(f"zkTLS verification failed: {verify_res.reason}")
-        elif not verify_res.ok:
-            logger.warning(
-                f"zkTLS verification failed but REQUIRE_ZKTLS=False. Proceeding. Reason: {verify_res.reason}"
+            audit_base.update(
+                {
+                    "resolver_hash": state["resolver_hash"].hex(),
+                    "notary_config": str(state.get("notary_config", Pubkey.default())),
+                    "resolve_ts": int(state["resolve_ts"]),
+                }
             )
 
-        # 4) Proceed to Sign + Submit
-        self.inflight_cache[market_str] = True
+            # status == 2 => Resolved (per program enum order)
+            if state["status"] == 2:
+                raise ValueError("Market is already resolved (on-chain)")
+            if market_str in self.inflight_cache:
+                raise ValueError("Market resolution in progress (in-flight)")
+            self._enforce_resolution_mode_policy(state)
 
-        try:
+            chain_time = self.client.get_chain_time()
+            if chain_time < state["resolve_ts"]:
+                raise ValueError("Market not resolvable yet.")
+
+            # Decode Inputs Early (direct payloads and/or proof_ref fetch)
+            pi_bytes = base64.b64decode(req.public_inputs_bytes_b64) if req.public_inputs_bytes_b64 else b""
+            proof_bytes = base64.b64decode(req.proof_bytes_b64) if req.proof_bytes_b64 else b""
+            proof_ref = (req.proof_ref or "").strip()
+
+            if proof_ref and (not proof_bytes or not pi_bytes):
+                try:
+                    fetched = self.fetcher.fetch(proof_ref)
+                    if not proof_bytes:
+                        proof_bytes = fetched.proof_bytes
+                    if not pi_bytes:
+                        pi_bytes = fetched.public_inputs_bytes
+                    logger.info(
+                        f"Fetched proof via ref provider={fetched.provider} "
+                        f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)}"
+                    )
+                except Exception as e:
+                    raise ValueError(f"Failed to fetch proof_ref: {e}")
+
+            # Compute hashes early for logging
+            proof_hash = self.client.sha256_digest(proof_bytes)
+            pi_hash = self.client.sha256_digest(pi_bytes)
+
+            # 2) Deterministic Verification (Logic)
+            try:
+                resolver_def = self._load_resolver(state["resolver_hash"])
+
+                if not pi_bytes:
+                    computed_outcome = OutcomeEnum.INVALID
+                else:
+                    try:
+                        public_inputs = json.loads(pi_bytes)
+                        if not isinstance(public_inputs, dict) or not public_inputs:
+                            computed_outcome = OutcomeEnum.INVALID
+                        else:
+                            computed_outcome = evaluate_resolver(resolver_def, public_inputs)
+                    except json.JSONDecodeError:
+                        computed_outcome = OutcomeEnum.INVALID
+
+                if computed_outcome != req.outcome:
+                    raise ValueError(
+                        f"Outcome mismatch: Computed {computed_outcome} but received request for {req.outcome}"
+                    )
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.error(f"Verification system error: {e}")
+                raise ValueError(f"Verification failed: {e}")
+
+            # 3) zkTLS Verification (Provider)
+            verify_res = self.verifier.verify(
+                resolver=resolver_def, proof_bytes=proof_bytes, public_inputs_bytes=pi_bytes
+            )
+            verify_provider = verify_res.provider
+            verify_ok = verify_res.ok
+            verify_reason = verify_res.reason or ""
+
+            self.audit_log.write(
+                "resolve_verified",
+                {
+                    **audit_base,
+                    "computed_outcome": str(computed_outcome),
+                    "proof_hash": proof_hash.hex(),
+                    "public_inputs_hash": pi_hash.hex(),
+                    "proof_len": len(proof_bytes),
+                    "public_inputs_len": len(pi_bytes),
+                    "proof_ref": proof_ref,
+                    "zktls_mode": settings.ZKTLS_MODE,
+                    "require_zktls": settings.REQUIRE_ZKTLS,
+                    "zktls_provider": verify_provider,
+                    "zktls_ok": verify_ok,
+                    "zktls_reason": verify_reason,
+                },
+            )
+
+            logger.info(
+                f"AUDIT_RESOLVE: market={market_str} "
+                f"resolver={state['resolver_hash'].hex()} "
+                f"computed={computed_outcome} req={req.outcome} "
+                f"zktls_mode={settings.ZKTLS_MODE} require={settings.REQUIRE_ZKTLS} "
+                f"provider={verify_provider} ok={verify_ok} reason={verify_reason} "
+                f"proof_len={len(proof_bytes)} pi_len={len(pi_bytes)} "
+                f"proof_hash={proof_hash.hex()} pi_hash={pi_hash.hex()} "
+                f"notary_config={str(state.get('notary_config', Pubkey.default()))}"
+            )
+
+            if settings.REQUIRE_ZKTLS and not verify_ok:
+                raise ValueError(f"zkTLS verification failed: {verify_reason}")
+            if not verify_ok:
+                logger.warning(
+                    "zkTLS verification failed but REQUIRE_ZKTLS=False. "
+                    f"Proceeding. Reason: {verify_reason}"
+                )
+
+            # 4) Proceed to Sign + Submit
+            self.inflight_cache[market_str] = True
+
             outcome_idx = OUTCOME_MAP[req.outcome]
 
             # Persist proofs for audit/debugging
@@ -397,6 +436,9 @@ class AttesterService:
                                     "market": market_str,
                                     "notary_config": str(notary_cfg_pk),
                                     "notary_config_version": str(int(cfg["version"])),
+                                    "outcome_idx": str(outcome_idx),
+                                    "proof_hash": proof_hash.hex(),
+                                    "public_inputs_hash": pi_hash.hex(),
                                 },
                             )
                             ed25519_ixs.append(self.client.build_ed25519_ix(msg, sig_bytes, bytes(pk)))
@@ -476,6 +518,17 @@ class AttesterService:
                 self.resolved_cache[market_str] = True
                 if market_str in self.inflight_cache:
                     del self.inflight_cache[market_str]
+                self.audit_log.write(
+                    "resolve_submitted",
+                    {
+                        **audit_base,
+                        "signature": sig,
+                        "threshold_mode": threshold_mode,
+                        "proof_hash": proof_hash.hex(),
+                        "public_inputs_hash": pi_hash.hex(),
+                        "resolved_ts": int(final_state["resolved_ts"]),
+                    },
+                )
                 return ResolveResponse(
                     signature=sig,
                     proof_hash_hex=proof_hash.hex(),
@@ -486,7 +539,20 @@ class AttesterService:
         except Exception as e:
             if market_str in self.inflight_cache:
                 del self.inflight_cache[market_str]
-            raise e
+            failure_payload = {
+                **audit_base,
+                "reason": str(e),
+                "threshold_mode": threshold_mode,
+                "proof_hash": proof_hash.hex(),
+                "public_inputs_hash": pi_hash.hex(),
+                "zktls_provider": verify_provider,
+                "zktls_ok": verify_ok,
+                "zktls_reason": verify_reason,
+            }
+            if state is not None:
+                failure_payload["status"] = int(state["status"])
+            self.audit_log.write("resolve_failed", failure_payload)
+            raise
 
 
 _service_instance: Optional[AttesterService] = None

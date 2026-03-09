@@ -16,6 +16,7 @@ venv
 poetry.lock
 proof_store/
 resolver_store/
+audit/
 markets.jsonl
 .localnet.pid
 validator.log
