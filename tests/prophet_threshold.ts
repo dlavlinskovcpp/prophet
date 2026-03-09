@@ -58,6 +58,9 @@ function createNoopMemoIx(): TransactionInstruction {
 }
 
 describe("prophet-threshold-notary", () => {
+    // Keep this aligned with programs/prophet/src/state.rs::MAX_ED25519_SCAN.
+    const SCAN_WINDOW = 16;
+
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
     const program = anchor.workspace.Prophet as Program<Prophet>;
@@ -457,7 +460,7 @@ describe("prophet-threshold-notary", () => {
             .instruction();
 
         const txInside = new Transaction().add(edInside);
-        for (let i = 0; i < 63; i++) {
+        for (let i = 0; i < SCAN_WINDOW - 1; i++) {
             txInside.add(createNoopMemoIx());
         }
         txInside.add(resolveInside);
@@ -520,7 +523,7 @@ describe("prophet-threshold-notary", () => {
             .instruction();
 
         const txOutside = new Transaction().add(edOutside);
-        for (let i = 0; i < 64; i++) {
+        for (let i = 0; i < SCAN_WINDOW; i++) {
             txOutside.add(createNoopMemoIx());
         }
         txOutside.add(resolveOutside);
