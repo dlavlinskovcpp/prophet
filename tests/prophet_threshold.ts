@@ -7,7 +7,6 @@ import {
     Keypair,
     SystemProgram,
     Ed25519Program,
-    ComputeBudgetProgram,
     SYSVAR_INSTRUCTIONS_PUBKEY,
     Transaction,
     TransactionInstruction,
@@ -20,6 +19,8 @@ import {
 } from "@solana/spl-token";
 import { assert } from "chai";
 import * as nacl from "tweetnacl";
+
+const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
 function createManualEd25519Ix(message: Buffer, signature: Buffer, pubkey: Buffer): TransactionInstruction {
     // Layout matches Solana ed25519 program instruction format for 1 sig, self-contained.
@@ -45,6 +46,14 @@ function createManualEd25519Ix(message: Buffer, signature: Buffer, pubkey: Buffe
         programId: Ed25519Program.programId,
         keys: [],
         data,
+    });
+}
+
+function createNoopMemoIx(): TransactionInstruction {
+    return new TransactionInstruction({
+        programId: MEMO_PROGRAM_ID,
+        keys: [],
+        data: Buffer.alloc(0),
     });
 }
 
@@ -449,7 +458,7 @@ describe("prophet-threshold-notary", () => {
 
         const txInside = new Transaction().add(edInside);
         for (let i = 0; i < 63; i++) {
-            txInside.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
+            txInside.add(createNoopMemoIx());
         }
         txInside.add(resolveInside);
         await provider.sendAndConfirm(txInside, [], { skipPreflight: true });
@@ -512,7 +521,7 @@ describe("prophet-threshold-notary", () => {
 
         const txOutside = new Transaction().add(edOutside);
         for (let i = 0; i < 64; i++) {
-            txOutside.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }));
+            txOutside.add(createNoopMemoIx());
         }
         txOutside.add(resolveOutside);
 
