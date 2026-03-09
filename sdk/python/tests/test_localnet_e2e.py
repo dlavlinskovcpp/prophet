@@ -1,7 +1,7 @@
 import os
 import pytest
 from prophet_sdk import ProphetClient, MarketOutcome, MarketStatus
-from prophet_sdk.pdas import derive_market_pda
+from prophet_sdk.pdas import derive_market_pda, derive_notary_config_pda
 from prophet_sdk.ata import ensure_ata
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
@@ -35,15 +35,40 @@ def test_localnet_resolve_flow():
     open_ts = now - 200
     lock_ts = now - 100
     resolve_ts = now - 50 
-    
-    client.initialize_market(resolver_hash=resolver, open_ts=open_ts, lock_ts=lock_ts, resolve_ts=resolve_ts, oracle_authority=oracle_kp.pubkey(), quote_mint=mint)
+
+    notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
+    try:
+        client.initialize_notary_config(1, [oracle_kp.pubkey()])
+    except Exception:
+        client.update_notary_config(1, [oracle_kp.pubkey()])
+
+    client.initialize_market_v2(
+        resolver_hash=resolver,
+        open_ts=open_ts,
+        lock_ts=lock_ts,
+        resolve_ts=resolve_ts,
+        notary_config=notary_config,
+        oracle_authority=oracle_kp.pubkey(),
+        quote_mint=mint,
+    )
     
     market, _ = derive_market_pda(resolver, open_ts, client.program_id)
     
     proof_hash = bytes([1]*32)
     pi_hash = bytes([2]*32)
-    
-    client.resolve_market_signed(market=market, resolver_hash=resolver, open_ts=open_ts, oracle_keypair=oracle_kp, outcome=MarketOutcome.Yes, proof_hash=proof_hash, public_inputs_hash=pi_hash, relayer_keypair=client.payer)
+
+    client.resolve_market_threshold(
+        market=market,
+        notary_config=notary_config,
+        resolver_hash=resolver,
+        open_ts=open_ts,
+        resolve_ts=resolve_ts,
+        outcome=MarketOutcome.Yes,
+        proof_hash=proof_hash,
+        public_inputs_hash=pi_hash,
+        notary_keypairs=[oracle_kp],
+        relayer_keypair=client.payer,
+    )
     
     acct = client.fetch_market(market)
     assert acct is not None
