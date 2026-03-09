@@ -16,6 +16,9 @@ import {
     ASSOCIATED_TOKEN_PROGRAM_ID,
     createMint,
     getAssociatedTokenAddress,
+    getOrCreateAssociatedTokenAccount,
+    mintTo,
+    getAccount,
 } from "@solana/spl-token";
 import { assert } from "chai";
 import * as nacl from "tweetnacl";
@@ -81,6 +84,20 @@ describe("prophet-threshold-notary", () => {
         )[0];
     };
 
+    const deriveOrder = (market: PublicKey, owner: PublicKey, seq: BN) => {
+        return PublicKey.findProgramAddressSync(
+            [Buffer.from("order"), market.toBuffer(), owner.toBuffer(), seq.toArrayLike(Buffer, "le", 8)],
+            program.programId
+        )[0];
+    };
+
+    const derivePosition = (market: PublicKey, owner: PublicKey) => {
+        return PublicKey.findProgramAddressSync(
+            [Buffer.from("position"), market.toBuffer(), owner.toBuffer()],
+            program.programId
+        )[0];
+    };
+
     const getChainTime = async (): Promise<number> => {
         const slot = await provider.connection.getSlot();
         const t = await provider.connection.getBlockTime(slot);
@@ -88,9 +105,76 @@ describe("prophet-threshold-notary", () => {
         return t;
     };
 
+    const getSafeChainNow = async (timeoutMs = 15000): Promise<number> => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const slot = await provider.connection.getSlot();
+            const t = await provider.connection.getBlockTime(slot);
+            if (t !== null) return t;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        throw new Error("Timeout waiting for valid chain time");
+    };
+
+    const waitUntilChainTimeGE = async (target: number, timeoutMs = 20000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const slot = await provider.connection.getSlot();
+            const t = await provider.connection.getBlockTime(slot);
+            if (t !== null && t >= target) return;
+            await new Promise((r) => setTimeout(r, 500));
+        }
+        throw new Error(`Timeout waiting for chain time >= ${target}`);
+    };
+
     const airdrop = async (pk: PublicKey, lamports: number) => {
         const sig = await provider.connection.requestAirdrop(pk, lamports);
         await provider.connection.confirmTransaction(sig, "confirmed");
+    };
+
+    const fetchOrderOrNull = async (order: PublicKey): Promise<any | null> => {
+        try {
+            return await program.account.order.fetch(order);
+        } catch {
+            return null;
+        }
+    };
+
+    const assertMirror = (yesTotal: BN, noTotal: BN) => {
+        assert.isTrue(
+            yesTotal.eq(noTotal),
+            `Mirror invariant failed: YES=${yesTotal.toString()} NO=${noTotal.toString()}`
+        );
+    };
+
+    const assertVaultEquation = async (vaultKey: PublicKey, positions: any[], orders: Array<any | null>) => {
+        const vaultAcct = await getAccount(provider.connection, vaultKey);
+        const vaultBal = BigInt(vaultAcct.amount.toString());
+
+        let sumOrderEscrow = BigInt(0);
+        for (const o of orders) {
+            if (o) sumOrderEscrow += BigInt(o.escrowRemainingAtoms.toString());
+        }
+
+        let sumRefunds = BigInt(0);
+        let sumYes = new BN(0);
+        let sumNo = new BN(0);
+        for (const p of positions) {
+            sumRefunds += BigInt(p.pendingRefundsAtoms.toString());
+            sumYes = sumYes.add(p.yesSharesAtoms);
+            sumNo = sumNo.add(p.noSharesAtoms);
+        }
+
+        assertMirror(sumYes, sumNo);
+
+        const openInterest = BigInt(sumYes.toString());
+        const expected = sumOrderEscrow + sumRefunds + openInterest;
+
+        assert.equal(
+            vaultBal,
+            expected,
+            `Vault Eq Failed: Act=${vaultBal} Exp=${expected} (Escrow=${sumOrderEscrow}, Ref=${sumRefunds}, OI=${openInterest})`
+        );
     };
 
     it("success with exactly t sigs; fails with t-1 and duplicates and wrong message and notary not allowed", async () => {
@@ -697,6 +781,572 @@ describe("prophet-threshold-notary", () => {
             const marketAcc = await program.account.market.fetch(market);
             assert.equal(marketAcc.status.resolved !== undefined, true);
             assert.equal(marketAcc.outcome.yes !== undefined, true);
+        }
+    });
+
+    it("E2E: Place -> Match (Partial) -> Cancel -> Claim -> Resolve Threshold -> Redeem", async () => {
+        const admin = (provider.wallet as anchor.Wallet).payer;
+        const notary1 = Keypair.generate();
+        const notary2 = Keypair.generate();
+        const traderA = Keypair.generate();
+        const traderB = Keypair.generate();
+        const notaryConfig = deriveNotaryConfig(admin.publicKey);
+
+        await airdrop(traderA.publicKey, 2e9);
+        await airdrop(traderB.publicKey, 2e9);
+
+        const existing = await provider.connection.getAccountInfo(notaryConfig);
+        if (existing) {
+            await program.methods
+                .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
+                .accounts({
+                    notaryConfig,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        } else {
+            await program.methods
+                .initializeNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
+                .accounts({
+                    notaryConfig,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
+        const cfg = await program.account.notaryConfig.fetch(notaryConfig);
+        const notaryVersion = new BN(cfg.version.toString());
+
+        const quoteMint = await createMint(
+            provider.connection,
+            admin,
+            admin.publicKey,
+            null,
+            6
+        );
+        const ataA = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            admin,
+            quoteMint,
+            traderA.publicKey
+        );
+        const ataB = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            admin,
+            quoteMint,
+            traderB.publicKey
+        );
+        await mintTo(provider.connection, admin, quoteMint, ataA.address, admin.publicKey, 1_000_000);
+        await mintTo(provider.connection, admin, quoteMint, ataB.address, admin.publicKey, 1_000_000);
+
+        const safeNow = await getSafeChainNow();
+        const resolverHash = Buffer.alloc(32, 71);
+        const openTs = new BN(safeNow - 100);
+        const lockTs = new BN(safeNow + 15);
+        const resolveTs = new BN(safeNow + 15);
+
+        const market = deriveMarket(resolverHash, openTs);
+        const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
+
+        await program.methods
+            .initializeMarketV2(
+                Array.from(resolverHash),
+                openTs,
+                lockTs,
+                resolveTs,
+                new BN(1),
+                new BN(1),
+                32,
+                4096
+            )
+            .accounts({
+                market,
+                authority: admin.publicKey,
+                oracleAuthority: admin.publicKey,
+                quoteMint,
+                quoteVault,
+                notaryConfig,
+                systemProgram: SystemProgram.programId,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
+            .signers([admin])
+            .rpc();
+
+        const seqA = new BN(0);
+        const seqB = new BN(1);
+        const orderA = deriveOrder(market, traderA.publicKey, seqA);
+        const orderB = deriveOrder(market, traderB.publicKey, seqB);
+        const posA = derivePosition(market, traderA.publicKey);
+        const posB = derivePosition(market, traderB.publicKey);
+
+        await program.methods
+            .placeOrder(seqA, { buyYes: {} }, 60_000_000, new BN(100))
+            .accounts({
+                market,
+                order: orderA,
+                position: posA,
+                owner: traderA.publicKey,
+                ownerQuoteAta: ataA.address,
+                quoteVault,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([traderA])
+            .rpc();
+
+        await program.methods
+            .placeOrder(seqB, { buyNo: {} }, 60_000_000, new BN(50))
+            .accounts({
+                market,
+                order: orderB,
+                position: posB,
+                owner: traderB.publicKey,
+                ownerQuoteAta: ataB.address,
+                quoteVault,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([traderB])
+            .rpc();
+
+        await program.methods
+            .matchOrders(new BN(20))
+            .accounts({
+                market,
+                orderYes: orderA,
+                orderNo: orderB,
+                positionYes: posA,
+                positionNo: posB,
+                ownerYes: traderA.publicKey,
+                ownerNo: traderB.publicKey,
+                marketQuoteVault: quoteVault,
+            })
+            .rpc();
+
+        {
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+            const oA = await program.account.order.fetch(orderA);
+            const oB = await program.account.order.fetch(orderB);
+
+            assert.equal(pA.yesSharesAtoms.toNumber(), 20);
+            assert.equal(pB.noSharesAtoms.toNumber(), 20);
+            assert.equal(oA.qtyRemainingAtoms.toNumber(), 80);
+            assert.equal(oA.escrowRemainingAtoms.toNumber(), 48);
+            assert.equal(oB.qtyRemainingAtoms.toNumber(), 30);
+            assert.equal(oB.escrowRemainingAtoms.toNumber(), 12);
+            assert.equal(pA.pendingRefundsAtoms.toNumber(), 0);
+            assert.equal(pB.pendingRefundsAtoms.toNumber(), 0);
+
+            await assertVaultEquation(quoteVault, [pA, pB], [oA, oB]);
+        }
+
+        await program.methods
+            .cancelOrder()
+            .accounts({
+                market,
+                order: orderA,
+                position: posA,
+                owner: traderA.publicKey,
+            })
+            .signers([traderA])
+            .rpc();
+
+        await program.methods
+            .cancelOrder()
+            .accounts({
+                market,
+                order: orderB,
+                position: posB,
+                owner: traderB.publicKey,
+            })
+            .signers([traderB])
+            .rpc();
+
+        {
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+            const oA = await fetchOrderOrNull(orderA);
+            const oB = await fetchOrderOrNull(orderB);
+
+            assert.equal(oA, null);
+            assert.equal(oB, null);
+            assert.equal(pA.pendingRefundsAtoms.toNumber(), 48);
+            assert.equal(pB.pendingRefundsAtoms.toNumber(), 12);
+
+            await assertVaultEquation(quoteVault, [pA, pB], []);
+        }
+
+        const balAClaimPre = (await getAccount(provider.connection, ataA.address)).amount;
+        const balBClaimPre = (await getAccount(provider.connection, ataB.address)).amount;
+
+        await program.methods
+            .claimRefunds(new BN(48))
+            .accounts({
+                market,
+                position: posA,
+                owner: traderA.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataA.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderA])
+            .rpc();
+
+        await program.methods
+            .claimRefunds(new BN(12))
+            .accounts({
+                market,
+                position: posB,
+                owner: traderB.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataB.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderB])
+            .rpc();
+
+        {
+            const balAClaimPost = (await getAccount(provider.connection, ataA.address)).amount;
+            const balBClaimPost = (await getAccount(provider.connection, ataB.address)).amount;
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+
+            assert.equal(Number(balAClaimPost) - Number(balAClaimPre), 48);
+            assert.equal(Number(balBClaimPost) - Number(balBClaimPre), 12);
+            assert.equal(pA.pendingRefundsAtoms.toNumber(), 0);
+            assert.equal(pB.pendingRefundsAtoms.toNumber(), 0);
+
+            await assertVaultEquation(quoteVault, [pA, pB], []);
+        }
+
+        await waitUntilChainTimeGE(resolveTs.toNumber());
+
+        const outcomeIdx = 1;
+        const proofHash = Buffer.alloc(32, 72);
+        const publicInputsHash = Buffer.alloc(32, 73);
+        const resolveMsg = Buffer.concat([
+            Buffer.from("PROPHET_RESOLVE_V2"),
+            program.programId.toBuffer(),
+            market.toBuffer(),
+            notaryConfig.toBuffer(),
+            resolverHash,
+            openTs.toArrayLike(Buffer, "le", 8),
+            resolveTs.toArrayLike(Buffer, "le", 8),
+            notaryVersion.toArrayLike(Buffer, "le", 8),
+            Buffer.from([outcomeIdx]),
+            proofHash,
+            publicInputsHash,
+        ]);
+
+        const sig1 = Buffer.from(nacl.sign.detached(resolveMsg, notary1.secretKey));
+        const sig2 = Buffer.from(nacl.sign.detached(resolveMsg, notary2.secretKey));
+        const ed1 = createManualEd25519Ix(resolveMsg, sig1, notary1.publicKey.toBuffer());
+        const ed2 = createManualEd25519Ix(resolveMsg, sig2, notary2.publicKey.toBuffer());
+        const resolveIx = await program.methods
+            .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
+            .accounts({
+                market,
+                notaryConfig,
+                instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+            })
+            .instruction();
+
+        await provider.sendAndConfirm(new Transaction().add(ed1, ed2, resolveIx), [], {
+            skipPreflight: true,
+        });
+
+        const marketAcc = await program.account.market.fetch(market);
+        assert.equal(marketAcc.status.resolved !== undefined, true);
+        assert.equal(marketAcc.outcome.yes !== undefined, true);
+        assert.deepEqual(marketAcc.proofHash, Array.from(proofHash));
+
+        const balARedeemPre = (await getAccount(provider.connection, ataA.address)).amount;
+        await program.methods
+            .redeem()
+            .accounts({
+                market,
+                position: posA,
+                owner: traderA.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataA.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderA])
+            .rpc();
+        const balARedeemPost = (await getAccount(provider.connection, ataA.address)).amount;
+        assert.equal(Number(balARedeemPost) - Number(balARedeemPre), 20);
+
+        const balBRedeemPre = (await getAccount(provider.connection, ataB.address)).amount;
+        await program.methods
+            .redeem()
+            .accounts({
+                market,
+                position: posB,
+                owner: traderB.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataB.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderB])
+            .rpc();
+        const balBRedeemPost = (await getAccount(provider.connection, ataB.address)).amount;
+        assert.equal(Number(balBRedeemPost) - Number(balBRedeemPre), 0);
+
+        {
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+
+            assert.equal(pA.yesSharesAtoms.toNumber(), 0);
+            assert.equal(pB.noSharesAtoms.toNumber(), 0);
+
+            await assertVaultEquation(quoteVault, [pA, pB], []);
+        }
+    });
+
+    it("E2E: Resolve Threshold Invalid -> split redemption evenly", async () => {
+        const admin = (provider.wallet as anchor.Wallet).payer;
+        const notary1 = Keypair.generate();
+        const notary2 = Keypair.generate();
+        const traderA = Keypair.generate();
+        const traderB = Keypair.generate();
+        const notaryConfig = deriveNotaryConfig(admin.publicKey);
+
+        await airdrop(traderA.publicKey, 2e9);
+        await airdrop(traderB.publicKey, 2e9);
+
+        const existing = await provider.connection.getAccountInfo(notaryConfig);
+        if (existing) {
+            await program.methods
+                .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
+                .accounts({
+                    notaryConfig,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        } else {
+            await program.methods
+                .initializeNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
+                .accounts({
+                    notaryConfig,
+                    admin: admin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([admin])
+                .rpc();
+        }
+        const cfg = await program.account.notaryConfig.fetch(notaryConfig);
+        const notaryVersion = new BN(cfg.version.toString());
+
+        const quoteMint = await createMint(
+            provider.connection,
+            admin,
+            admin.publicKey,
+            null,
+            6
+        );
+        const ataA = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            admin,
+            quoteMint,
+            traderA.publicKey
+        );
+        const ataB = await getOrCreateAssociatedTokenAccount(
+            provider.connection,
+            admin,
+            quoteMint,
+            traderB.publicKey
+        );
+        await mintTo(provider.connection, admin, quoteMint, ataA.address, admin.publicKey, 1_000_000);
+        await mintTo(provider.connection, admin, quoteMint, ataB.address, admin.publicKey, 1_000_000);
+
+        const safeNow = await getSafeChainNow();
+        const resolverHash = Buffer.alloc(32, 74);
+        const openTs = new BN(safeNow - 100);
+        const lockTs = new BN(safeNow + 8);
+        const resolveTs = new BN(safeNow + 8);
+
+        const market = deriveMarket(resolverHash, openTs);
+        const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
+
+        await program.methods
+            .initializeMarketV2(
+                Array.from(resolverHash),
+                openTs,
+                lockTs,
+                resolveTs,
+                new BN(1),
+                new BN(1),
+                32,
+                4096
+            )
+            .accounts({
+                market,
+                authority: admin.publicKey,
+                oracleAuthority: admin.publicKey,
+                quoteMint,
+                quoteVault,
+                notaryConfig,
+                systemProgram: SystemProgram.programId,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+            })
+            .signers([admin])
+            .rpc();
+
+        const seqA = new BN(0);
+        const seqB = new BN(1);
+        const orderA = deriveOrder(market, traderA.publicKey, seqA);
+        const orderB = deriveOrder(market, traderB.publicKey, seqB);
+        const posA = derivePosition(market, traderA.publicKey);
+        const posB = derivePosition(market, traderB.publicKey);
+
+        await program.methods
+            .placeOrder(seqA, { buyYes: {} }, 60_000_000, new BN(20))
+            .accounts({
+                market,
+                order: orderA,
+                position: posA,
+                owner: traderA.publicKey,
+                ownerQuoteAta: ataA.address,
+                quoteVault,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([traderA])
+            .rpc();
+
+        await program.methods
+            .placeOrder(seqB, { buyNo: {} }, 60_000_000, new BN(20))
+            .accounts({
+                market,
+                order: orderB,
+                position: posB,
+                owner: traderB.publicKey,
+                ownerQuoteAta: ataB.address,
+                quoteVault,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([traderB])
+            .rpc();
+
+        await program.methods
+            .matchOrders(new BN(20))
+            .accounts({
+                market,
+                orderYes: orderA,
+                orderNo: orderB,
+                positionYes: posA,
+                positionNo: posB,
+                ownerYes: traderA.publicKey,
+                ownerNo: traderB.publicKey,
+                marketQuoteVault: quoteVault,
+            })
+            .rpc();
+
+        {
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+            const oA = await fetchOrderOrNull(orderA);
+            const oB = await fetchOrderOrNull(orderB);
+
+            assert.equal(pA.yesSharesAtoms.toNumber(), 20);
+            assert.equal(pA.noSharesAtoms.toNumber(), 0);
+            assert.equal(pB.yesSharesAtoms.toNumber(), 0);
+            assert.equal(pB.noSharesAtoms.toNumber(), 20);
+            assert.equal(oA, null);
+            assert.equal(oB, null);
+
+            await assertVaultEquation(quoteVault, [pA, pB], []);
+        }
+
+        await waitUntilChainTimeGE(resolveTs.toNumber());
+
+        const outcomeIdx = 3;
+        const proofHash = Buffer.alloc(32, 75);
+        const publicInputsHash = Buffer.alloc(32, 76);
+        const resolveMsg = Buffer.concat([
+            Buffer.from("PROPHET_RESOLVE_V2"),
+            program.programId.toBuffer(),
+            market.toBuffer(),
+            notaryConfig.toBuffer(),
+            resolverHash,
+            openTs.toArrayLike(Buffer, "le", 8),
+            resolveTs.toArrayLike(Buffer, "le", 8),
+            notaryVersion.toArrayLike(Buffer, "le", 8),
+            Buffer.from([outcomeIdx]),
+            proofHash,
+            publicInputsHash,
+        ]);
+
+        const sig1 = Buffer.from(nacl.sign.detached(resolveMsg, notary1.secretKey));
+        const sig2 = Buffer.from(nacl.sign.detached(resolveMsg, notary2.secretKey));
+        const ed1 = createManualEd25519Ix(resolveMsg, sig1, notary1.publicKey.toBuffer());
+        const ed2 = createManualEd25519Ix(resolveMsg, sig2, notary2.publicKey.toBuffer());
+        const resolveIx = await program.methods
+            .resolveMarketThreshold({ invalid: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
+            .accounts({
+                market,
+                notaryConfig,
+                instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+            })
+            .instruction();
+
+        await provider.sendAndConfirm(new Transaction().add(ed1, ed2, resolveIx), [], {
+            skipPreflight: true,
+        });
+
+        const marketAcc = await program.account.market.fetch(market);
+        assert.equal(marketAcc.status.resolved !== undefined, true);
+        assert.equal(marketAcc.outcome.invalid !== undefined, true);
+
+        const balARedeemPre = (await getAccount(provider.connection, ataA.address)).amount;
+        await program.methods
+            .redeem()
+            .accounts({
+                market,
+                position: posA,
+                owner: traderA.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataA.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderA])
+            .rpc();
+        const balARedeemPost = (await getAccount(provider.connection, ataA.address)).amount;
+        assert.equal(Number(balARedeemPost) - Number(balARedeemPre), 10);
+
+        const balBRedeemPre = (await getAccount(provider.connection, ataB.address)).amount;
+        await program.methods
+            .redeem()
+            .accounts({
+                market,
+                position: posB,
+                owner: traderB.publicKey,
+                quoteVault,
+                ownerQuoteAta: ataB.address,
+                tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([traderB])
+            .rpc();
+        const balBRedeemPost = (await getAccount(provider.connection, ataB.address)).amount;
+        assert.equal(Number(balBRedeemPost) - Number(balBRedeemPre), 10);
+
+        {
+            const pA = await program.account.position.fetch(posA);
+            const pB = await program.account.position.fetch(posB);
+
+            assert.equal(pA.yesSharesAtoms.toNumber(), 0);
+            assert.equal(pB.noSharesAtoms.toNumber(), 0);
+
+            await assertVaultEquation(quoteVault, [pA, pB], []);
         }
     });
 });

@@ -222,3 +222,84 @@ async def test_attester_resolves_threshold_market_via_remote_signer(tmp_path, mo
     pi_files = list(Path(proof_store).glob(f"{market}_*_public_inputs.bin"))
     assert len(proof_files) == 1
     assert len(pi_files) == 1
+
+
+@pytest.mark.asyncio
+async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_signer(tmp_path, monkeypatch):
+    resolver_def = {
+        "url": "https://example.test/value",
+        "method": "GET",
+        "path": "data.answer",
+        "predicate": "equals",
+        "target_value": 42,
+    }
+    resolver_hash = compute_resolver_hash(resolver_def)
+    resolver_store = tmp_path / "resolver_store"
+    proof_store = tmp_path / "proof_store"
+    resolver_store.mkdir()
+    proof_store.mkdir()
+    (resolver_store / f"{resolver_hash.hex()}.json").write_text(json.dumps(resolver_def), encoding="utf-8")
+
+    monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
+    monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
+    monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
+
+    program_id = Pubkey.new_unique()
+    market = Pubkey.new_unique()
+    notary_config = Pubkey.new_unique()
+    payer = Keypair()
+    notary1 = Keypair()
+    notary2 = Keypair()
+    notary3 = Keypair()
+
+    fake_client = _FakeSolanaClient(
+        program_id=program_id,
+        market=market,
+        notary_config=notary_config,
+        resolver_hash=resolver_hash,
+        open_ts=1_700_000_000,
+        resolve_ts=1_700_000_120,
+        version=7,
+        threshold=2,
+        notary_keys=[notary3.pubkey(), notary1.pubkey(), notary2.pubkey()],
+        payer=payer,
+    )
+    remote_signer = _FakeRemoteSigner()
+    svc = _make_service(client=fake_client, verifier=_FakeVerifier(), remote_signer=remote_signer)
+
+    proof_bytes = b"proof-bytes-invalid"
+    public_inputs_bytes = json.dumps({"data": {"unexpected": 7}}).encode("utf-8")
+    req = ResolveRequest(
+        market=str(market),
+        outcome=OutcomeEnum.INVALID,
+        proof_bytes_b64=base64.b64encode(proof_bytes).decode("ascii"),
+        public_inputs_bytes_b64=base64.b64encode(public_inputs_bytes).decode("ascii"),
+    )
+
+    resp = await svc.resolve_market(req)
+
+    expected_proof_hash = hashlib.sha256(proof_bytes).digest()
+    expected_pi_hash = hashlib.sha256(public_inputs_bytes).digest()
+    expected_notaries = sorted(
+        [notary1.pubkey(), notary2.pubkey(), notary3.pubkey()],
+        key=lambda pk: bytes(pk),
+    )[:2]
+
+    assert resp.signature == "sig-threshold-123"
+    assert resp.proof_hash_hex == expected_proof_hash.hex()
+    assert resp.public_inputs_hash_hex == expected_pi_hash.hex()
+    assert resp.resolved_ts == fake_client._resolved_ts
+
+    assert [call["pubkey"] for call in remote_signer.calls] == expected_notaries
+    assert all(call["context"]["market"] == str(market) for call in remote_signer.calls)
+    assert all(call["context"]["notary_config"] == str(notary_config) for call in remote_signer.calls)
+    assert fake_client.submitted_ixs[-1]["kind"] == "resolve_threshold"
+    assert fake_client.submitted_ixs[-1]["outcome_idx"] == 3
+    assert fake_client.submitted_ixs[-1]["proof_hash"] == expected_proof_hash
+    assert fake_client.submitted_ixs[-1]["public_inputs_hash"] == expected_pi_hash
+
+    proof_files = list(Path(proof_store).glob(f"{market}_*_proof.bin"))
+    pi_files = list(Path(proof_store).glob(f"{market}_*_public_inputs.bin"))
+    assert len(proof_files) == 1
+    assert len(pi_files) == 1
