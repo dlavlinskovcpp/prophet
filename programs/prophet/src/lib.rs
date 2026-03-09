@@ -21,34 +21,6 @@ pub mod prophet {
     use super::*;
 
     // -------------------------------------------------------------------------
-    // 1. Initialize Market (Removed Legacy Surface)
-    // -------------------------------------------------------------------------
-    pub fn initialize_market(
-        ctx: Context<InitializeMarket>,
-        resolver_hash: [u8; 32],
-        open_ts: i64,
-        lock_ts: i64,
-        resolve_ts: i64,
-        min_order_qty_atoms: u64,
-        min_escrow_atoms: u64,
-        max_open_orders_per_user: u16,
-        max_open_orders_total: u32,
-    ) -> Result<()> {
-        let _ = (
-            ctx,
-            resolver_hash,
-            open_ts,
-            lock_ts,
-            resolve_ts,
-            min_order_qty_atoms,
-            min_escrow_atoms,
-            max_open_orders_per_user,
-            max_open_orders_total,
-        );
-        err!(ErrorCode::LegacyMarketCreationRemoved)
-    }
-
-    // -------------------------------------------------------------------------
     // 1.1 Initialize Notary Config (Threshold Oracle Set)
     // -------------------------------------------------------------------------
     pub fn initialize_notary_config(
@@ -587,33 +559,6 @@ pub mod prophet {
     }
 
     // -------------------------------------------------------------------------
-    // 6. Resolve Market (Removed Legacy Surface)
-    // -------------------------------------------------------------------------
-    pub fn resolve_market(
-        ctx: Context<ResolveMarket>,
-        outcome: MarketOutcome,
-        proof_hash: [u8; 32],
-        public_inputs_hash: [u8; 32],
-    ) -> Result<()> {
-        let _ = (ctx, outcome, proof_hash, public_inputs_hash);
-        err!(ErrorCode::LegacyResolutionRemoved)
-    }
-
-    // -------------------------------------------------------------------------
-    // 6.5 Resolve Market Signed (Removed Legacy Surface)
-    // -------------------------------------------------------------------------
-    pub fn resolve_market_signed(
-        ctx: Context<ResolveMarketSigned>,
-        outcome: MarketOutcome,
-        proof_hash: [u8; 32],
-        public_inputs_hash: [u8; 32],
-        oracle_sig: [u8; 64],
-    ) -> Result<()> {
-        let _ = (ctx, outcome, proof_hash, public_inputs_hash, oracle_sig);
-        err!(ErrorCode::LegacyResolutionRemoved)
-    }
-
-    // -------------------------------------------------------------------------
     // 6.6 Resolve Market Threshold (Permissionless, t-of-n Notaries)
     // -------------------------------------------------------------------------
     pub fn resolve_market_threshold(
@@ -891,36 +836,6 @@ fn require_market_authority(market: &Market, authority: &Pubkey) -> Result<()> {
 // -------------------------------------------------------------------------
 
 #[derive(Accounts)]
-#[instruction(resolver_hash: [u8; 32], open_ts: i64)]
-pub struct InitializeMarket<'info> {
-    #[account(
-        init,
-        seeds = [b"market", resolver_hash.as_ref(), &open_ts.to_le_bytes()],
-        bump,
-        payer = authority,
-        space = 8 + Market::LEN
-    )]
-    pub market: Box<Account<'info, Market>>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    /// CHECK: Trusted oracle authority (legacy)
-    pub oracle_authority: AccountInfo<'info>,
-    pub quote_mint: Box<Account<'info, token::Mint>>,
-
-    #[account(
-        init,
-        payer = authority,
-        associated_token::mint = quote_mint,
-        associated_token::authority = market
-    )]
-    pub quote_vault: Box<Account<'info, TokenAccount>>,
-
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-}
-
-#[derive(Accounts)]
 pub struct InitializeNotaryConfig<'info> {
     #[account(
         init,
@@ -1098,22 +1013,6 @@ pub struct ClaimRefunds<'info> {
     )]
     pub owner_quote_ata: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
-}
-
-#[derive(Accounts)]
-pub struct ResolveMarket<'info> {
-    #[account(mut)]
-    pub market: Account<'info, Market>,
-    pub oracle_authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct ResolveMarketSigned<'info> {
-    #[account(mut)]
-    pub market: Account<'info, Market>,
-    /// CHECK: Checked via address constraint
-    #[account(address = INSTRUCTIONS_ID)]
-    pub instructions_sysvar: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
