@@ -6,7 +6,7 @@ import urllib.request
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
 from prophet_sdk import ProphetClient, OrderSide, MarketOutcome
-from prophet_sdk.pdas import derive_market_pda, derive_order_pda, derive_position_pda, derive_associated_token_account
+from prophet_sdk.pdas import derive_market_pda, derive_notary_config_pda, derive_order_pda, derive_position_pda, derive_associated_token_account
 from prophet_sdk.ata import ensure_ata
 from prophet_sdk.zktls.reclaim_client import ReclaimClient
 
@@ -58,6 +58,14 @@ def get_token_balance(client, ata: Pubkey) -> int:
     except:
         return 0
 
+def ensure_notary_config(client: ProphetClient, notary_pubkeys: list[Pubkey], threshold: int) -> Pubkey:
+    cfg_pda, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
+    try:
+        client.initialize_notary_config(threshold, notary_pubkeys)
+    except Exception:
+        client.update_notary_config(threshold, notary_pubkeys)
+    return cfg_pda
+
 def main():
     rpc_url = os.getenv("RPC_URL", "http://localhost:8899")
     payer_kp_path = os.getenv("PAYER_KEYPAIR_PATH")
@@ -80,7 +88,7 @@ def main():
     quote_mint = Pubkey.from_string(quote_mint_str)
     
     with open(oracle_kp_path, 'r') as f:
-        oracle_kp = Keypair.from_bytes(bytes(json.loads(f.read().strip())))
+        notary_kp = Keypair.from_bytes(bytes(json.loads(f.read().strip())))
 
     print(f"[E2E] A: {client_a.payer.pubkey()}")
     print(f"[E2E] B: {client_b.payer.pubkey()}")
@@ -114,14 +122,16 @@ def main():
     open_ts = now_ts - 10
     lock_ts = now_ts + 60
     resolve_ts = now_ts + 60
+    notary_config = ensure_notary_config(client_a, [notary_kp.pubkey()], 1)
     
     print(f"\n[E2E] Creating Market (Resolve TS={resolve_ts})...")
-    client_a.initialize_market(
+    client_a.initialize_market_v2(
         resolver_hash=resolver_hash,
         open_ts=open_ts,
         lock_ts=lock_ts,
         resolve_ts=resolve_ts,
-        oracle_authority=oracle_kp.pubkey(),
+        notary_config=notary_config,
+        oracle_authority=notary_kp.pubkey(),
         quote_mint=quote_mint
     )
     
@@ -166,17 +176,19 @@ def main():
     print(f"  Proof Hash: {proof_hash.hex()}")
     print(f"  PI Hash:    {pi_hash.hex()}")
 
-    print("\n[E2E] Resolving (Signed)...")
+    print("\n[E2E] Resolving (Threshold)...")
     try:
-        client_a.resolve_market_signed(
+        client_a.resolve_market_threshold(
             market=market_pda,
+            notary_config=notary_config,
             resolver_hash=resolver_hash,
             open_ts=open_ts,
-            oracle_keypair=oracle_kp,
+            resolve_ts=resolve_ts,
             outcome=MarketOutcome.Yes,
             proof_hash=proof_hash,
             public_inputs_hash=pi_hash,
-            relayer_keypair=client_a.payer
+            notary_keypairs=[notary_kp],
+            relayer_keypair=client_a.payer,
         )
         print(f"  Resolved!")
     except Exception as e:
