@@ -35,7 +35,7 @@ def main():
         market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
         print("WARN: using synthetic market PDA. Set MARKET_PUBKEY/RESOLVER_HASH_HEX/OPEN_TS for real runs.")
     
-    print(f"Resolving market {market_pda} via signed message...")
+    print(f"Resolving legacy single-oracle market {market_pda} via signed message...")
     
     try:
         sig = client.resolve_market_signed(
@@ -48,7 +48,7 @@ def main():
             public_inputs_hash=bytes([0]*32),
             relayer_keypair=relayer_kp
         )
-        print(f"Market resolved permissionlessly: {sig}")
+        print(f"Legacy compatibility resolve succeeded: {sig}")
     except Exception as e:
         print(f"Failed: {e}")
 
