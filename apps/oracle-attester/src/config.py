@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     REMOTE_SIGNER_BACKEND: str = os.getenv("REMOTE_SIGNER_BACKEND", "local_keypairs")
     REMOTE_SIGNER_COMMAND: str = os.getenv("REMOTE_SIGNER_COMMAND", "")
     REMOTE_SIGNER_COMMAND_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_COMMAND_TIMEOUT_S", 5.0)
+    REMOTE_SIGNER_AWS_KMS_KEY_IDS: str = os.getenv("REMOTE_SIGNER_AWS_KMS_KEY_IDS", "")
+    REMOTE_SIGNER_AWS_KMS_REGION: str = os.getenv("REMOTE_SIGNER_AWS_KMS_REGION", "")
+    REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL: str = os.getenv("REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL", "")
+    REMOTE_SIGNER_AWS_KMS_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_AWS_KMS_TIMEOUT_S", 5.0)
 
     # API hardening
     REQUIRE_API_AUTH: bool = _env_bool("REQUIRE_API_AUTH", True)
@@ -223,10 +227,10 @@ class Settings(BaseSettings):
         env = (self.APP_ENV or "production").strip().lower()
         is_dev_env = env in {"dev", "development", "local", "test"}
 
-        if backend not in {"local_keypairs", "command"}:
+        if backend not in {"local_keypairs", "command", "aws_kms"}:
             raise ValueError(
                 f"Unsupported REMOTE_SIGNER_BACKEND '{self.REMOTE_SIGNER_BACKEND}'. "
-                "Supported: local_keypairs, command."
+                "Supported: local_keypairs, command, aws_kms."
             )
 
         if backend == "local_keypairs" and not (is_dev_env or self.ALLOW_LOCAL_NOTARY_KEYS):
@@ -243,6 +247,29 @@ class Settings(BaseSettings):
             if self.REMOTE_SIGNER_COMMAND_TIMEOUT_S <= 0:
                 raise ValueError("REMOTE_SIGNER_COMMAND_TIMEOUT_S must be > 0.")
 
+        if backend == "aws_kms":
+            if not self.REMOTE_SIGNER_AWS_KMS_REGION.strip():
+                raise ValueError(
+                    "REMOTE_SIGNER_AWS_KMS_REGION is required when REMOTE_SIGNER_BACKEND=aws_kms."
+                )
+            if not self.REMOTE_SIGNER_AWS_KMS_KEY_IDS.strip():
+                raise ValueError(
+                    "REMOTE_SIGNER_AWS_KMS_KEY_IDS is required when REMOTE_SIGNER_BACKEND=aws_kms."
+                )
+            if self.REMOTE_SIGNER_AWS_KMS_TIMEOUT_S <= 0:
+                raise ValueError("REMOTE_SIGNER_AWS_KMS_TIMEOUT_S must be > 0.")
+            endpoint_url = self.REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL.strip()
+            if (
+                endpoint_url
+                and not endpoint_url.startswith("https://")
+                and not endpoint_url.startswith("http://127.0.0.1")
+                and not endpoint_url.startswith("http://localhost")
+            ):
+                raise ValueError(
+                    "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL must use https "
+                    "(localhost/127.0.0.1 exempted)."
+                )
+
         if allowlist_mode not in {"env", "file"}:
             raise ValueError(
                 f"Unsupported REMOTE_SIGNER_ALLOWLIST_MODE '{self.REMOTE_SIGNER_ALLOWLIST_MODE}'. "
@@ -252,7 +279,7 @@ class Settings(BaseSettings):
             raise ValueError("REMOTE_SIGNER_ALLOWLIST_REFRESH_S must be > 0.")
 
         require_allowlist = bool(self.REMOTE_SIGNER_REQUIRE_ALLOWLIST)
-        if backend == "command" and not is_dev_env:
+        if backend in {"command", "aws_kms"} and not is_dev_env:
             require_allowlist = True
 
         if not require_allowlist:
