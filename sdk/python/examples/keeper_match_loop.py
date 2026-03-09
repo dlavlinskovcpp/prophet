@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List, Optional
 from solders.pubkey import Pubkey
 from solana.rpc.websocket_api import connect
-from solana.rpc.types import MemcmpOpts, DataSizeOpts
+from solana.rpc.types import MemcmpOpts
 from solana.rpc.commitment import Confirmed
 
 from prophet_sdk import ProphetClient, OrderSide
@@ -112,7 +112,7 @@ async def run_ws_mode(
                     
                     filters = [
                         MemcmpOpts(offset=8, bytes=str(market)),
-                        DataSizeOpts(136)
+                        136,
                     ]
                     
                     await ws.program_subscribe(

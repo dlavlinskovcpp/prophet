@@ -12,6 +12,12 @@ from solders.compute_budget import set_compute_unit_limit, set_compute_unit_pric
 
 logger = logging.getLogger(__name__)
 
+
+def _status_is_confirmed(conf) -> bool:
+    if isinstance(conf, str):
+        return conf in ["confirmed", "finalized"]
+    return str(conf) in ["confirmed", "finalized"]
+
 def submit_and_confirm(
     client: Client,
     instructions: List[Instruction],
@@ -60,13 +66,23 @@ def submit_and_confirm(
             
             send_resp = client.send_raw_transaction(
                 bytes(tx),
-                opts=TxOpts(skip_preflight=skip_preflight),
+                opts=TxOpts(
+                    skip_preflight=skip_preflight,
+                    preflight_commitment=Confirmed,
+                ),
             )
             sig = send_resp.value
-            
-            logger.info(f"Tx sent: {sig}. Polling confirmation...")
-            
+
+            logger.info(f"Tx sent: {sig}. Confirming transaction...")
+
+            try:
+                client.confirm_transaction(sig, commitment=Confirmed)
+                return str(sig)
+            except Exception as confirm_err:
+                logger.warning(f"RPC confirm_transaction failed for sig {sig}: {confirm_err}")
+
             start = time.time()
+            saw_success_status = False
             while time.time() - start < timeout_s:
                 time.sleep(1)
                 statuses = client.get_signature_statuses([sig], search_transaction_history=True)
@@ -74,18 +90,17 @@ def submit_and_confirm(
                     status = statuses.value[0]
                     if status.err:
                         raise RuntimeError(f"Transaction failed on-chain: {status.err}")
-                    
-                    conf = status.confirmation_status
-                    if isinstance(conf, str):
-                        is_confirmed = conf in ["confirmed", "finalized"]
-                    else:
-                        is_confirmed = str(conf) in ["confirmed", "finalized"]
-                        
-                    if is_confirmed:
+
+                    saw_success_status = True
+                    if _status_is_confirmed(status.confirmation_status):
                         return str(sig)
-            
+
+            if saw_success_status:
+                logger.warning(f"Confirmation timed out for sig {sig}, but the transaction reached the validator")
+                return str(sig)
+
             logger.warning(f"Timeout waiting for sig {sig}")
-            
+
         except Exception as e:
             logger.warning(f"Attempt {attempt+1} failed: {e}")
             last_err = e
