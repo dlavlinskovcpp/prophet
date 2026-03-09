@@ -28,6 +28,7 @@ docs/                      protocol and SDK docs
 - `docs/attestation_format.md`
 - `docs/sdk_quickstart.md`
 - `docs/matching_keeper.md`
+- `docs/ops_runbook.md`
 - `docs/release_runbook.md`
 
 ## Prerequisites
@@ -95,11 +96,13 @@ make keeper
 
 The sample keeper env expects a payer keypair at `./id.json`. Override `PAYER_KEYPAIR_PATH` if yours lives elsewhere.
 
-Localnet infra stack with validator, resolver registry, remote signer, attester, matching keeper, and Prometheus:
+Localnet infra stack with validator, resolver registry, remote signer, attester, matching keeper, Prometheus, and Grafana:
 
 ```bash
 make localnet-up
 ```
+
+Grafana is provisioned at `http://127.0.0.1:3000` with the `Prophet Ops` dashboard preloaded.
 
 ## Testing
 
@@ -126,6 +129,13 @@ Program reliability sweep:
 
 ```bash
 make reliability
+```
+
+Ops snapshot / restore:
+
+```bash
+make ops-backup
+make ops-restore ARCHIVE=ops/backups/<snapshot>.tar.gz FORCE=--force
 ```
 
 ## Release And Deploy
