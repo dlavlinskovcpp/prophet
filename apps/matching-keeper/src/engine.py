@@ -23,6 +23,10 @@ class MatchCandidate:
 @dataclass
 class MarketRuntimeState:
     quote_mint: Optional[Pubkey] = None
+    market_status: str = ""
+    discovery_source: str = ""
+    active: bool = True
+    last_seen_at: int = 0
     orders: Dict[Pubkey, OrderAccount] = field(default_factory=dict)
     dirty_orders: Set[Pubkey] = field(default_factory=set)
     last_snapshot_at: int = 0
@@ -38,9 +42,55 @@ class MatchingEngine:
     def ensure_market(self, market: Pubkey) -> None:
         self._markets.setdefault(market, MarketRuntimeState())
 
+    def activate_market(self, market: Pubkey, *, discovery_source: str, seen_at: Optional[int] = None) -> None:
+        self.ensure_market(market)
+        runtime = self._markets[market]
+        runtime.discovery_source = discovery_source
+        runtime.active = True
+        runtime.last_seen_at = int(seen_at or time.time())
+
+    def retire_market(
+        self,
+        market: Pubkey,
+        *,
+        market_status: Optional[str] = None,
+        discovery_source: Optional[str] = None,
+        error: str = "",
+        seen_at: Optional[int] = None,
+    ) -> None:
+        self.ensure_market(market)
+        runtime = self._markets[market]
+        if market_status is not None:
+            runtime.market_status = market_status
+        if discovery_source is not None:
+            runtime.discovery_source = discovery_source
+        runtime.active = False
+        runtime.dirty_orders.clear()
+        runtime.orders.clear()
+        runtime.last_seen_at = int(seen_at or time.time())
+        if error:
+            runtime.last_error = error
+
     def set_quote_mint(self, market: Pubkey, quote_mint: Pubkey) -> None:
         self.ensure_market(market)
         self._markets[market].quote_mint = quote_mint
+
+    def set_market_metadata(
+        self,
+        market: Pubkey,
+        *,
+        quote_mint: Optional[Pubkey],
+        market_status: str,
+        discovery_source: str,
+        seen_at: Optional[int] = None,
+    ) -> None:
+        self.ensure_market(market)
+        runtime = self._markets[market]
+        runtime.quote_mint = quote_mint
+        runtime.market_status = market_status
+        runtime.discovery_source = discovery_source
+        runtime.active = True
+        runtime.last_seen_at = int(seen_at or time.time())
 
     def replace_orders(self, market: Pubkey, orders: List[tuple[Pubkey, OrderAccount]]) -> None:
         self.ensure_market(market)
@@ -122,6 +172,12 @@ class MatchingEngine:
         self.ensure_market(market)
         self._markets[market].last_error = error
 
+    def find_market_for_order(self, order_pubkey: Pubkey) -> Optional[Pubkey]:
+        for market, runtime in self._markets.items():
+            if order_pubkey in runtime.orders:
+                return market
+        return None
+
     def market_snapshot(self, market: Pubkey) -> dict:
         self.ensure_market(market)
         runtime = self._markets[market]
@@ -135,6 +191,10 @@ class MatchingEngine:
         return {
             "market": str(market),
             "quote_mint": str(runtime.quote_mint) if runtime.quote_mint else "",
+            "market_status": runtime.market_status,
+            "discovery_source": runtime.discovery_source,
+            "active": runtime.active,
+            "last_seen_at": runtime.last_seen_at,
             "open_orders": len(runtime.orders),
             "buy_yes_orders": buy_yes,
             "buy_no_orders": buy_no,

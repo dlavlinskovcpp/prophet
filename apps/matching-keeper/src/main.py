@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Query
+from fastapi.responses import PlainTextResponse
 
 from .config import settings
 from .service import MatchingKeeperService
@@ -41,6 +42,11 @@ def markets():
 @app.get("/attempts")
 def attempts(limit: int = Query(default=50, ge=1, le=500)):
     return {"attempts": service.recent_attempts(limit)}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics():
+    return service.metrics_text()
 
 
 def serve() -> None:
