@@ -1,0 +1,18 @@
+{
+  "environment": "localnet",
+  "cluster_name": "localnet",
+  "anchor_cluster": "http://127.0.0.1:8899",
+  "rpc_url": "http://127.0.0.1:8899",
+  "wallet_path": "~/.config/solana/id.json",
+  "program_keypair_path": "target/deploy/prophet-keypair.json",
+  "binary_path": "target/deploy/prophet.so",
+  "idl_path": "target/idl/prophet.json",
+  "ts_types_path": "target/types/prophet.ts",
+  "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
+  "service_endpoints": {
+    "attester_base_url": "http://127.0.0.1:8000",
+    "remote_signer_url": "http://127.0.0.1:8100/sign",
+    "resolver_registry_url": "http://127.0.0.1:8200/resolvers",
+    "matching_keeper_base_url": "http://127.0.0.1:8010"
+  }
+}

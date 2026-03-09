@@ -10,6 +10,7 @@ test-ledger
 !oracle-keypair.json
 !package.json
 !tsconfig.json
+!deploy/environments/*.json
 __pycache__
 *.pyc
 venv
@@ -23,3 +24,5 @@ markets.jsonl
 validator.log
 .logs/
 apps/matching-keeper/state/
+releases/*
+!releases/.gitkeep
