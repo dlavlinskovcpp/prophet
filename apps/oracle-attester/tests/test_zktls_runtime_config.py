@@ -114,6 +114,24 @@ def test_validate_resolver_registry_runtime_rejects_non_positive_cache_ttl(monke
         settings.validate_resolver_registry_runtime()
 
 
+def test_validate_resolver_registry_service_runtime_requires_token_when_auth_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", "./resolver_store")
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_REQUIRE_AUTH", True)
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_SERVICE_API_KEY", "")
+
+    with pytest.raises(ValueError):
+        settings.validate_resolver_registry_service_runtime()
+
+
+def test_validate_resolver_registry_service_runtime_rejects_non_positive_max_request_bytes(monkeypatch):
+    monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", "./resolver_store")
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_REQUIRE_AUTH", False)
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MAX_REQUEST_BYTES", 0)
+
+    with pytest.raises(ValueError):
+        settings.validate_resolver_registry_service_runtime()
+
+
 def test_validate_api_runtime_requires_token_when_auth_enabled(monkeypatch):
     monkeypatch.setattr(settings, "REQUIRE_API_AUTH", True)
     monkeypatch.setattr(settings, "API_AUTH_TOKEN", "")

@@ -63,6 +63,19 @@ Alternative:
 docker-compose -f docker-compose.localnet.yml up -d oracle-attester
 ```
 
+Resolver registry:
+
+```bash
+cd apps/oracle-attester
+poetry run uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
+```
+
+Publish a resolver through the registry:
+
+```bash
+make publish-resolver RESOLVER=resolver.json RESOLVER_REGISTRY_URL=http://127.0.0.1:8200/resolvers RESOLVER_REGISTRY_API_KEY=token
+```
+
 Remote signer (for managed notary flow):
 
 ```bash
@@ -80,7 +93,7 @@ make keeper
 
 The sample keeper env expects a payer keypair at `./id.json`. Override `PAYER_KEYPAIR_PATH` if yours lives elsewhere.
 
-Localnet infra stack with validator, attester, matching keeper, and Prometheus:
+Localnet infra stack with validator, resolver registry, remote signer, attester, matching keeper, and Prometheus:
 
 ```bash
 make localnet-up
@@ -112,11 +125,13 @@ bash scripts/check_zktls.sh
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
 - Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
+- The repo now includes a canonical resolver registry service (`src.resolver_registry_main:app`) with immutable publish/load semantics, bearer auth, Prometheus metrics, and append-only audit logs.
 - The attester only supports threshold-notary v2 markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
 - Matching keeper exposes `/health` and `/metrics`, and the local compose stack now includes Prometheus plus sample alert rules.
 - Resolver definitions can be sourced from a local directory or an HTTP resolver registry, are always re-hashed before use, and are cached with stale-on-error fallback for transient registry outages.
-- Both the attester and remote signer persist append-only JSONL audit logs by default.
+- The local compose stack exercises the production-shaped path: attester -> remote signer over HTTP and attester -> resolver registry over HTTP.
+- The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.
 - Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.
 - Do not commit private keys.
 

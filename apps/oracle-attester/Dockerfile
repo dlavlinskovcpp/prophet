@@ -20,7 +20,7 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 
 # Create store directories
-RUN mkdir -p resolver_store proof_store
+RUN mkdir -p resolver_store proof_store audit
 
 # Entrypoint
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

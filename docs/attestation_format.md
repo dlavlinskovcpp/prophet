@@ -45,7 +45,7 @@ The hashes are stored on-chain when the market is resolved.
 
 - On-chain verification does not re-run zkTLS proof cryptography.
 - zkTLS verification happens in the attester service.
-- Resolver definitions should be loaded from a canonical registry source and re-hashed before signing.
+- Resolver definitions should be loaded from a canonical registry source and re-hashed before signing. The repo ships a resolver registry service with immutable publish semantics and durable audit logs for that path.
 - Production signer deployments should keep key material outside the HTTP service process, for example via a command/KMS/HSM bridge behind the remote signer, and should enforce an explicit signer allowlist.
 - Signatures are passed through Solana's Ed25519 verify instruction and checked against canonical message bytes in the program.
 - Prophet uses V2 threshold messages and v2 markets only.

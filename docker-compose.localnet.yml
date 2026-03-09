@@ -9,6 +9,50 @@ services:
     volumes:
       - ./.anchor/test-ledger:/ledger
 
+  resolver-registry:
+    build:
+      context: ./apps/oracle-attester
+      dockerfile: Dockerfile
+    command: uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
+    ports:
+      - "8200:8200"
+    environment:
+      APP_ENV: local
+      RESOLVER_STORE_DIR: /app/resolver_store
+      RESOLVER_REGISTRY_REQUIRE_AUTH: "1"
+      RESOLVER_REGISTRY_SERVICE_API_KEY: ${RESOLVER_REGISTRY_SERVICE_API_KEY:-localnet-resolver-registry-token}
+      RESOLVER_REGISTRY_MAX_REQUEST_BYTES: 100000
+      RESOLVER_REGISTRY_AUDIT_LOG_PATH: /app/audit/resolver-registry.jsonl
+      RATE_LIMIT_ENABLED: "0"
+      METRICS_ENABLED: "1"
+    volumes:
+      - ./resolver_store:/app/resolver_store
+      - ./audit:/app/audit
+
+  remote-signer:
+    build:
+      context: ./apps/oracle-attester
+      dockerfile: Dockerfile
+    command: uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+    ports:
+      - "8100:8100"
+    environment:
+      APP_ENV: local
+      ALLOW_LOCAL_NOTARY_KEYS: "1"
+      NOTARY_KEYPAIR_PATHS: /app/oracle-keypair.json
+      REMOTE_SIGNER_REQUIRE_AUTH: "1"
+      REMOTE_SIGNER_API_KEY: ${REMOTE_SIGNER_API_KEY:-localnet-remote-signer-token}
+      REMOTE_SIGNER_BACKEND: command
+      REMOTE_SIGNER_COMMAND: python /app/scripts/local_command_signer.py
+      REMOTE_SIGNER_COMMAND_TIMEOUT_S: 5
+      REMOTE_SIGNER_REQUIRE_ALLOWLIST: "0"
+      REMOTE_SIGNER_AUDIT_LOG_PATH: /app/audit/remote-signer.jsonl
+      RATE_LIMIT_ENABLED: "0"
+      METRICS_ENABLED: "1"
+    volumes:
+      - ./oracle-keypair.json:/app/oracle-keypair.json:ro
+      - ./audit:/app/audit
+
   oracle-attester:
     build:
       context: ./apps/oracle-attester
@@ -19,23 +63,30 @@ services:
       RPC_URL: http://validator:8899
       ORACLE_KEYPAIR_PATH: /app/oracle-keypair.json
       PROOF_STORE_DIR: /app/proof_store
-      RESOLVER_STORE_DIR: /app/resolver_store
       APP_ENV: local
       ZKTLS_MODE: reclaim_http
       REQUIRE_ZKTLS: "1"
       RECLAIM_VERIFY_URL: ${RECLAIM_VERIFY_URL:-https://reclaim.invalid/verify}
       RECLAIM_API_KEY: ${RECLAIM_API_KEY:-}
-      NOTARY_SIGNER_MODE: local
-      ALLOW_LOCAL_NOTARY_KEYS: "1"
-      NOTARY_KEYPAIR_PATHS: /app/oracle-keypair.json
+      NOTARY_SIGNER_MODE: remote
+      REMOTE_SIGNER_URL: http://remote-signer:8100/sign
+      REMOTE_SIGNER_API_KEY: ${REMOTE_SIGNER_API_KEY:-localnet-remote-signer-token}
+      REMOTE_SIGNER_REQUIRE_TLS: "0"
+      RESOLVER_REGISTRY_MODE: http
+      RESOLVER_REGISTRY_URL: http://resolver-registry:8200/resolvers
+      RESOLVER_REGISTRY_API_KEY: ${RESOLVER_REGISTRY_SERVICE_API_KEY:-localnet-resolver-registry-token}
+      RESOLVER_REGISTRY_REQUIRE_TLS: "0"
+      ATTESTER_AUDIT_LOG_PATH: /app/audit/attester.jsonl
       REQUIRE_API_AUTH: "0"
       RATE_LIMIT_ENABLED: "0"
     volumes:
-      - ./resolver_store:/app/resolver_store
       - ./proof_store:/app/proof_store
+      - ./audit:/app/audit
       - ./oracle-keypair.json:/app/oracle-keypair.json # Mount keypair if needed
     depends_on:
       - validator
+      - resolver-registry
+      - remote-signer
 
   matching-keeper:
     build:
@@ -75,6 +126,8 @@ services:
       - ./ops/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     depends_on:
+      - resolver-registry
+      - remote-signer
       - oracle-attester
       - matching-keeper
 
