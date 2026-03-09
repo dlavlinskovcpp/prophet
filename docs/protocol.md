@@ -15,11 +15,11 @@ Main accounts:
 
 Main instructions:
 
-- Market setup: `initialize_market`, `initialize_market_v2`
+- Market setup: `initialize_market_v2` (primary), `initialize_market` (legacy compatibility)
 - Notary admin: `initialize_notary_config`, `update_notary_config`
 - Trading: `place_order`, `match_orders`, `cancel_order`
 - Funds: `claim_refunds`, `redeem`
-- Resolution: `resolve_market`, `resolve_market_signed`, `resolve_market_threshold`
+- Resolution: `resolve_market_threshold` (primary), `resolve_market_signed` / `resolve_market` (legacy compatibility)
 
 ## Off-Chain Components
 
@@ -31,7 +31,7 @@ Responsibilities:
 - Verify resolver predicate against provided public inputs
 - Verify zkTLS payload using Reclaim HTTP verifier
 - Build resolve message/signatures
-- Submit permissionless resolve transaction
+- Submit permissionless resolve transaction for v2 threshold markets by default
 
 ## Resolution Trust Model (MVP)
 
@@ -39,6 +39,7 @@ Responsibilities:
 - On-chain verifies Ed25519 signatures and message canonicality.
 - On-chain stores `proof_hash` + `public_inputs_hash` for auditability.
 - Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
+- Legacy single-oracle resolution remains for compatibility, but the attester should treat it as opt-in only.
 
 ## Agent Integration
 

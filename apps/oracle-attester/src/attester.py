@@ -171,6 +171,17 @@ class AttesterService:
             else None
         )
 
+    def _enforce_resolution_mode_policy(self, state: Dict[str, Any]) -> None:
+        if state.get("notary_config", Pubkey.default()) != Pubkey.default():
+            return
+        if settings.ALLOW_LEGACY_SINGLE_ORACLE:
+            logger.warning("Legacy single-oracle resolution is enabled for compatibility mode.")
+            return
+        raise PermissionError(
+            "Legacy single-oracle markets are disabled by policy. "
+            "Create v2 markets with a notary_config or set ALLOW_LEGACY_SINGLE_ORACLE=1."
+        )
+
     def _load_resolver(self, resolver_hash: bytes) -> ResolverDefinition:
         hash_hex = resolver_hash.hex()
         path = os.path.join(settings.RESOLVER_STORE_DIR, f"{hash_hex}.json")
@@ -245,6 +256,7 @@ class AttesterService:
             raise ValueError("Market is already resolved (on-chain)")
         if market_str in self.inflight_cache:
             raise ValueError("Market resolution in progress (in-flight)")
+        self._enforce_resolution_mode_policy(state)
 
         chain_time = self.client.get_chain_time()
         if chain_time < state["resolve_ts"]:

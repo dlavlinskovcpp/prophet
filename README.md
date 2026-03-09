@@ -3,7 +3,7 @@
 Prophet is a Solana/Anchor prediction market protocol with:
 
 - on-chain order placement, matching, refunds, and redemption
-- permissionless signed resolution (single oracle and threshold notary modes)
+- permissionless signed resolution, with threshold notary v2 as the primary path and single-oracle as compatibility mode
 - an off-chain attester service for zkTLS verification and resolve transaction assembly
 - a Python SDK intended for agent/bot integration
 
@@ -93,6 +93,7 @@ bash scripts/check_zktls.sh
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
 - Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer (KMS/HSM/remote signer API).
+- The attester defaults to threshold-notary v2 markets; set `ALLOW_LEGACY_SINGLE_ORACLE=1` only for compatibility with older single-oracle markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
 - Remote signer endpoint is `POST /sign` with bearer auth and optional signer allowlist.
 - Do not commit private keys.

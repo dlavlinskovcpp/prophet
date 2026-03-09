@@ -30,7 +30,9 @@ def _post_json(url: str, payload: dict, timeout_s: float = 15.0) -> tuple[int, s
         return e.code, body
 
 def main():
-    parser = argparse.ArgumentParser(description="Resolve a market through oracle-attester")
+    parser = argparse.ArgumentParser(
+        description="Resolve a market through oracle-attester (threshold v2 by default; legacy requires attester compatibility flag)"
+    )
     parser.add_argument("market", help="Market pubkey")
     parser.add_argument("outcome", choices=["YES", "NO", "INVALID"], help="Outcome to submit")
     parser.add_argument("--url", default="http://localhost:8000/resolve", help="Attester resolve URL")

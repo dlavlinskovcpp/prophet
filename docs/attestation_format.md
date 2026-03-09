@@ -10,7 +10,7 @@ The program validates both:
 - the signer identity (oracle or allowed notary key)
 - exact message bytes (domain + fields + hashes)
 
-## V1 Message (Single Oracle)
+## V1 Message (Single Oracle, Compatibility Only)
 
 Domain: `PROPHET_RESOLVE_V1`
 
@@ -28,7 +28,7 @@ Used by:
 
 - on-chain instruction: `resolve_market_signed`
 - SDK: `ProphetClient.resolve_market_signed(...)`
-- attester legacy flow
+- attester legacy flow only when `ALLOW_LEGACY_SINGLE_ORACLE=1`
 
 ## V2 Message (Threshold Notaries)
 
@@ -52,7 +52,7 @@ Used by:
 
 - on-chain instruction: `resolve_market_threshold`
 - SDK: `ProphetClient.resolve_market_threshold(...)`
-- attester threshold flow
+- attester threshold flow by default
 
 ## Hash Inputs
 
@@ -66,3 +66,4 @@ The hashes are stored on-chain when the market is resolved.
 - On-chain verification does not re-run zkTLS proof cryptography.
 - zkTLS verification happens in the attester service.
 - Signatures are passed through Solana's Ed25519 verify instruction and checked against canonical message bytes in the program.
+- New deployments should prefer V2 threshold messages and v2 markets.

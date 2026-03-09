@@ -189,6 +189,7 @@ def health_check():
         "zktls_mode": settings.ZKTLS_MODE,
         "require_zktls": settings.REQUIRE_ZKTLS,
         "app_env": settings.APP_ENV,
+        "allow_legacy_single_oracle": settings.ALLOW_LEGACY_SINGLE_ORACLE,
     }
 
 

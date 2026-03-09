@@ -23,18 +23,16 @@ export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 
 `ProphetClient` now exposes the full MVP market lifecycle:
 
-- `initialize_market(...)`
-- `initialize_market_v2(...)`
 - `initialize_notary_config(...)`
 - `update_notary_config(...)`
+- `initialize_market_v2(...)`
 - `place_order(...)`
 - `match_orders(...)`
 - `cancel_order(...)`
 - `claim_refunds(...)`
-- `resolve_market(...)`
-- `resolve_market_signed(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
+- `initialize_market(...)` / `resolve_market_signed(...)` / `resolve_market(...)` remain available for legacy compatibility
 
 ## Minimal Example
 
@@ -42,7 +40,7 @@ export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 import os
 import time
 from solders.pubkey import Pubkey
-from prophet_sdk import ProphetClient, OrderSide, MarketOutcome, derive_market_pda
+from prophet_sdk import ProphetClient, OrderSide, derive_market_pda, derive_notary_config_pda
 
 client = ProphetClient(
     rpc_url=os.getenv("RPC_URL"),
@@ -58,11 +56,20 @@ open_ts = now - 5
 lock_ts = now + 120
 resolve_ts = now + 180
 
-client.initialize_market(
+notary_keys = [client.payer.pubkey()]  # demo only; use real t-of-n keys in production
+notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
+
+try:
+    client.initialize_notary_config(1, notary_keys)
+except Exception:
+    pass  # config may already exist for this admin
+
+client.initialize_market_v2(
     resolver_hash=resolver_hash,
     open_ts=open_ts,
     lock_ts=lock_ts,
     resolve_ts=resolve_ts,
+    notary_config=notary_config,
     quote_mint=quote_mint,
 )
 
@@ -72,9 +79,9 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 
 ## Resolution Notes
 
-- `resolve_market_signed` is permissionless relayer flow for legacy single-oracle markets.
-- `resolve_market_threshold` is permissionless t-of-n notary flow for v2 markets.
-- Off-chain attester computes outcome, validates zkTLS, and sends signed resolve tx.
+- `resolve_market_threshold` is the primary permissionless t-of-n notary flow for v2 markets.
+- The attester defaults to threshold markets and rejects legacy single-oracle markets unless `ALLOW_LEGACY_SINGLE_ORACLE=1`.
+- `resolve_market_signed` remains available for older single-oracle markets and migration tooling.
 
 ## Attester Helper Script
 

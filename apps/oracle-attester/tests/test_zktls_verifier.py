@@ -5,7 +5,7 @@ from src.resolver import ResolverDefinition
 from src.config import settings
 
 def test_make_verifier_rejects_unsupported_mode(monkeypatch):
-    monkeypatch.setattr(settings, "ZKTLS_MODE", "mock")
+    monkeypatch.setattr(settings, "ZKTLS_MODE", "bogus")
     with pytest.raises(ValueError):
         make_verifier()
 
