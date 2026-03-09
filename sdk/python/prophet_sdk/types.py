@@ -27,6 +27,7 @@ class MarketAccount:
     oracle_authority: Pubkey
     quote_mint: Pubkey
     quote_vault: Pubkey
+    fee_recipient: Pubkey
     notary_config: Pubkey
     resolver_hash: bytes
     proof_hash: bytes
@@ -37,10 +38,12 @@ class MarketAccount:
     resolved_ts: int
     min_order_qty_atoms: int
     min_escrow_atoms: int
+    accrued_protocol_fees_atoms: int
     next_order_seq: int
     open_orders_total: int
     max_open_orders_total: int
     max_open_orders_per_user: int
+    protocol_fee_bps: int
     quote_decimals: int
     status: MarketStatus
     outcome: MarketOutcome
@@ -56,6 +59,7 @@ class OrderAccount:
     limit_p_yes_e8: int
     qty_remaining_atoms: int
     escrow_remaining_atoms: int
+    fee_remaining_atoms: int
     created_ts: int
 
 

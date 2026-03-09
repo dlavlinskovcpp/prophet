@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -26,6 +26,10 @@ release-deploy:
 
 test:
 	anchor test
+
+reliability:
+	cargo test -p prophet --lib
+	bash scripts/check_zktls.sh
 
 clean:
 	rm -rf target .anchor/test-ledger node_modules sdk/python/__pycache__

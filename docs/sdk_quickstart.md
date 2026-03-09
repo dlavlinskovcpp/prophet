@@ -33,6 +33,7 @@ export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 - `transfer_market_authority(...)`
 - `lock_market(...)` / `unlock_market(...)` / `sync_market_status(...)`
 - `update_market_schedule(...)`
+- `set_market_fee_config(...)` / `withdraw_protocol_fees(...)`
 - `emergency_resolve_invalid(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
@@ -77,6 +78,7 @@ client.initialize_market_v2(
 )
 
 market, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+client.set_market_fee_config(market, client.payer.pubkey(), 50)  # 50 bps before the first order only
 client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 ```
 
@@ -84,6 +86,7 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 
 - `resolve_market_threshold` is the primary permissionless t-of-n notary flow for v2 markets.
 - The attester only supports threshold-notary v2 markets.
+- Fee config is frozen after the first order. Orders prefund a fee reserve, only taker executions accrue protocol fees, and unused reserve returns through `claim_refunds(...)`.
 
 ## Example Scripts
 

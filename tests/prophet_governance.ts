@@ -6,6 +6,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   createMint,
+  getAccount,
   getAssociatedTokenAddress,
   getOrCreateAssociatedTokenAccount,
   mintTo,
@@ -99,6 +100,14 @@ describe("prophet-governance", () => {
   const airdrop = async (pk: PublicKey, lamports: number) => {
     const sig = await provider.connection.requestAirdrop(pk, lamports);
     await provider.connection.confirmTransaction(sig, "confirmed");
+  };
+
+  const fetchOrderOrNull = async (order: PublicKey): Promise<any | null> => {
+    try {
+      return await program.account.order.fetch(order);
+    } catch {
+      return null;
+    }
   };
 
   it("supports transfer authority, lock/unlock, schedule update, and permissionless status sync", async () => {
@@ -369,5 +378,238 @@ describe("prophet-governance", () => {
     assert.equal(marketAcc.outcome.invalid !== undefined, true);
     assert.deepEqual(marketAcc.proofHash, Array.from(proofHash));
     assert.deepEqual(marketAcc.publicInputsHash, Array.from(publicInputsHash));
+  });
+
+  it("supports protocol fee config, taker fee accrual, treasury withdrawal, and reserve refunds", async () => {
+    const authority = Keypair.generate();
+    const treasury = Keypair.generate();
+    const makerYes = Keypair.generate();
+    const takerNo = Keypair.generate();
+    const canceller = Keypair.generate();
+
+    await airdrop(authority.publicKey, 2e9);
+    await airdrop(treasury.publicKey, 2e9);
+    await airdrop(makerYes.publicKey, 2e9);
+    await airdrop(takerNo.publicKey, 2e9);
+    await airdrop(canceller.publicKey, 2e9);
+
+    const quoteMint = await createMint(provider.connection, admin, admin.publicKey, null, 6);
+    const makerYesAta = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      admin,
+      quoteMint,
+      makerYes.publicKey
+    );
+    const takerNoAta = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      admin,
+      quoteMint,
+      takerNo.publicKey
+    );
+    const cancellerAta = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      admin,
+      quoteMint,
+      canceller.publicKey
+    );
+    const treasuryAta = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      admin,
+      quoteMint,
+      treasury.publicKey
+    );
+
+    await mintTo(provider.connection, admin, quoteMint, makerYesAta.address, admin.publicKey, 1_000_000);
+    await mintTo(provider.connection, admin, quoteMint, takerNoAta.address, admin.publicKey, 1_000_000);
+    await mintTo(provider.connection, admin, quoteMint, cancellerAta.address, admin.publicKey, 1_000_000);
+
+    const now = await getSafeChainNow();
+    const resolverHash = Buffer.alloc(32, 0xd3);
+    const openTs = new BN(now - 5);
+    const lockTs = new BN(now + 40);
+    const resolveTs = new BN(now + 60);
+    const market = deriveMarket(resolverHash, openTs);
+    const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
+    const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
+
+    await program.methods
+      .initializeMarketV2(
+        [...resolverHash],
+        openTs,
+        lockTs,
+        resolveTs,
+        new BN(1),
+        new BN(1),
+        32,
+        4096
+      )
+      .accounts({
+        market,
+        authority: authority.publicKey,
+        oracleAuthority: authority.publicKey,
+        quoteMint,
+        quoteVault,
+        notaryConfig,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+
+    await (program.methods as any)
+      .setMarketFeeConfig(treasury.publicKey, 500)
+      .accounts({ market, authority: authority.publicKey })
+      .signers([authority])
+      .rpc();
+
+    let marketAcc = (await program.account.market.fetch(market)) as any;
+    assert.equal(marketAcc.protocolFeeBps, 500);
+    assert.equal(marketAcc.feeRecipient.toBase58(), treasury.publicKey.toBase58());
+
+    const makerOrder = deriveOrder(market, makerYes.publicKey, new BN(0));
+    const makerPosition = derivePosition(market, makerYes.publicKey);
+    await program.methods
+      .placeOrder(new BN(0), { buyYes: {} }, 60_000_000, new BN(100))
+      .accounts({
+        market,
+        order: makerOrder,
+        position: makerPosition,
+        owner: makerYes.publicKey,
+        ownerQuoteAta: makerYesAta.address,
+        quoteVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([makerYes])
+      .rpc();
+
+    const makerOrderAcc = (await program.account.order.fetch(makerOrder)) as any;
+    assert.equal(makerOrderAcc.escrowRemainingAtoms.toNumber(), 60);
+    assert.equal(makerOrderAcc.feeRemainingAtoms.toNumber(), 3);
+
+    let threw = false;
+    try {
+      await (program.methods as any)
+        .setMarketFeeConfig(authority.publicKey, 250)
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "fee config must freeze after the first order");
+
+    const takerOrder = deriveOrder(market, takerNo.publicKey, new BN(1));
+    const takerPosition = derivePosition(market, takerNo.publicKey);
+    await program.methods
+      .placeOrder(new BN(1), { buyNo: {} }, 55_000_000, new BN(100))
+      .accounts({
+        market,
+        order: takerOrder,
+        position: takerPosition,
+        owner: takerNo.publicKey,
+        ownerQuoteAta: takerNoAta.address,
+        quoteVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([takerNo])
+      .rpc();
+
+    const takerOrderAcc = (await program.account.order.fetch(takerOrder)) as any;
+    assert.equal(takerOrderAcc.escrowRemainingAtoms.toNumber(), 45);
+    assert.equal(takerOrderAcc.feeRemainingAtoms.toNumber(), 3);
+
+    await program.methods
+      .matchOrders(new BN(100))
+      .accounts({
+        market,
+        orderYes: makerOrder,
+        orderNo: takerOrder,
+        positionYes: makerPosition,
+        positionNo: takerPosition,
+        ownerYes: makerYes.publicKey,
+        ownerNo: takerNo.publicKey,
+        marketQuoteVault: quoteVault,
+      })
+      .rpc();
+
+    assert.equal(await fetchOrderOrNull(makerOrder), null, "maker order should close on full fill");
+    assert.equal(await fetchOrderOrNull(takerOrder), null, "taker order should close on full fill");
+
+    const makerPositionAcc = (await program.account.position.fetch(makerPosition)) as any;
+    const takerPositionAcc = (await program.account.position.fetch(takerPosition)) as any;
+    assert.equal(makerPositionAcc.yesSharesAtoms.toNumber(), 100);
+    assert.equal(makerPositionAcc.pendingRefundsAtoms.toNumber(), 3, "maker gets unused fee reserve back");
+    assert.equal(takerPositionAcc.noSharesAtoms.toNumber(), 100);
+    assert.equal(
+      takerPositionAcc.pendingRefundsAtoms.toNumber(),
+      6,
+      "taker gets price improvement plus unused fee reserve back"
+    );
+
+    marketAcc = (await program.account.market.fetch(market)) as any;
+    assert.equal(marketAcc.accruedProtocolFeesAtoms.toNumber(), 2, "only taker execution should accrue fees");
+    assert.equal(marketAcc.openOrdersTotal, 0);
+
+    let vaultAccount = await getAccount(provider.connection, quoteVault);
+    assert.equal(Number(vaultAccount.amount), 111);
+
+    await (program.methods as any)
+      .withdrawProtocolFees(new BN(999))
+      .accounts({
+        market,
+        authority: authority.publicKey,
+        quoteVault,
+        feeRecipientQuoteAta: treasuryAta.address,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([authority])
+      .rpc();
+
+    marketAcc = (await program.account.market.fetch(market)) as any;
+    assert.equal(marketAcc.accruedProtocolFeesAtoms.toNumber(), 0);
+
+    const treasuryTokenAccount = await getAccount(provider.connection, treasuryAta.address);
+    assert.equal(Number(treasuryTokenAccount.amount), 2);
+
+    vaultAccount = await getAccount(provider.connection, quoteVault);
+    assert.equal(Number(vaultAccount.amount), 109);
+
+    const cancelOrder = deriveOrder(market, canceller.publicKey, new BN(2));
+    const cancelPosition = derivePosition(market, canceller.publicKey);
+    await program.methods
+      .placeOrder(new BN(2), { buyYes: {} }, 50_000_000, new BN(10))
+      .accounts({
+        market,
+        order: cancelOrder,
+        position: cancelPosition,
+        owner: canceller.publicKey,
+        ownerQuoteAta: cancellerAta.address,
+        quoteVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([canceller])
+      .rpc();
+
+    const cancelOrderAcc = (await program.account.order.fetch(cancelOrder)) as any;
+    assert.equal(cancelOrderAcc.escrowRemainingAtoms.toNumber(), 5);
+    assert.equal(cancelOrderAcc.feeRemainingAtoms.toNumber(), 1);
+
+    await program.methods
+      .cancelOrder()
+      .accounts({
+        market,
+        order: cancelOrder,
+        position: cancelPosition,
+        owner: canceller.publicKey,
+      })
+      .signers([canceller])
+      .rpc();
+
+    const cancelPositionAcc = (await program.account.position.fetch(cancelPosition)) as any;
+    assert.equal(cancelPositionAcc.pendingRefundsAtoms.toNumber(), 6, "cancel should refund escrow plus fee reserve");
   });
 });
