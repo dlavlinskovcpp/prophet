@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test attester seed-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit
+.PHONY: validator build deploy test attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -22,9 +22,19 @@ clean:
 attester:
 	cd apps/oracle-attester && poetry install && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000
 
+remote-signer:
+	cd apps/oracle-attester && poetry install && poetry run uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+
+resolver-registry:
+	cd apps/oracle-attester && poetry install && poetry run uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
+
 seed-resolver:
 	# Usage: make seed-resolver RESOLVER=path/to.json
 	python3 scripts/seed_resolver.py $(RESOLVER) --store-dir apps/oracle-attester/resolver_store
+
+publish-resolver:
+	# Usage: make publish-resolver RESOLVER=path/to.json RESOLVER_REGISTRY_URL=http://127.0.0.1:8200/resolvers RESOLVER_REGISTRY_API_KEY=token
+	python3 scripts/seed_resolver.py $(RESOLVER) --registry-url $(RESOLVER_REGISTRY_URL) --api-key $(RESOLVER_REGISTRY_API_KEY)
 
 # --- Python SDK Agents ---
 factory:
@@ -47,7 +57,7 @@ keeper-example:
 		$(MARKETS) --ws-url $(WS_URL)
 
 localnet-up:
-	docker-compose -f docker-compose.localnet.yml up -d validator oracle-attester matching-keeper prometheus
+	docker-compose -f docker-compose.localnet.yml up -d validator resolver-registry remote-signer oracle-attester matching-keeper prometheus
 
 localnet-down:
 	docker-compose -f docker-compose.localnet.yml down

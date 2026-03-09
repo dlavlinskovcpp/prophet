@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     RESOLVER_REGISTRY_CACHE_TTL_S: float = _env_float("RESOLVER_REGISTRY_CACHE_TTL_S", 300.0)
     RESOLVER_REGISTRY_CACHE_MAX_ENTRIES: int = _env_int("RESOLVER_REGISTRY_CACHE_MAX_ENTRIES", 1024)
     RESOLVER_REGISTRY_ALLOW_STALE_ON_ERROR: bool = _env_bool("RESOLVER_REGISTRY_ALLOW_STALE_ON_ERROR", True)
+    RESOLVER_REGISTRY_REQUIRE_AUTH: bool = _env_bool("RESOLVER_REGISTRY_REQUIRE_AUTH", True)
+    RESOLVER_REGISTRY_SERVICE_API_KEY: str = os.getenv("RESOLVER_REGISTRY_SERVICE_API_KEY", "")
+    RESOLVER_REGISTRY_MAX_REQUEST_BYTES: int = _env_int("RESOLVER_REGISTRY_MAX_REQUEST_BYTES", 100_000)
+    RESOLVER_REGISTRY_AUDIT_LOG_PATH: str = os.getenv(
+        "RESOLVER_REGISTRY_AUDIT_LOG_PATH",
+        "./audit/resolver-registry.jsonl",
+    )
     ATTESTER_AUDIT_LOG_PATH: str = os.getenv("ATTESTER_AUDIT_LOG_PATH", "./audit/attester.jsonl")
     REMOTE_SIGNER_AUDIT_LOG_PATH: str = os.getenv("REMOTE_SIGNER_AUDIT_LOG_PATH", "./audit/remote-signer.jsonl")
 
@@ -259,6 +266,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH must be configured when REMOTE_SIGNER_ALLOWLIST_MODE=file."
             )
+
+    def validate_resolver_registry_service_runtime(self) -> None:
+        if not (self.RESOLVER_STORE_DIR or "").strip():
+            raise ValueError("RESOLVER_STORE_DIR is required for the resolver registry service.")
+        if self.RESOLVER_REGISTRY_REQUIRE_AUTH and not self.RESOLVER_REGISTRY_SERVICE_API_KEY:
+            raise ValueError(
+                "RESOLVER_REGISTRY_SERVICE_API_KEY is required when RESOLVER_REGISTRY_REQUIRE_AUTH=1."
+            )
+        if self.RESOLVER_REGISTRY_MAX_REQUEST_BYTES <= 0:
+            raise ValueError("RESOLVER_REGISTRY_MAX_REQUEST_BYTES must be > 0.")
 
     def validate_api_runtime(self) -> None:
         if self.REQUIRE_API_AUTH and not self.API_AUTH_TOKEN:
