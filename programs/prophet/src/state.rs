@@ -8,8 +8,9 @@ pub const PROBABILITY_SCALE: u32 = 100_000_000; // 1e8
 pub const MAX_NOTARIES: usize = 32;
 
 /// Maximum number of prior instructions to scan for ed25519 verify instructions.
-/// This bounds compute in `resolve_market_threshold`.
-pub const MAX_ED25519_SCAN: usize = 64;
+/// Keep this comfortably below Solana's transaction instruction trace limit so the
+/// bound is both meaningful in production and testable in integration tests.
+pub const MAX_ED25519_SCAN: usize = 16;
 
 #[account]
 pub struct Market {
