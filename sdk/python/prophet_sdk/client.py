@@ -30,6 +30,7 @@ ASSOCIATED_TOKEN_PROGRAM_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH
 SYSVAR_INSTRUCTIONS_ID = Pubkey.from_string("Sysvar1nstructions1111111111111111111111111")
 
 ORDER_DISCRIMINATOR = hashlib.sha256(b"account:Order").digest()[:8]
+MARKET_DISCRIMINATOR = hashlib.sha256(b"account:Market").digest()[:8]
 
 DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
 
@@ -129,6 +130,36 @@ class ProphetClient:
         if not resp.value:
             return None
         return decode_market(extract_account_bytes(resp.value.data))
+
+    def fetch_markets(self) -> List[Tuple[Pubkey, MarketAccount]]:
+        resp = self.client.get_program_accounts(
+            self.program_id,
+            commitment=Confirmed,
+            encoding="base64",
+        )
+
+        results: List[Tuple[Pubkey, MarketAccount]] = []
+        if not resp.value:
+            return results
+
+        for item in resp.value:
+            try:
+                if hasattr(item, "account"):
+                    acc_data_obj = item.account.data
+                    pk_str = str(item.pubkey)
+                else:
+                    acc_data_obj = item["account"]["data"]
+                    pk_str = item["pubkey"]
+
+                raw_bytes = extract_account_bytes(acc_data_obj)
+                if raw_bytes[:8] != MARKET_DISCRIMINATOR:
+                    continue
+
+                results.append((Pubkey.from_string(pk_str), decode_market(raw_bytes)))
+            except Exception:
+                continue
+
+        return results
 
     def fetch_order(self, pubkey: Pubkey) -> Optional[OrderAccount]:
         resp = self.client.get_account_info(pubkey, commitment=Confirmed)

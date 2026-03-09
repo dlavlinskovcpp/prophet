@@ -1,11 +1,12 @@
 # Matching Keeper Service
 
-`apps/matching-keeper` is the production-oriented replacement for the demo keeper scripts in `sdk/python/examples`.
+`apps/matching-keeper` is the operated matching service for Prophet markets. It replaces the example keepers in `sdk/python/examples` with a long-running process that can be monitored and restarted like normal infra.
 
-It does three things:
+It does four things:
 
-- keeps a persistent SQLite snapshot of tracked markets and open orders
-- follows Anchor logs over websocket to mark orders dirty and refresh only changed accounts
+- discovers or accepts configured markets to track
+- keeps a persistent SQLite snapshot of market metadata, open orders, and match attempts
+- follows order-account websocket updates and periodically resyncs full books as a correctness backstop
 - continuously submits `match_orders` transactions for crossed books
 
 ## Run
@@ -21,23 +22,47 @@ poetry run prophet-matching-keeper
 Required env:
 
 - `PAYER_KEYPAIR_PATH`: signer that pays for `match_orders`
-- `MARKETS`: comma-separated market pubkeys to track
+- `MARKETS` when `MARKET_DISCOVERY_MODE=explicit`
 
 Important optional env:
 
-- `DB_PATH`: SQLite state file for order snapshots and match attempts
+- `MARKET_DISCOVERY_MODE`: `explicit` or `program_scan`
+- `DISCOVERY_INTERVAL_S`: how often to rescan markets
+- `MAX_DISCOVERED_MARKETS`: cap for `program_scan`
+- `REQUIRE_NOTARY_CONFIG`: only track v2 markets with a configured notary
+- `DB_PATH`: SQLite state file for snapshots and attempts
 - `WS_URL`: websocket endpoint; defaults from `RPC_URL`
+- `SNAPSHOT_RESYNC_S`: full order-book refresh interval
+- `MATCH_ATTEMPT_RETENTION_DAYS`: SQLite retention window for attempts
+- `PRUNE_INTERVAL_S`: pruning interval
+- `STALE_WS_THRESHOLD_S`: health threshold for stale websocket activity
 - `MAX_QTY_ATOMS`: max quantity per submitted match
-- `MAX_MATCHES_PER_MARKET`: per-cycle cap to avoid one market starving others
+- `MAX_MATCHES_PER_MARKET`: per-cycle cap so one hot market does not starve others
 
-HTTP endpoints:
+## Discovery Modes
 
-- `GET /health`: process and websocket health
-- `GET /markets`: runtime and persisted order-book status per market
+`explicit`
+
+- Tracks only the pubkeys in `MARKETS`.
+- Markets are activated only when the on-chain account is still `Open`.
+
+`program_scan`
+
+- Scans program accounts for `Market` accounts.
+- Keeps only `Open` markets, and by default only markets with a non-default `notary_config`.
+- Caps tracked markets with `MAX_DISCOVERED_MARKETS`.
+
+Markets that disappear, resolve, lock, or otherwise stop qualifying are retired automatically. Retirement clears open orders from the runtime snapshot but preserves the market row and error reason in SQLite.
+
+## HTTP Endpoints
+
+- `GET /health`: process, discovery, prune, and websocket health
+- `GET /markets`: merged runtime plus persisted market status
 - `GET /attempts`: recent match attempts from SQLite
+- `GET /metrics`: Prometheus-style text metrics for active markets, open orders, attempts, and websocket/discovery ages
 
-## Notes
+## Operational Notes
 
-- This service is config-driven: it tracks explicit markets rather than discovering every market on-chain.
-- It still relies on full snapshot refreshes as a correctness backstop even when websocket log updates are healthy.
-- The next production step after this is market discovery and deployment/ops wiring, not more example scripts.
+- Websocket updates are treated as a low-latency hint path. The keeper still performs periodic full snapshot refreshes.
+- Match attempts are durable in SQLite and old attempts are pruned on a retention schedule.
+- Market onboarding is now automatic in `program_scan` mode, but deployment, alerting, and external dashboards are still up to the operator.

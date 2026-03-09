@@ -27,6 +27,10 @@ class SQLiteStateStore:
                 CREATE TABLE IF NOT EXISTS markets (
                     market TEXT PRIMARY KEY,
                     quote_mint TEXT NOT NULL DEFAULT '',
+                    market_status TEXT NOT NULL DEFAULT '',
+                    discovery_source TEXT NOT NULL DEFAULT '',
+                    active INTEGER NOT NULL DEFAULT 1,
+                    last_seen_at INTEGER NOT NULL DEFAULT 0,
                     last_snapshot_at INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT NOT NULL DEFAULT ''
                 );
@@ -59,11 +63,69 @@ class SQLiteStateStore:
                 CREATE INDEX IF NOT EXISTS idx_match_attempts_market_id ON match_attempts(market, id DESC);
                 """
             )
+            self._ensure_column(conn, "markets", "market_status", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "markets", "discovery_source", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "markets", "active", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "markets", "last_seen_at", "INTEGER NOT NULL DEFAULT 0")
+
+    def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        cols = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column in cols:
+            return
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def upsert_market_metadata(
+        self,
+        market: Pubkey,
+        *,
+        quote_mint: Optional[Pubkey],
+        market_status: str,
+        discovery_source: str,
+        active: bool,
+        last_error: str = "",
+        captured_at: Optional[int] = None,
+    ) -> None:
+        ts = int(captured_at or time.time())
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO markets (
+                    market, quote_mint, market_status, discovery_source, active, last_seen_at, last_snapshot_at, last_error
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(market) DO UPDATE SET
+                    quote_mint = CASE WHEN excluded.quote_mint = '' THEN markets.quote_mint ELSE excluded.quote_mint END,
+                    market_status = excluded.market_status,
+                    discovery_source = excluded.discovery_source,
+                    active = excluded.active,
+                    last_seen_at = excluded.last_seen_at,
+                    last_snapshot_at = CASE
+                        WHEN excluded.last_snapshot_at = 0 THEN markets.last_snapshot_at
+                        ELSE excluded.last_snapshot_at
+                    END,
+                    last_error = excluded.last_error
+                """,
+                (
+                    str(market),
+                    str(quote_mint) if quote_mint else "",
+                    market_status,
+                    discovery_source,
+                    1 if active else 0,
+                    ts,
+                    ts,
+                    last_error,
+                ),
+            )
 
     def replace_market_snapshot(
         self,
         market: Pubkey,
         quote_mint: Optional[Pubkey],
+        market_status: str,
+        discovery_source: str,
         orders: List[tuple[Pubkey, OrderAccount]],
         captured_at: Optional[int] = None,
     ) -> None:
@@ -73,14 +135,20 @@ class SQLiteStateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO markets (market, quote_mint, last_snapshot_at, last_error)
-                VALUES (?, ?, ?, '')
+                INSERT INTO markets (
+                    market, quote_mint, market_status, discovery_source, active, last_seen_at, last_snapshot_at, last_error
+                )
+                VALUES (?, ?, ?, ?, 1, ?, ?, '')
                 ON CONFLICT(market) DO UPDATE SET
                     quote_mint = excluded.quote_mint,
+                    market_status = excluded.market_status,
+                    discovery_source = excluded.discovery_source,
+                    active = 1,
+                    last_seen_at = excluded.last_seen_at,
                     last_snapshot_at = excluded.last_snapshot_at,
                     last_error = ''
                 """,
-                (market_str, quote_mint_str, ts),
+                (market_str, quote_mint_str, market_status, discovery_source, ts, ts),
             )
             conn.execute("DELETE FROM orders WHERE market = ?", (market_str,))
             conn.executemany(
@@ -119,13 +187,17 @@ class SQLiteStateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO markets (market, quote_mint, last_snapshot_at, last_error)
-                VALUES (?, '', ?, '')
+                INSERT INTO markets (
+                    market, quote_mint, market_status, discovery_source, active, last_seen_at, last_snapshot_at, last_error
+                )
+                VALUES (?, '', '', '', 1, ?, ?, '')
                 ON CONFLICT(market) DO UPDATE SET
+                    active = 1,
+                    last_seen_at = excluded.last_seen_at,
                     last_snapshot_at = excluded.last_snapshot_at,
                     last_error = ''
                 """,
-                (market_str, ts),
+                (market_str, ts, ts),
             )
             for order_pubkey, order in updates.items():
                 if order is None or order.qty_remaining_atoms <= 0:
@@ -167,14 +239,47 @@ class SQLiteStateStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO markets (market, quote_mint, last_snapshot_at, last_error)
-                VALUES (?, '', ?, ?)
+                INSERT INTO markets (
+                    market, quote_mint, market_status, discovery_source, active, last_seen_at, last_snapshot_at, last_error
+                )
+                VALUES (?, '', '', '', 1, ?, ?, ?)
                 ON CONFLICT(market) DO UPDATE SET
+                    active = 1,
+                    last_seen_at = excluded.last_seen_at,
                     last_snapshot_at = excluded.last_snapshot_at,
                     last_error = excluded.last_error
                 """,
-                (str(market), ts, error),
+                (str(market), ts, ts, error),
             )
+
+    def deactivate_market(
+        self,
+        market: Pubkey,
+        *,
+        market_status: str,
+        discovery_source: str,
+        reason: str = "",
+        captured_at: Optional[int] = None,
+    ) -> None:
+        ts = int(captured_at or time.time())
+        market_str = str(market)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO markets (
+                    market, quote_mint, market_status, discovery_source, active, last_seen_at, last_snapshot_at, last_error
+                )
+                VALUES (?, '', ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(market) DO UPDATE SET
+                    market_status = excluded.market_status,
+                    discovery_source = excluded.discovery_source,
+                    active = 0,
+                    last_seen_at = excluded.last_seen_at,
+                    last_error = excluded.last_error
+                """,
+                (market_str, market_status, discovery_source, ts, ts, reason),
+            )
+            conn.execute("DELETE FROM orders WHERE market = ?", (market_str,))
 
     def record_match_attempt(
         self,
@@ -213,12 +318,24 @@ class SQLiteStateStore:
                 SELECT
                     m.market,
                     m.quote_mint,
+                    m.market_status,
+                    m.discovery_source,
+                    m.active,
+                    m.last_seen_at,
                     m.last_snapshot_at,
                     m.last_error,
                     COUNT(o.order_pubkey) AS open_orders
                 FROM markets m
                 LEFT JOIN orders o ON o.market = m.market
-                GROUP BY m.market, m.quote_mint, m.last_snapshot_at, m.last_error
+                GROUP BY
+                    m.market,
+                    m.quote_mint,
+                    m.market_status,
+                    m.discovery_source,
+                    m.active,
+                    m.last_seen_at,
+                    m.last_snapshot_at,
+                    m.last_error
                 ORDER BY m.market
                 """
             ).fetchall()
@@ -245,3 +362,27 @@ class SQLiteStateStore:
                 (int(limit),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def summarize_attempts(self) -> dict:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS success_total,
+                    SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failure_total
+                FROM match_attempts
+                """
+            ).fetchone()
+        return {
+            "total": int(row["total"] or 0),
+            "success_total": int(row["success_total"] or 0),
+            "failure_total": int(row["failure_total"] or 0),
+        }
+
+    def prune_old_attempts(self, retention_days: int) -> int:
+        cutoff = int(time.time()) - int(retention_days) * 24 * 60 * 60
+        with self._connect() as conn:
+            before = conn.total_changes
+            conn.execute("DELETE FROM match_attempts WHERE created_at < ?", (cutoff,))
+            return conn.total_changes - before
