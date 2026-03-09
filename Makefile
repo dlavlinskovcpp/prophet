@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test attester seed-resolver factory maker keeper clean zktls-audit
+.PHONY: validator build deploy test attester seed-resolver factory maker keeper keeper-example localnet-up localnet-down clean zktls-audit
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -38,9 +38,19 @@ maker:
 		--markets $(MARKETS) --quote-mint $(QUOTE_MINT)
 
 keeper:
-	# Usage: make keeper MARKETS="m1 m2" WS_URL=ws://127.0.0.1:8900
+	# Usage: cp apps/matching-keeper/.env.example apps/matching-keeper/.env && make keeper
+	cd apps/matching-keeper && poetry install && poetry run prophet-matching-keeper
+
+keeper-example:
+	# Usage: make keeper-example MARKETS="m1 m2" WS_URL=ws://127.0.0.1:8900
 	cd sdk/python && poetry run python examples/keeper_multi_market_logs.py \
 		$(MARKETS) --ws-url $(WS_URL)
+
+localnet-up:
+	docker-compose -f docker-compose.localnet.yml up -d validator oracle-attester matching-keeper prometheus
+
+localnet-down:
+	docker-compose -f docker-compose.localnet.yml down
 
 zktls-audit:
 	./scripts/check_zktls.sh

@@ -19,6 +19,16 @@ cp .env.example .env
 poetry run prophet-matching-keeper
 ```
 
+Top-level shortcuts:
+
+```bash
+cp apps/matching-keeper/.env.example apps/matching-keeper/.env
+make keeper
+make localnet-up
+```
+
+`make localnet-up` starts the validator, attester, matching keeper, and Prometheus from `docker-compose.localnet.yml`. Prometheus scrapes the keeper and attester with the sample config in `ops/monitoring/prometheus.yml` and alert rules in `ops/monitoring/alerts.yml`.
+
 Required env:
 
 - `PAYER_KEYPAIR_PATH`: signer that pays for `match_orders`
@@ -61,8 +71,27 @@ Markets that disappear, resolve, lock, or otherwise stop qualifying are retired 
 - `GET /attempts`: recent match attempts from SQLite
 - `GET /metrics`: Prometheus-style text metrics for active markets, open orders, attempts, and websocket/discovery ages
 
+## Deployment
+
+- Container image: `apps/matching-keeper/Dockerfile`
+- Compose service: `docker-compose.localnet.yml`
+- Make target: `Makefile`
+
+The compose service defaults to `MARKET_DISCOVERY_MODE=program_scan`, mounts `./id.json` as the payer, persists SQLite state under `apps/matching-keeper/state`, and publishes the keeper on `:8010`.
+If you use a different payer keypair location, override `PAYER_KEYPAIR_PATH` in `apps/matching-keeper/.env` or in compose env overrides.
+
+## Monitoring
+
+- Prometheus target: `http://matching-keeper:8010/metrics`
+- Sample alert rules:
+  - `ProphetMatchingKeeperDown`
+  - `ProphetMatchingKeeperWebsocketStale`
+  - `ProphetMatchingKeeperNoActiveMarkets`
+
+Prometheus is exposed on `:9090` in the local compose stack.
+
 ## Operational Notes
 
 - Websocket updates are treated as a low-latency hint path. The keeper still performs periodic full snapshot refreshes.
 - Match attempts are durable in SQLite and old attempts are pruned on a retention schedule.
-- Market onboarding is now automatic in `program_scan` mode, but deployment, alerting, and external dashboards are still up to the operator.
+- Market onboarding is automatic in `program_scan` mode, and the repo now includes container, compose, and Prometheus wiring. Dashboarding beyond Prometheus is still operator-owned.

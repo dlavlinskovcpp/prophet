@@ -6,6 +6,26 @@ from pydantic_settings import BaseSettings
 from solders.pubkey import Pubkey
 
 
+def _load_dotenv_if_present() -> None:
+    env_path = Path(".env")
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+        value = value.strip().strip("'").strip('"')
+        os.environ[key] = value
+
+
+_load_dotenv_if_present()
+
+
 def _derive_ws_url(rpc_url: str) -> str:
     if rpc_url.startswith("https://"):
         return "wss://" + rpc_url[len("https://") :]

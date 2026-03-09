@@ -74,10 +74,16 @@ uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
 Matching keeper:
 
 ```bash
-cd apps/matching-keeper
-poetry install
-cp .env.example .env
-poetry run prophet-matching-keeper
+cp apps/matching-keeper/.env.example apps/matching-keeper/.env
+make keeper
+```
+
+The sample keeper env expects a payer keypair at `./id.json`. Override `PAYER_KEYPAIR_PATH` if yours lives elsewhere.
+
+Localnet infra stack with validator, attester, matching keeper, and Prometheus:
+
+```bash
+make localnet-up
 ```
 
 ## Testing
@@ -108,6 +114,7 @@ bash scripts/check_zktls.sh
 - Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
 - The attester only supports threshold-notary v2 markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
+- Matching keeper exposes `/health` and `/metrics`, and the local compose stack now includes Prometheus plus sample alert rules.
 - Resolver definitions can be sourced from a local directory or an HTTP resolver registry, are always re-hashed before use, and are cached with stale-on-error fallback for transient registry outages.
 - Both the attester and remote signer persist append-only JSONL audit logs by default.
 - Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.

@@ -267,7 +267,7 @@ jobs:
 
       - name: Run keeper tests
         working-directory: apps/matching-keeper
-        run: poetry run pytest -q tests/test_engine.py tests/test_storage.py
+        run: poetry run pytest -q tests/test_engine.py tests/test_service.py tests/test_storage.py
 
   oracle-attester:
     name: Oracle Attester Tests
