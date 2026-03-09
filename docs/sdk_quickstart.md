@@ -83,6 +83,11 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 - The attester defaults to threshold markets and rejects legacy single-oracle markets unless `ALLOW_LEGACY_SINGLE_ORACLE=1`.
 - `resolve_market_signed` remains available for older single-oracle markets and migration tooling.
 
+## Example Scripts
+
+- Preferred v2 relayer example: `sdk/python/examples/resolve_threshold_relayer.py`
+- Legacy compatibility relayer example: `sdk/python/examples/resolve_signed_relayer.py`
+
 ## Attester Helper Script
 
 The helper script supports direct proof/public-input payloads or `proof_ref` passthrough:
