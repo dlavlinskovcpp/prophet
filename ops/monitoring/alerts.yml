@@ -1,0 +1,32 @@
+groups:
+  - name: prophet-matching-keeper
+    rules:
+      - alert: ProphetMatchingKeeperDown
+        expr: prophet_matching_keeper_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: matching-keeper
+        annotations:
+          summary: Prophet matching keeper is down
+          description: The matching keeper process is not reporting itself as up.
+
+      - alert: ProphetMatchingKeeperWebsocketStale
+        expr: prophet_matching_keeper_websocket_stale == 1
+        for: 2m
+        labels:
+          severity: warning
+          service: matching-keeper
+        annotations:
+          summary: Prophet matching keeper websocket feed is stale
+          description: The keeper has active markets but websocket ingestion is stale.
+
+      - alert: ProphetMatchingKeeperNoActiveMarkets
+        expr: prophet_matching_keeper_active_markets == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: matching-keeper
+        annotations:
+          summary: Prophet matching keeper has no active markets
+          description: No markets are currently active in the keeper runtime.
