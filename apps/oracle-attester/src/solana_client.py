@@ -28,6 +28,7 @@ MarketLayout = BStruct(
     "oracle_authority" / Bytes(32),
     "quote_mint" / Bytes(32),
     "quote_vault" / Bytes(32),
+    "fee_recipient" / Bytes(32),
     "notary_config" / Bytes(32),
     "resolver_hash" / Bytes(32),
     "proof_hash" / Bytes(32),
@@ -38,10 +39,13 @@ MarketLayout = BStruct(
     "resolved_ts" / I64,
     "min_order_qty_atoms" / U64,
     "min_escrow_atoms" / U64,
+    "accrued_protocol_fees_atoms" / U64,
     "next_order_seq" / U64,
     "open_orders_total" / U32,
     "max_open_orders_total" / U32,
     "max_open_orders_per_user" / U16,
+    "protocol_fee_bps" / U16,
+    "reserved0" / Bytes(6),
     "quote_decimals" / U8,
     "status" / U8,
     "outcome" / U8,
@@ -62,12 +66,16 @@ class SolanaClient:
             return Keypair.from_bytes(bytes(__import__("json").load(f)))
 
     def extract_account_bytes(self, account_data) -> bytes:
+        if isinstance(account_data, (bytes, bytearray)):
+            return bytes(account_data)
         if isinstance(account_data, (list, tuple)):
             b64 = account_data[0]
             return base64.b64decode(b64)
         if isinstance(account_data, str):
             return base64.b64decode(account_data)
-        raise ValueError("Unknown account data format")
+        if hasattr(account_data, "decoded"):
+            return account_data.decoded
+        raise ValueError(f"Unknown account data format: {type(account_data)}")
 
     def get_discriminator(self, namespace: str, name: str) -> bytes:
         preimage = f"{namespace}:{name}".encode("utf-8")

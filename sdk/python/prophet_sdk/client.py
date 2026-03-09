@@ -264,7 +264,15 @@ class ProphetClient:
         ]
 
         ix = Instruction(self.program_id, data, keys)
-        sig = submit_and_confirm(self.client, [ix], self.payer)
+        try:
+            sig = submit_and_confirm(self.client, [ix], self.payer)
+        except RuntimeError as err:
+            if "already in use" not in str(err):
+                raise
+            resp = self.client.get_account_info(cfg_pda, commitment=Confirmed)
+            if not resp.value:
+                raise
+            sig = ""
         return cfg_pda, sig
 
     def update_notary_config(self, threshold: int, notary_keys: Sequence[Pubkey]) -> str:

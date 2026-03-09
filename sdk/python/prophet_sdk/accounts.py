@@ -37,7 +37,7 @@ MarketLayout = CStruct(
     "max_open_orders_total" / U32,
     "max_open_orders_per_user" / U16,
     "protocol_fee_bps" / U16,
-    "_reserved0" / Bytes(6),
+    "reserved0" / Bytes(6),
     "quote_decimals" / U8,
     "status" / U8,
     "outcome" / U8,

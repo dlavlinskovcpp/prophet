@@ -19,6 +19,7 @@ def _order(*, market_seed: int, owner_seed: int, side: OrderSide, seq: int, pric
         limit_p_yes_e8=price,
         qty_remaining_atoms=qty,
         escrow_remaining_atoms=qty,
+        fee_remaining_atoms=0,
         created_ts=1_700_000_000 + seq,
     )
 

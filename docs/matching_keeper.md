@@ -88,10 +88,10 @@ If you use a different payer keypair location, override `PAYER_KEYPAIR_PATH` in 
   - `ProphetMatchingKeeperWebsocketStale`
   - `ProphetMatchingKeeperNoActiveMarkets`
 
-Prometheus is exposed on `:9090` in the local compose stack.
+Prometheus is exposed on `:9090` and Grafana on `:3000` in the local compose stack. The repo ships a provisioned `Prophet Ops` Grafana dashboard under `ops/monitoring/grafana/dashboards/prophet-ops.json`.
 
 ## Operational Notes
 
 - Websocket updates are treated as a low-latency hint path. The keeper still performs periodic full snapshot refreshes.
 - Match attempts are durable in SQLite and old attempts are pruned on a retention schedule.
-- Market onboarding is automatic in `program_scan` mode, and the repo now includes container, compose, and Prometheus wiring. Dashboarding beyond Prometheus is still operator-owned.
+- Market onboarding is automatic in `program_scan` mode, and the repo now includes container, compose, Prometheus, Grafana, and backup/restore wiring. Use `docs/ops_runbook.md` for incident and recovery steps.

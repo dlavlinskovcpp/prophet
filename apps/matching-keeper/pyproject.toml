@@ -3,6 +3,7 @@ name = "matching-keeper"
 version = "0.1.0"
 description = "Persistent order matching keeper for Prophet markets"
 authors = ["Prophet Protocol <dev@prophet.xyz>"]
+packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.10"

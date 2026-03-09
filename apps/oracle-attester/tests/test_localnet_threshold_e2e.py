@@ -38,13 +38,24 @@ def _write_keypair(path: Path, kp: Keypair) -> None:
     path.write_text(json.dumps(list(bytes(kp))), encoding="utf-8")
 
 
+def _rpc_value(fn, *args, attempts: int = 10, delay_s: float = 1.0):
+    last_err = None
+    for _ in range(attempts):
+        try:
+            return fn(*args).value
+        except Exception as err:
+            last_err = err
+            time.sleep(delay_s)
+    raise RuntimeError(f"RPC call failed after retries: {last_err}")
+
+
 def _airdrop(client: Client, pubkey: Pubkey, lamports: int) -> None:
-    sig = client.request_airdrop(pubkey, lamports).value
+    sig = _rpc_value(client.request_airdrop, pubkey, lamports)
     if not sig:
         raise RuntimeError(f"airdrop request failed for {pubkey}")
 
     for _ in range(30):
-        bal = client.get_balance(pubkey).value or 0
+        bal = _rpc_value(client.get_balance, pubkey) or 0
         if bal >= lamports:
             return
         time.sleep(1)

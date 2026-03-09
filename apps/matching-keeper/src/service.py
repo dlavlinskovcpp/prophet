@@ -6,7 +6,6 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from solana.rpc.commitment import Confirmed
-from solana.rpc.types import DataSizeOpts
 from solana.rpc.websocket_api import connect
 from solders.pubkey import Pubkey
 
@@ -309,7 +308,7 @@ class MatchingKeeperService:
             return order_pubkey, None
 
     async def _listener_loop(self) -> None:
-        filters = [DataSizeOpts(ORDER_ACCOUNT_SIZE)]
+        filters = [ORDER_ACCOUNT_SIZE]
 
         while not self._stop_event.is_set():
             try:
