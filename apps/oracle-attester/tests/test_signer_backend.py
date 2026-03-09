@@ -5,7 +5,13 @@ import subprocess
 import pytest
 from solders.keypair import Keypair
 
-from src.signer_backend import CommandSignerBackend, LocalKeypairSignerBackend
+from src.signer_backend import AwsKmsSignerBackend, CommandSignerBackend, LocalKeypairSignerBackend
+
+
+def _ed25519_spki_from_pubkey(raw_pubkey: bytes) -> bytes:
+    if len(raw_pubkey) != 32:
+        raise ValueError("expected 32-byte Ed25519 pubkey")
+    return bytes.fromhex("302a300506032b6570032100") + raw_pubkey
 
 
 def test_local_keypair_signer_backend_signs_loaded_key():
@@ -74,3 +80,73 @@ def test_command_signer_backend_rejects_bad_signature(monkeypatch):
     backend = CommandSignerBackend("kms-wrapper sign", 5.0)
     with pytest.raises(RuntimeError):
         backend.sign(kp.pubkey(), b"x", {})
+
+
+def test_aws_kms_signer_backend_loads_pubkeys_and_signs(monkeypatch):
+    kp = Keypair()
+    expected_sig = bytes([4] * 64)
+    seen = {"sign": []}
+
+    class MockKmsClient:
+        def get_public_key(self, KeyId):
+            seen["get_public_key"] = KeyId
+            return {
+                "KeyId": "arn:aws:kms:us-east-1:123456789012:key/abc",
+                "KeySpec": "ECC_NIST_EDWARDS25519",
+                "KeyUsage": "SIGN_VERIFY",
+                "SigningAlgorithms": ["ED25519_SHA_512"],
+                "PublicKey": _ed25519_spki_from_pubkey(bytes(kp.pubkey())),
+            }
+
+        def sign(self, **kwargs):
+            seen["sign"].append(kwargs)
+            return {"Signature": expected_sig}
+
+    monkeypatch.setattr(
+        "src.signer_backend._make_aws_kms_client",
+        lambda **kwargs: MockKmsClient(),
+    )
+
+    backend = AwsKmsSignerBackend(
+        region_name="us-east-1",
+        key_ids=["alias/prophet-notary"],
+        endpoint_url="",
+        timeout_s=3.0,
+    )
+    sig = backend.sign(kp.pubkey(), b"abc", {"market": "m1"})
+
+    assert sig == expected_sig
+    assert backend.loaded_pubkeys() == [str(kp.pubkey())]
+    assert seen["get_public_key"] == "alias/prophet-notary"
+    assert seen["sign"][0]["KeyId"] == "arn:aws:kms:us-east-1:123456789012:key/abc"
+    assert seen["sign"][0]["Message"] == b"abc"
+    assert seen["sign"][0]["MessageType"] == "RAW"
+    assert seen["sign"][0]["SigningAlgorithm"] == "ED25519_SHA_512"
+
+
+def test_aws_kms_signer_backend_rejects_wrong_key_spec(monkeypatch):
+    kp = Keypair()
+
+    class MockKmsClient:
+        def get_public_key(self, KeyId):
+            del KeyId
+            return {
+                "KeyId": "arn:aws:kms:us-east-1:123456789012:key/abc",
+                "KeySpec": "RSA_2048",
+                "KeyUsage": "SIGN_VERIFY",
+                "SigningAlgorithms": ["RSASSA_PSS_SHA_256"],
+                "PublicKey": _ed25519_spki_from_pubkey(bytes(kp.pubkey())),
+            }
+
+    monkeypatch.setattr(
+        "src.signer_backend._make_aws_kms_client",
+        lambda **kwargs: MockKmsClient(),
+    )
+
+    with pytest.raises(ValueError):
+        AwsKmsSignerBackend(
+            region_name="us-east-1",
+            key_ids=["alias/prophet-notary"],
+            endpoint_url="",
+            timeout_s=3.0,
+        )

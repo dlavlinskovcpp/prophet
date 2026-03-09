@@ -53,7 +53,7 @@ Responsibilities:
 - Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
 - Resolver definitions should come from a canonical registry source (directory mirror or HTTP registry) and must hash back to the on-chain `resolver_hash`.
 - The bundled resolver registry service provides authenticated publish/load APIs, durable audit logs, and a canonical file-backed store that the attester can consume over HTTP.
-- Managed signer deployments should keep an explicit signer allowlist, especially when a command/KMS/HSM bridge is used.
+- Managed signer deployments should keep an explicit signer allowlist. The repo now includes a concrete AWS KMS Ed25519 backend and still supports command/KMS/HSM bridges for other signer providers.
 
 ## Agent Integration
 

@@ -105,6 +105,43 @@ def test_validate_remote_signer_service_runtime_file_allowlist_requires_path(mon
         settings.validate_remote_signer_service_runtime()
 
 
+def test_validate_remote_signer_service_runtime_aws_kms_requires_region(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "aws_kms")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_REGION", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_KEY_IDS", "arn:aws:kms:us-east-1:123456789012:key/test")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "11111111111111111111111111111111")
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_remote_signer_service_runtime_aws_kms_requires_key_ids(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "aws_kms")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_KEY_IDS", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "11111111111111111111111111111111")
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_remote_signer_service_runtime_aws_kms_requires_allowlist_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "aws_kms")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_REGION", "us-east-1")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_AWS_KMS_KEY_IDS", "arn:aws:kms:us-east-1:123456789012:key/test")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_REQUIRE_ALLOWLIST", False)
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
 def test_validate_resolver_registry_runtime_rejects_non_positive_cache_ttl(monkeypatch):
     monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", "./resolver_store")

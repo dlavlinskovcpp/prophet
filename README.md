@@ -149,7 +149,7 @@ For the full procedure, including rollback expectations, see `docs/release_runbo
 
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
-- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
+- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer now supports a concrete `REMOTE_SIGNER_BACKEND=aws_kms` path for Ed25519 notary keys, while `REMOTE_SIGNER_BACKEND=command` remains available for other KMS/HSM wrappers.
 - The repo now includes a canonical resolver registry service (`src.resolver_registry_main:app`) with immutable publish/load semantics, bearer auth, Prometheus metrics, and append-only audit logs.
 - The attester only supports threshold-notary v2 markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
@@ -158,6 +158,7 @@ For the full procedure, including rollback expectations, see `docs/release_runbo
 - The local compose stack exercises the production-shaped path: attester -> remote signer over HTTP and attester -> resolver registry over HTTP.
 - The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.
 - Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.
+- The AWS KMS backend preloads configured Ed25519 key IDs, derives Solana pubkeys from `GetPublicKey`, and signs raw resolution messages with `Sign`.
 - Release bundles now archive the program binary, IDL, TS types, and release manifest for rollback.
 - Do not commit private keys.
 
