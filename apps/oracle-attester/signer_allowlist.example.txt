@@ -1,0 +1,2 @@
+# One base58 pubkey per line.
+# Copy this file to signer_allowlist.txt and replace with your managed notary pubkeys.

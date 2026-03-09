@@ -110,6 +110,13 @@ class RemoteNotarySigner:
         self.api_key = api_key
         self.timeout_s = timeout_s
 
+    def health(self) -> Dict[str, Any]:
+        return {
+            "url": self.url,
+            "timeout_s": self.timeout_s,
+            "uses_auth": bool(self.api_key),
+        }
+
     def sign(self, pubkey: Pubkey, message: bytes, context: Dict[str, str]) -> bytes:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -176,6 +183,19 @@ class AttesterService:
             if self.notary_signer_mode == "remote"
             else None
         )
+
+    def health(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "notary_signer_mode": self.notary_signer_mode,
+            "resolver_registry": self.resolver_registry.health(),
+            "proof_store_dir": settings.PROOF_STORE_DIR,
+            "attester_audit_log_path": settings.ATTESTER_AUDIT_LOG_PATH,
+            "inflight_cache_size": len(self.inflight_cache),
+            "resolved_cache_size": len(self.resolved_cache),
+        }
+        if self.remote_notary_signer is not None:
+            payload["remote_signer"] = self.remote_notary_signer.health()
+        return payload
 
     def _enforce_resolution_mode_policy(self, state: Dict[str, Any]) -> None:
         if state.get("notary_config", Pubkey.default()) != Pubkey.default():
@@ -249,6 +269,8 @@ class AttesterService:
             # status == 2 => Resolved (per program enum order)
             if state["status"] == 2:
                 raise ValueError("Market is already resolved (on-chain)")
+            if market_str in self.resolved_cache:
+                raise ValueError("Market was already resolved recently")
             if market_str in self.inflight_cache:
                 raise ValueError("Market resolution in progress (in-flight)")
             self._enforce_resolution_mode_policy(state)

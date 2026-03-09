@@ -45,6 +45,11 @@ class LocalKeypairSignerBackend(SignerBackend):
     def loaded_pubkeys(self) -> List[str]:
         return sorted(self.signer_map.keys())
 
+    def health(self) -> Dict[str, Any]:
+        payload = super().health()
+        payload["pubkeys"] = self.loaded_pubkeys()
+        return payload
+
 
 class CommandSignerBackend(SignerBackend):
     name = "command"
@@ -111,6 +116,16 @@ class CommandSignerBackend(SignerBackend):
             raise RuntimeError("Command signer returned signature for unexpected public key")
 
         return signature
+
+    def health(self) -> Dict[str, Any]:
+        payload = super().health()
+        payload.update(
+            {
+                "command_argv": self.argv,
+                "command_timeout_s": self.timeout_s,
+            }
+        )
+        return payload
 
 
 def _load_signers_from_settings() -> Dict[str, Keypair]:

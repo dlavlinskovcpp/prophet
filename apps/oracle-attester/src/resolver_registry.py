@@ -1,5 +1,8 @@
 import json
 import os
+import time
+from collections import OrderedDict
+from threading import Lock
 from typing import Any, Dict
 
 import httpx
@@ -88,12 +91,110 @@ class HttpResolverRegistry(ResolverRegistry):
         return {"mode": self.mode, "base_url": self.base_url}
 
 
+class CachingResolverRegistry(ResolverRegistry):
+    def __init__(
+        self,
+        inner: ResolverRegistry,
+        *,
+        ttl_s: float,
+        max_entries: int,
+        allow_stale_on_error: bool,
+    ):
+        self.inner = inner
+        self.mode = inner.mode
+        self.ttl_s = ttl_s
+        self.max_entries = max_entries
+        self.allow_stale_on_error = allow_stale_on_error
+        self._lock = Lock()
+        self._cache: "OrderedDict[str, tuple[ResolverDefinition, float]]" = OrderedDict()
+        self._hits = 0
+        self._misses = 0
+        self._stale_hits = 0
+        self._last_error = ""
+
+    def _get_fresh(self, hash_hex: str) -> ResolverDefinition | None:
+        item = self._cache.get(hash_hex)
+        if item is None:
+            return None
+        resolver, loaded_at = item
+        if time.monotonic() - loaded_at > self.ttl_s:
+            return None
+        self._cache.move_to_end(hash_hex)
+        return resolver
+
+    def _get_any(self, hash_hex: str) -> ResolverDefinition | None:
+        item = self._cache.get(hash_hex)
+        if item is None:
+            return None
+        resolver, _ = item
+        self._cache.move_to_end(hash_hex)
+        return resolver
+
+    def _store(self, hash_hex: str, resolver: ResolverDefinition) -> None:
+        self._cache[hash_hex] = (resolver, time.monotonic())
+        self._cache.move_to_end(hash_hex)
+        while len(self._cache) > self.max_entries:
+            self._cache.popitem(last=False)
+
+    def load(self, resolver_hash: bytes) -> ResolverDefinition:
+        hash_hex = resolver_hash.hex()
+
+        with self._lock:
+            fresh = self._get_fresh(hash_hex)
+            if fresh is not None:
+                self._hits += 1
+                return fresh
+
+        try:
+            resolver = self.inner.load(resolver_hash)
+        except Exception as exc:
+            with self._lock:
+                fallback = self._get_any(hash_hex) if self.allow_stale_on_error else None
+                if fallback is not None:
+                    self._stale_hits += 1
+                    self._last_error = str(exc)
+                    return fallback
+                self._last_error = str(exc)
+            raise
+
+        with self._lock:
+            self._misses += 1
+            self._last_error = ""
+            self._store(hash_hex, resolver)
+        return resolver
+
+    def health(self) -> Dict[str, Any]:
+        payload = dict(self.inner.health())
+        with self._lock:
+            payload.update(
+                {
+                    "cache_ttl_s": self.ttl_s,
+                    "cache_max_entries": self.max_entries,
+                    "cache_entries": len(self._cache),
+                    "cache_hits": self._hits,
+                    "cache_misses": self._misses,
+                    "cache_stale_hits": self._stale_hits,
+                    "cache_last_error": self._last_error,
+                    "cache_allow_stale_on_error": self.allow_stale_on_error,
+                }
+            )
+        return payload
+
+
 def make_resolver_registry() -> ResolverRegistry:
     mode = (settings.RESOLVER_REGISTRY_MODE or "directory").strip().lower()
     if mode == "http":
-        return HttpResolverRegistry(
+        inner: ResolverRegistry = HttpResolverRegistry(
             base_url=settings.RESOLVER_REGISTRY_URL,
             api_key=settings.RESOLVER_REGISTRY_API_KEY,
             timeout_s=settings.RESOLVER_REGISTRY_TIMEOUT_S,
         )
-    return DirectoryResolverRegistry(settings.RESOLVER_STORE_DIR)
+    else:
+        inner = DirectoryResolverRegistry(settings.RESOLVER_STORE_DIR)
+
+    return CachingResolverRegistry(
+        inner,
+        ttl_s=settings.RESOLVER_REGISTRY_CACHE_TTL_S,
+        max_entries=settings.RESOLVER_REGISTRY_CACHE_MAX_ENTRIES,
+        allow_stale_on_error=settings.RESOLVER_REGISTRY_ALLOW_STALE_ON_ERROR,
+    )
