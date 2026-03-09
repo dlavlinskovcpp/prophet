@@ -1,5 +1,6 @@
 import base64
 import hmac
+import hashlib
 import logging
 import time
 from collections import defaultdict, deque
@@ -9,10 +10,11 @@ from typing import Deque, Dict, Optional, Set, Tuple
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
-from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
+from .audit import JsonlAuditLogger
 from .config import settings
+from .signer_backend import make_remote_signer_backend
 
 logger = logging.getLogger("remote-signer")
 
@@ -81,29 +83,6 @@ class SlidingWindowRateLimiter:
             q.append(now)
             return True, 0
 
-
-def _load_keypair(path_or_str: str) -> Optional[Keypair]:
-    return settings._load_keypair(path_or_str)
-
-
-def _load_signers() -> Dict[str, Keypair]:
-    raw = (settings.NOTARY_KEYPAIR_PATHS or "").strip()
-    if raw:
-        sources = [x.strip() for x in raw.split(",") if x.strip()]
-    else:
-        # Local/dev fallback only. In production, service should still point to explicit signer keys.
-        sources = [settings.ORACLE_KEYPAIR_PATH]
-
-    out: Dict[str, Keypair] = {}
-    for src in sources:
-        kp = _load_keypair(src)
-        if kp is None:
-            logger.warning(f"Skipping invalid keypair source: {src}")
-            continue
-        out[str(kp.pubkey())] = kp
-    return out
-
-
 def _parse_allowed_pubkeys(raw: str) -> Set[str]:
     raw = (raw or "").strip()
     if not raw:
@@ -119,6 +98,7 @@ def _parse_allowed_pubkeys(raw: str) -> Set[str]:
 
 
 def _validate_remote_signer_runtime() -> None:
+    settings.validate_remote_signer_service_runtime()
     if settings.REMOTE_SIGNER_REQUIRE_AUTH and not settings.REMOTE_SIGNER_API_KEY:
         raise ValueError("REMOTE_SIGNER_API_KEY is required when REMOTE_SIGNER_REQUIRE_AUTH=1.")
     if settings.REMOTE_SIGNER_MAX_MESSAGE_BYTES <= 0:
@@ -145,8 +125,9 @@ def _client_ip(request: Request) -> str:
 
 
 _validate_remote_signer_runtime()
-signer_map = _load_signers()
+signer_backend = make_remote_signer_backend()
 allowed_pubkeys = _parse_allowed_pubkeys(settings.REMOTE_SIGNER_ALLOWED_PUBKEYS)
+audit_log = JsonlAuditLogger(settings.REMOTE_SIGNER_AUDIT_LOG_PATH, "remote-signer")
 metrics = MetricsRegistry()
 rate_limiter = SlidingWindowRateLimiter(
     max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
@@ -196,11 +177,13 @@ async def security_middleware(request: Request, call_next):
 
 @app.get("/health")
 def health():
-    return {
+    payload = {
         "ok": True,
-        "loaded_signers": len(signer_map),
         "allowlist_size": len(allowed_pubkeys),
+        "audit_log_path": settings.REMOTE_SIGNER_AUDIT_LOG_PATH,
     }
+    payload.update(signer_backend.health())
+    return payload
 
 
 @app.get("/metrics")
@@ -212,7 +195,8 @@ def metrics_endpoint():
 
 @app.post("/sign", response_model=SignResponse)
 async def sign(req: SignRequest):
-    if not signer_map:
+    loaded_pubkeys = signer_backend.loaded_pubkeys()
+    if loaded_pubkeys == [] and signer_backend.name == "local_keypairs":
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "no_keys"})
         return JSONResponse(status_code=503, content={"detail": "No signers configured"})
 
@@ -225,9 +209,7 @@ async def sign(req: SignRequest):
     if allowed_pubkeys and pk_str not in allowed_pubkeys:
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "not_allowed"})
         return JSONResponse(status_code=403, content={"detail": "Signer not allowed"})
-
-    kp = signer_map.get(pk_str)
-    if kp is None:
+    if loaded_pubkeys and pk_str not in loaded_pubkeys:
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "not_loaded"})
         return JSONResponse(status_code=403, content={"detail": "Signer key unavailable"})
 
@@ -241,7 +223,43 @@ async def sign(req: SignRequest):
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "message_too_large"})
         return JSONResponse(status_code=413, content={"detail": "Message too large"})
 
-    sig = bytes(kp.sign_message(msg))
+    try:
+        sig = signer_backend.sign(Pubkey.from_string(pk_str), msg, req.context)
+        audit_log.write(
+            "sign_success",
+            {
+                "public_key": pk_str,
+                "backend": signer_backend.name,
+                "message_sha256": hashlib.sha256(msg).hexdigest(),
+                "message_len": len(msg),
+                "context": req.context,
+            },
+        )
+    except PermissionError as exc:
+        metrics.inc("prophet_remote_signer_sign_total", labels={"result": "not_loaded"})
+        audit_log.write(
+            "sign_denied",
+            {
+                "public_key": pk_str,
+                "backend": signer_backend.name,
+                "reason": str(exc),
+                "context": req.context,
+            },
+        )
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
+    except Exception as exc:
+        metrics.inc("prophet_remote_signer_sign_total", labels={"result": "backend_error"})
+        audit_log.write(
+            "sign_failure",
+            {
+                "public_key": pk_str,
+                "backend": signer_backend.name,
+                "reason": str(exc),
+                "context": req.context,
+            },
+        )
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
+
     metrics.inc("prophet_remote_signer_sign_total", labels={"result": "success"})
     return SignResponse(
         signature_b64=base64.b64encode(sig).decode("ascii"),

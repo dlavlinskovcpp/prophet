@@ -41,6 +41,7 @@ Responsibilities:
 - Verify zkTLS payload using Reclaim HTTP verifier
 - Build resolve message/signatures
 - Submit permissionless resolve transaction for v2 threshold markets by default
+- Persist durable audit records for verification and submission steps
 
 ## Resolution Trust Model (MVP)
 
@@ -49,6 +50,7 @@ Responsibilities:
 - On-chain stores `proof_hash` + `public_inputs_hash` for auditability.
 - Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
 - Legacy single-oracle resolution remains for compatibility, but the attester should treat it as opt-in only.
+- Resolver definitions should come from a canonical registry source (directory mirror or HTTP registry) and must hash back to the on-chain `resolver_hash`.
 
 ## Agent Integration
 

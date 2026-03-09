@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     RELAYER_KEYPAIR_PATH: str = os.getenv("RELAYER_KEYPAIR_PATH", "")
     PROOF_STORE_DIR: str = os.getenv("PROOF_STORE_DIR", "./proof_store")
     RESOLVER_STORE_DIR: str = os.getenv("RESOLVER_STORE_DIR", "./resolver_store")
+    RESOLVER_REGISTRY_MODE: str = os.getenv("RESOLVER_REGISTRY_MODE", "directory")
+    RESOLVER_REGISTRY_URL: str = os.getenv("RESOLVER_REGISTRY_URL", "")
+    RESOLVER_REGISTRY_API_KEY: str = os.getenv("RESOLVER_REGISTRY_API_KEY", "")
+    RESOLVER_REGISTRY_TIMEOUT_S: float = _env_float("RESOLVER_REGISTRY_TIMEOUT_S", 5.0)
+    RESOLVER_REGISTRY_REQUIRE_TLS: bool = _env_bool("RESOLVER_REGISTRY_REQUIRE_TLS", True)
+    ATTESTER_AUDIT_LOG_PATH: str = os.getenv("ATTESTER_AUDIT_LOG_PATH", "./audit/attester.jsonl")
+    REMOTE_SIGNER_AUDIT_LOG_PATH: str = os.getenv("REMOTE_SIGNER_AUDIT_LOG_PATH", "./audit/remote-signer.jsonl")
 
     APP_ENV: str = os.getenv("APP_ENV", "production")
 
@@ -62,6 +69,9 @@ class Settings(BaseSettings):
     REMOTE_SIGNER_REQUIRE_AUTH: bool = _env_bool("REMOTE_SIGNER_REQUIRE_AUTH", True)
     REMOTE_SIGNER_ALLOWED_PUBKEYS: str = os.getenv("REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
     REMOTE_SIGNER_MAX_MESSAGE_BYTES: int = _env_int("REMOTE_SIGNER_MAX_MESSAGE_BYTES", 10_000)
+    REMOTE_SIGNER_BACKEND: str = os.getenv("REMOTE_SIGNER_BACKEND", "local_keypairs")
+    REMOTE_SIGNER_COMMAND: str = os.getenv("REMOTE_SIGNER_COMMAND", "")
+    REMOTE_SIGNER_COMMAND_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_COMMAND_TIMEOUT_S", 5.0)
 
     # API hardening
     REQUIRE_API_AUTH: bool = _env_bool("REQUIRE_API_AUTH", True)
@@ -156,6 +166,64 @@ class Settings(BaseSettings):
                     "(localhost/127.0.0.1 exempted)."
                 )
 
+    def validate_resolver_registry_runtime(self) -> None:
+        mode = (self.RESOLVER_REGISTRY_MODE or "").strip().lower()
+
+        if mode not in {"directory", "http"}:
+            raise ValueError(
+                f"Unsupported RESOLVER_REGISTRY_MODE '{self.RESOLVER_REGISTRY_MODE}'. "
+                "Supported: directory, http."
+            )
+
+        if mode == "directory":
+            if not (self.RESOLVER_STORE_DIR or "").strip():
+                raise ValueError(
+                    "RESOLVER_STORE_DIR is required when RESOLVER_REGISTRY_MODE=directory."
+                )
+            return
+
+        if not self.RESOLVER_REGISTRY_URL:
+            raise ValueError(
+                "RESOLVER_REGISTRY_URL is required when RESOLVER_REGISTRY_MODE=http."
+            )
+        if self.RESOLVER_REGISTRY_TIMEOUT_S <= 0:
+            raise ValueError("RESOLVER_REGISTRY_TIMEOUT_S must be > 0.")
+        if (
+            self.RESOLVER_REGISTRY_REQUIRE_TLS
+            and not self.RESOLVER_REGISTRY_URL.startswith("https://")
+            and not self.RESOLVER_REGISTRY_URL.startswith("http://127.0.0.1")
+            and not self.RESOLVER_REGISTRY_URL.startswith("http://localhost")
+        ):
+            raise ValueError(
+                "RESOLVER_REGISTRY_URL must use https when RESOLVER_REGISTRY_REQUIRE_TLS=1 "
+                "(localhost/127.0.0.1 exempted)."
+            )
+
+    def validate_remote_signer_service_runtime(self) -> None:
+        backend = (self.REMOTE_SIGNER_BACKEND or "").strip().lower()
+        env = (self.APP_ENV or "production").strip().lower()
+        is_dev_env = env in {"dev", "development", "local", "test"}
+
+        if backend not in {"local_keypairs", "command"}:
+            raise ValueError(
+                f"Unsupported REMOTE_SIGNER_BACKEND '{self.REMOTE_SIGNER_BACKEND}'. "
+                "Supported: local_keypairs, command."
+            )
+
+        if backend == "local_keypairs" and not (is_dev_env or self.ALLOW_LOCAL_NOTARY_KEYS):
+            raise ValueError(
+                "REMOTE_SIGNER_BACKEND=local_keypairs is disabled for production. "
+                "Use REMOTE_SIGNER_BACKEND=command or explicitly set ALLOW_LOCAL_NOTARY_KEYS=1."
+            )
+
+        if backend == "command":
+            if not self.REMOTE_SIGNER_COMMAND.strip():
+                raise ValueError(
+                    "REMOTE_SIGNER_COMMAND is required when REMOTE_SIGNER_BACKEND=command."
+                )
+            if self.REMOTE_SIGNER_COMMAND_TIMEOUT_S <= 0:
+                raise ValueError("REMOTE_SIGNER_COMMAND_TIMEOUT_S must be > 0.")
+
     def validate_api_runtime(self) -> None:
         if self.REQUIRE_API_AUTH and not self.API_AUTH_TOKEN:
             raise ValueError("API_AUTH_TOKEN is required when REQUIRE_API_AUTH=1.")
@@ -169,6 +237,7 @@ class Settings(BaseSettings):
     def validate_runtime(self) -> None:
         self.validate_zktls_runtime()
         self.validate_signer_runtime()
+        self.validate_resolver_registry_runtime()
         self.validate_api_runtime()
 
     @property

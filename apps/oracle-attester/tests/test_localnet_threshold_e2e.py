@@ -106,6 +106,7 @@ async def test_localnet_threshold_resolve_via_attester(tmp_path, monkeypatch):
     resolver_hash = compute_resolver_hash(resolver_def)
     resolver_store = tmp_path / "resolver_store"
     proof_store = tmp_path / "proof_store"
+    audit_log = tmp_path / "audit" / "attester.jsonl"
     resolver_store.mkdir()
     proof_store.mkdir()
     (resolver_store / f"{resolver_hash.hex()}.json").write_text(
@@ -139,6 +140,8 @@ async def test_localnet_threshold_resolve_via_attester(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "RELAYER_KEYPAIR_PATH", str(relayer_path))
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
+    monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
     monkeypatch.setattr(settings, "APP_ENV", "development")
     monkeypatch.setattr(settings, "ZKTLS_MODE", "reclaim_http")
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
@@ -224,6 +227,7 @@ async def test_localnet_threshold_invalid_resolve_via_attester(tmp_path, monkeyp
     resolver_hash = compute_resolver_hash(resolver_def)
     resolver_store = tmp_path / "resolver_store"
     proof_store = tmp_path / "proof_store"
+    audit_log = tmp_path / "audit" / "attester.jsonl"
     resolver_store.mkdir()
     proof_store.mkdir()
     (resolver_store / f"{resolver_hash.hex()}.json").write_text(
@@ -257,6 +261,8 @@ async def test_localnet_threshold_invalid_resolve_via_attester(tmp_path, monkeyp
     monkeypatch.setattr(settings, "RELAYER_KEYPAIR_PATH", str(relayer_path))
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
+    monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
     monkeypatch.setattr(settings, "APP_ENV", "development")
     monkeypatch.setattr(settings, "ZKTLS_MODE", "reclaim_http")
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
