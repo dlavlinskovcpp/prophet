@@ -160,8 +160,6 @@ async def test_localnet_threshold_resolve_via_attester(tmp_path, monkeypatch):
             ]
         ),
     )
-    monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
-
     service = AttesterService()
     service.verifier = _DeterministicVerifier()
     proof_bytes = b"localnet-threshold-proof"
@@ -281,8 +279,6 @@ async def test_localnet_threshold_invalid_resolve_via_attester(tmp_path, monkeyp
             ]
         ),
     )
-    monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
-
     service = AttesterService()
     service.verifier = _DeterministicVerifier()
     proof_bytes = b"localnet-threshold-proof-invalid"

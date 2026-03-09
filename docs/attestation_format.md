@@ -10,26 +10,6 @@ The program validates both:
 - the signer identity (oracle or allowed notary key)
 - exact message bytes (domain + fields + hashes)
 
-## V1 Message (Single Oracle, Compatibility Only)
-
-Domain: `PROPHET_RESOLVE_V1`
-
-Byte layout:
-
-1. domain bytes (`PROPHET_RESOLVE_V1`)
-2. `market` pubkey bytes (32)
-3. `resolver_hash` (32)
-4. `open_ts` little-endian i64 (8)
-5. `outcome` u8 (`1=Yes`, `2=No`, `3=Invalid`)
-6. `proof_hash` (32)
-7. `public_inputs_hash` (32)
-
-Used by:
-
-- on-chain instruction: `resolve_market_signed`
-- SDK: `ProphetClient.resolve_market_signed(...)`
-- attester legacy flow only when `ALLOW_LEGACY_SINGLE_ORACLE=1`
-
 ## V2 Message (Threshold Notaries)
 
 Domain: `PROPHET_RESOLVE_V2`
@@ -68,4 +48,4 @@ The hashes are stored on-chain when the market is resolved.
 - Resolver definitions should be loaded from a canonical registry source and re-hashed before signing.
 - Production signer deployments should keep key material outside the HTTP service process, for example via a command/KMS/HSM bridge behind the remote signer.
 - Signatures are passed through Solana's Ed25519 verify instruction and checked against canonical message bytes in the program.
-- New deployments should prefer V2 threshold messages and v2 markets.
+- Prophet uses V2 threshold messages and v2 markets only.

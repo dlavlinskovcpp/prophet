@@ -29,7 +29,6 @@ OUTCOME_MAP = {
     OutcomeEnum.INVALID: 3,
 }
 
-DOMAIN_V1 = b"PROPHET_RESOLVE_V1"
 DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
 
 
@@ -181,35 +180,13 @@ class AttesterService:
     def _enforce_resolution_mode_policy(self, state: Dict[str, Any]) -> None:
         if state.get("notary_config", Pubkey.default()) != Pubkey.default():
             return
-        if settings.ALLOW_LEGACY_SINGLE_ORACLE:
-            logger.warning("Legacy single-oracle resolution is enabled for compatibility mode.")
-            return
         raise PermissionError(
-            "Legacy single-oracle markets are disabled by policy. "
-            "Create v2 markets with a notary_config or set ALLOW_LEGACY_SINGLE_ORACLE=1."
+            "Legacy single-oracle markets are no longer supported. "
+            "Create and resolve v2 markets with a notary_config."
         )
 
     def _load_resolver(self, resolver_hash: bytes) -> ResolverDefinition:
         return self.resolver_registry.load(resolver_hash)
-
-    def _build_message_v1(
-        self,
-        market_pubkey: Pubkey,
-        resolver_hash: bytes,
-        open_ts: int,
-        outcome_idx: int,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-    ) -> bytes:
-        return (
-            DOMAIN_V1
-            + bytes(market_pubkey)
-            + resolver_hash
-            + struct.pack("<q", open_ts)
-            + struct.pack("B", outcome_idx)
-            + proof_hash
-            + public_inputs_hash
-        )
 
     def _build_message_v2(
         self,
@@ -488,30 +465,10 @@ class AttesterService:
                 sig = self.client.submit_and_confirm(ed25519_ixs + [resolve_ix], payer)
 
             else:
-                # --- Legacy single-oracle flow (backward compatible) ---
-                if state["oracle_authority"] != self.client.oracle_kp.pubkey():
-                    raise PermissionError("Oracle mismatch.")
-
-                msg = self._build_message_v1(
-                    market_pubkey=market_pubkey,
-                    resolver_hash=state["resolver_hash"],
-                    open_ts=state["open_ts"],
-                    outcome_idx=outcome_idx,
-                    proof_hash=proof_hash,
-                    public_inputs_hash=pi_hash,
+                raise PermissionError(
+                    "Legacy single-oracle markets are no longer supported. "
+                    "Create and resolve v2 markets with a notary_config."
                 )
-
-                if self.client.relayer_kp:
-                    sig_obj = self.client.oracle_kp.sign_message(msg)
-                    sig_bytes = bytes(sig_obj)
-                    ed25519_ix = self.client.build_ed25519_ix(msg, sig_bytes, bytes(self.client.oracle_kp.pubkey()))
-                    resolve_ix = self.client.build_resolve_signed_ix(
-                        market_pubkey, outcome_idx, proof_hash, pi_hash, sig_bytes
-                    )
-                    sig = self.client.submit_and_confirm([ed25519_ix, resolve_ix], self.client.relayer_kp)
-                else:
-                    ix = self.client.build_resolve_ix(market_pubkey, outcome_idx, proof_hash, pi_hash)
-                    sig = self.client.submit_and_confirm([ix], self.client.oracle_kp)
 
             final_state = self.client.get_market_state_full(market_pubkey)
             if final_state and final_state["status"] == 2:

@@ -47,7 +47,7 @@ def main():
         return
 
     if market_acc.notary_config == Pubkey.default():
-        print("Market does not have a notary_config; use resolve_signed_relayer.py for legacy compatibility flow.")
+        print("Market does not have a notary_config; Prophet now only supports v2 threshold markets.")
         return
 
     try:

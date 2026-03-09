@@ -1,9 +1,9 @@
 // programs/prophet/src/lib.rs
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::ed25519_program::ID as ED25519_ID_NATIVE;
 use anchor_lang::solana_program::sysvar::instructions::{
     load_instruction_at_checked, ID as INSTRUCTIONS_ID,
 };
-use anchor_lang::solana_program::ed25519_program::ID as ED25519_ID_NATIVE;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use anchor_spl::associated_token::AssociatedToken;
 use crate::state::*;
@@ -21,7 +21,7 @@ pub mod prophet {
     use super::*;
 
     // -------------------------------------------------------------------------
-    // 1. Initialize Market (Legacy)
+    // 1. Initialize Market (Removed Legacy Surface)
     // -------------------------------------------------------------------------
     pub fn initialize_market(
         ctx: Context<InitializeMarket>,
@@ -34,43 +34,18 @@ pub mod prophet {
         max_open_orders_per_user: u16,
         max_open_orders_total: u32,
     ) -> Result<()> {
-        let market = &mut ctx.accounts.market;
-
-        require!(lock_ts >= open_ts, ErrorCode::InvalidTimeRange);
-        require!(resolve_ts >= lock_ts, ErrorCode::InvalidTimeRange);
-
-        market.authority = ctx.accounts.authority.key();
-        market.oracle_authority = ctx.accounts.oracle_authority.key();
-        market.quote_mint = ctx.accounts.quote_mint.key();
-        market.quote_vault = ctx.accounts.quote_vault.key();
-        market.quote_decimals = ctx.accounts.quote_mint.decimals;
-
-        // Threshold oracle config not bound in legacy init
-        market.notary_config = Pubkey::default();
-
-        market.resolver_hash = resolver_hash;
-        market.proof_hash = [0; 32];
-        market.public_inputs_hash = [0; 32];
-
-        market.open_ts = open_ts;
-        market.lock_ts = lock_ts;
-        market.resolve_ts = resolve_ts;
-        market.resolved_ts = 0;
-
-        market.min_order_qty_atoms = min_order_qty_atoms;
-        market.min_escrow_atoms = min_escrow_atoms;
-        market.max_open_orders_per_user = max_open_orders_per_user;
-        market.max_open_orders_total = max_open_orders_total;
-
-        market.next_order_seq = 0;
-        market.open_orders_total = 0;
-
-        market.status = MarketStatus::Open;
-        market.outcome = MarketOutcome::Undecided;
-
-        market.bump = ctx.bumps.market;
-
-        Ok(())
+        let _ = (
+            ctx,
+            resolver_hash,
+            open_ts,
+            lock_ts,
+            resolve_ts,
+            min_order_qty_atoms,
+            min_escrow_atoms,
+            max_open_orders_per_user,
+            max_open_orders_total,
+        );
+        err!(ErrorCode::LegacyMarketCreationRemoved)
     }
 
     // -------------------------------------------------------------------------
@@ -165,7 +140,7 @@ pub mod prophet {
         require!(resolve_ts >= lock_ts, ErrorCode::InvalidTimeRange);
 
         market.authority = ctx.accounts.authority.key();
-        // legacy field retained for backward compatibility; unused in threshold flow
+    // deprecated field retained for account layout compatibility; unused in threshold flow
         market.oracle_authority = ctx.accounts.oracle_authority.key();
 
         market.quote_mint = ctx.accounts.quote_mint.key();
@@ -612,7 +587,7 @@ pub mod prophet {
     }
 
     // -------------------------------------------------------------------------
-    // 6. Resolve Market (Legacy)
+    // 6. Resolve Market (Removed Legacy Surface)
     // -------------------------------------------------------------------------
     pub fn resolve_market(
         ctx: Context<ResolveMarket>,
@@ -620,33 +595,12 @@ pub mod prophet {
         proof_hash: [u8; 32],
         public_inputs_hash: [u8; 32],
     ) -> Result<()> {
-        let market = &mut ctx.accounts.market;
-        let now = Clock::get()?.unix_timestamp;
-
-        require!(ctx.accounts.oracle_authority.key() == market.oracle_authority, ErrorCode::UnauthorizedOracle);
-        require!(now >= market.resolve_ts, ErrorCode::MarketNotResolvableYet);
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
-        require!(outcome != MarketOutcome::Undecided, ErrorCode::InvalidOutcome);
-
-        market.status = MarketStatus::Resolved;
-        market.outcome = outcome;
-        market.proof_hash = proof_hash;
-        market.public_inputs_hash = public_inputs_hash;
-        market.resolved_ts = now;
-
-        emit!(MarketResolved {
-            market: market.key(),
-            outcome: outcome,
-            resolved_ts: now,
-            proof_hash,
-            public_inputs_hash,
-        });
-
-        Ok(())
+        let _ = (ctx, outcome, proof_hash, public_inputs_hash);
+        err!(ErrorCode::LegacyResolutionRemoved)
     }
 
     // -------------------------------------------------------------------------
-    // 6.5 Resolve Market Signed (Legacy Permissionless)
+    // 6.5 Resolve Market Signed (Removed Legacy Surface)
     // -------------------------------------------------------------------------
     pub fn resolve_market_signed(
         ctx: Context<ResolveMarketSigned>,
@@ -655,99 +609,8 @@ pub mod prophet {
         public_inputs_hash: [u8; 32],
         oracle_sig: [u8; 64],
     ) -> Result<()> {
-        let market = &mut ctx.accounts.market;
-        let now = Clock::get()?.unix_timestamp;
-
-        require!(now >= market.resolve_ts, ErrorCode::MarketNotResolvableYet);
-        require!(market.status != MarketStatus::Resolved, ErrorCode::InvalidStage);
-        require!(outcome != MarketOutcome::Undecided, ErrorCode::InvalidOutcome);
-
-        let sysvar = &ctx.accounts.instructions_sysvar;
-
-        let sysvar_info = sysvar.to_account_info();
-        let current_index = anchor_lang::solana_program::sysvar::instructions::load_current_index_checked(&sysvar_info)?;
-        require!(current_index > 0, ErrorCode::MissingEd25519Ix);
-
-        let ed25519_ix = load_instruction_at_checked((current_index - 1) as usize, &sysvar_info)?;
-
-        require!(ed25519_ix.program_id.to_bytes() == ED25519_ID_NATIVE.to_bytes(), ErrorCode::InvalidEd25519Program);
-
-        // Header parsing for 1 signature (16 bytes header)
-        let data = &ed25519_ix.data;
-        require!(data.len() > 16, ErrorCode::InvalidEd25519Data);
-
-        require!(data[0] == 1, ErrorCode::InvalidEd25519Data); // num_sigs
-        require!(data[1] == 0, ErrorCode::InvalidEd25519Data); // padding
-
-        // Parse u16 LE offsets
-        let sig_offset = u16::from_le_bytes(data[2..4].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let sig_ix = u16::from_le_bytes(data[4..6].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let pk_offset = u16::from_le_bytes(data[6..8].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let pk_ix = u16::from_le_bytes(data[8..10].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let msg_offset = u16::from_le_bytes(data[10..12].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let msg_size = u16::from_le_bytes(data[12..14].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-        let msg_ix = u16::from_le_bytes(data[14..16].try_into().map_err(|_| ErrorCode::InvalidEd25519Data)?);
-
-        // Enforce all instruction indices are u16::MAX (current instruction)
-        require!(sig_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
-        require!(pk_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
-        require!(msg_ix == 0xFFFF, ErrorCode::Ed25519IxIndexesNotSelf);
-
-        // Bounds Check
-        let sig_start = sig_offset as usize;
-        let sig_end = sig_start.checked_add(64).ok_or(ErrorCode::InvalidEd25519Data)?;
-        let pk_start = pk_offset as usize;
-        let pk_end = pk_start.checked_add(32).ok_or(ErrorCode::InvalidEd25519Data)?;
-        let msg_start = msg_offset as usize;
-        let msg_end = msg_start.checked_add(msg_size as usize).ok_or(ErrorCode::InvalidEd25519Data)?;
-
-        require!(sig_end <= data.len(), ErrorCode::InvalidEd25519Data);
-        require!(pk_end <= data.len(), ErrorCode::InvalidEd25519Data);
-        require!(msg_end <= data.len(), ErrorCode::InvalidEd25519Data);
-
-        // Verify Data
-        let ix_sig = &data[sig_start..sig_end];
-        let ix_pk = &data[pk_start..pk_end];
-        let ix_msg = &data[msg_start..msg_end];
-
-        require!(ix_pk == market.oracle_authority.as_ref(), ErrorCode::UnauthorizedOracle);
-        require!(ix_sig == oracle_sig, ErrorCode::SignatureMismatch);
-
-        // Reconstruct Expected Message (V1)
-        let outcome_byte: u8 = match outcome {
-            MarketOutcome::Yes => 1,
-            MarketOutcome::No => 2,
-            MarketOutcome::Invalid => 3,
-            _ => 0,
-        };
-
-        let mut expected_msg = Vec::with_capacity(18 + 32 + 32 + 8 + 1 + 32 + 32);
-        expected_msg.extend_from_slice(b"PROPHET_RESOLVE_V1");
-        expected_msg.extend_from_slice(market.key().as_ref());
-        expected_msg.extend_from_slice(&market.resolver_hash);
-        expected_msg.extend_from_slice(&market.open_ts.to_le_bytes());
-        expected_msg.push(outcome_byte);
-        expected_msg.extend_from_slice(&proof_hash);
-        expected_msg.extend_from_slice(&public_inputs_hash);
-
-        require!(msg_size as usize == expected_msg.len(), ErrorCode::MessageSizeMismatch);
-        require!(ix_msg == expected_msg.as_slice(), ErrorCode::MessageMismatch);
-
-        market.status = MarketStatus::Resolved;
-        market.outcome = outcome;
-        market.proof_hash = proof_hash;
-        market.public_inputs_hash = public_inputs_hash;
-        market.resolved_ts = now;
-
-        emit!(MarketResolved {
-            market: market.key(),
-            outcome: outcome,
-            resolved_ts: now,
-            proof_hash,
-            public_inputs_hash,
-        });
-
-        Ok(())
+        let _ = (ctx, outcome, proof_hash, public_inputs_hash, oracle_sig);
+        err!(ErrorCode::LegacyResolutionRemoved)
     }
 
     // -------------------------------------------------------------------------
