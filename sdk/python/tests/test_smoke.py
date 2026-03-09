@@ -6,7 +6,6 @@ def test_sdk_has_new_helpers():
     assert hasattr(ProphetClient, "place_order_auto_seq")
     assert hasattr(ProphetClient, "fetch_orders_for_market")
     assert hasattr(ProphetClient, "fetch_orders_bulk")
-    assert hasattr(ProphetClient, "resolve_market_signed")
     assert hasattr(ProphetClient, "resolve_market_threshold")
     assert hasattr(ProphetClient, "redeem")
     assert hasattr(ProphetClient, "transfer_market_authority")

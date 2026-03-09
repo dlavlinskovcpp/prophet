@@ -60,7 +60,6 @@ class Settings(BaseSettings):
     # Notary signer mode
     NOTARY_SIGNER_MODE: str = os.getenv("NOTARY_SIGNER_MODE", "remote")  # "remote" or "local"
     ALLOW_LOCAL_NOTARY_KEYS: bool = _env_bool("ALLOW_LOCAL_NOTARY_KEYS", False)
-    ALLOW_LEGACY_SINGLE_ORACLE: bool = _env_bool("ALLOW_LEGACY_SINGLE_ORACLE", False)
     NOTARY_KEYPAIR_PATHS: str = os.getenv("NOTARY_KEYPAIR_PATHS", "")
     REMOTE_SIGNER_URL: str = os.getenv("REMOTE_SIGNER_URL", "")
     REMOTE_SIGNER_API_KEY: str = os.getenv("REMOTE_SIGNER_API_KEY", "")

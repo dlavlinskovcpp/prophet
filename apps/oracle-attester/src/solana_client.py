@@ -175,58 +175,6 @@ class SolanaClient:
             data=data
         )
 
-    def build_resolve_ix(
-        self,
-        market: Pubkey,
-        outcome_idx: int,
-        proof_hash: bytes,
-        public_inputs_hash: bytes
-    ) -> Instruction:
-        discriminator = self.get_discriminator("global", "resolve_market")
-
-        data = discriminator
-        data += struct.pack("B", outcome_idx)
-        data += proof_hash
-        data += public_inputs_hash
-
-        accounts = [
-            AccountMeta(pubkey=market, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=self.oracle_kp.pubkey(), is_signer=True, is_writable=False),
-        ]
-
-        return Instruction(
-            program_id=self.program_id,
-            accounts=accounts,
-            data=data
-        )
-
-    def build_resolve_signed_ix(
-        self,
-        market: Pubkey,
-        outcome_idx: int,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-        oracle_sig: bytes
-    ) -> Instruction:
-        discriminator = self.get_discriminator("global", "resolve_market_signed")
-
-        data = discriminator
-        data += struct.pack("B", outcome_idx)
-        data += proof_hash
-        data += public_inputs_hash
-        data += oracle_sig
-
-        accounts = [
-            AccountMeta(pubkey=market, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=SYSVAR_INSTRUCTIONS_ID, is_signer=False, is_writable=False),
-        ]
-
-        return Instruction(
-            program_id=self.program_id,
-            accounts=accounts,
-            data=data
-        )
-
     def build_resolve_threshold_ix(
         self,
         market: Pubkey,

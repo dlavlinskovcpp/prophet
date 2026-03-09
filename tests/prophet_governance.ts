@@ -36,6 +36,41 @@ describe("prophet-governance", () => {
       program.programId
     )[0];
 
+  const deriveNotaryConfig = (adminPk: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("notary_config"), adminPk.toBuffer()],
+      program.programId
+    )[0];
+
+  const ensureNotaryConfig = async (configAdmin: Keypair, notaryKeys: PublicKey[], threshold = 1) => {
+    const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
+    const existing = await provider.connection.getAccountInfo(notaryConfig);
+
+    if (existing) {
+      await program.methods
+        .updateNotaryConfig(threshold, notaryKeys)
+        .accounts({
+          notaryConfig,
+          admin: configAdmin.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([configAdmin])
+        .rpc();
+    } else {
+      await program.methods
+        .initializeNotaryConfig(threshold, notaryKeys)
+        .accounts({
+          notaryConfig,
+          admin: configAdmin.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([configAdmin])
+        .rpc();
+    }
+
+    return notaryConfig;
+  };
+
   const getChainTime = async (): Promise<number | null> => {
     const slot = await provider.connection.getSlot();
     return provider.connection.getBlockTime(slot);
@@ -91,9 +126,10 @@ describe("prophet-governance", () => {
     const resolveTs = new BN(now + 30);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
+    const notaryConfig = await ensureNotaryConfig(admin, [admin.publicKey]);
 
     await program.methods
-      .initializeMarket(
+      .initializeMarketV2(
         [...resolverHash],
         openTs,
         lockTs,
@@ -109,6 +145,7 @@ describe("prophet-governance", () => {
         oracleAuthority: admin.publicKey,
         quoteMint,
         quoteVault,
+        notaryConfig,
         systemProgram: SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -232,9 +269,10 @@ describe("prophet-governance", () => {
     const resolveTs = new BN(now + 40);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
+    const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
 
     await program.methods
-      .initializeMarket(
+      .initializeMarketV2(
         [...resolverHash],
         openTs,
         lockTs,
@@ -250,6 +288,7 @@ describe("prophet-governance", () => {
         oracleAuthority: authority.publicKey,
         quoteMint,
         quoteVault,
+        notaryConfig,
         systemProgram: SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,

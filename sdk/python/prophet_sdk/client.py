@@ -31,7 +31,6 @@ SYSVAR_INSTRUCTIONS_ID = Pubkey.from_string("Sysvar1nstructions11111111111111111
 
 ORDER_DISCRIMINATOR = hashlib.sha256(b"account:Order").digest()[:8]
 
-DOMAIN_V1 = b"PROPHET_RESOLVE_V1"
 DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
 
 
@@ -85,25 +84,6 @@ class ProphetClient:
 
     def _outcome_index(self, outcome: MarketOutcome) -> int:
         return int(outcome)
-
-    def _build_resolve_message_v1(
-        self,
-        market: Pubkey,
-        resolver_hash: bytes,
-        open_ts: int,
-        outcome: MarketOutcome,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-    ) -> bytes:
-        return (
-            DOMAIN_V1
-            + bytes(market)
-            + resolver_hash
-            + struct.pack("<q", open_ts)
-            + struct.pack("B", self._outcome_index(outcome))
-            + proof_hash
-            + public_inputs_hash
-        )
 
     def _build_resolve_message_v2(
         self,
@@ -268,54 +248,6 @@ class ProphetClient:
         keys = [
             AccountMeta(cfg_pda, False, True),
             AccountMeta(self.payer.pubkey(), True, True),
-        ]
-
-        ix = Instruction(self.program_id, data, keys)
-        return submit_and_confirm(self.client, [ix], self.payer)
-
-    def initialize_market(
-        self,
-        resolver_hash: bytes,
-        open_ts: int,
-        lock_ts: int,
-        resolve_ts: int,
-        oracle_authority: Pubkey = None,
-        min_order_qty_atoms: int = 1,
-        min_escrow_atoms: int = 1,
-        max_open_orders_per_user: int = 32,
-        max_open_orders_total: int = 4096,
-        quote_mint: Pubkey = None,
-    ) -> str:
-        if len(resolver_hash) != 32:
-            raise ValueError("Resolver hash must be 32 bytes")
-
-        market_pda, _ = derive_market_pda(resolver_hash, open_ts, self.program_id)
-        quote_vault = derive_associated_token_account(market_pda, quote_mint)
-
-        oracle_auth = oracle_authority or self.payer.pubkey()
-
-        data = self._get_discriminator("initialize_market")
-        data += resolver_hash
-        data += struct.pack(
-            "<qqqQQHI",
-            open_ts,
-            lock_ts,
-            resolve_ts,
-            min_order_qty_atoms,
-            min_escrow_atoms,
-            max_open_orders_per_user,
-            max_open_orders_total,
-        )
-
-        keys = [
-            AccountMeta(market_pda, False, True),
-            AccountMeta(self.payer.pubkey(), True, True),
-            AccountMeta(oracle_auth, False, False),
-            AccountMeta(quote_mint, False, False),
-            AccountMeta(quote_vault, False, True),
-            AccountMeta(SYSTEM_PROGRAM_ID, False, False),
-            AccountMeta(TOKEN_PROGRAM_ID, False, False),
-            AccountMeta(ASSOCIATED_TOKEN_PROGRAM_ID, False, False),
         ]
 
         ix = Instruction(self.program_id, data, keys)
@@ -636,76 +568,6 @@ class ProphetClient:
     # -------------------------------------------------------------------------
     # Resolution Flow
     # -------------------------------------------------------------------------
-
-    def resolve_market(
-        self,
-        market: Pubkey,
-        outcome: MarketOutcome,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-        oracle_keypair: Optional[Keypair] = None,
-    ) -> str:
-        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
-            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
-
-        oracle = oracle_keypair or self.payer
-
-        data = self._get_discriminator("resolve_market")
-        data += struct.pack("B", self._outcome_index(outcome))
-        data += proof_hash
-        data += public_inputs_hash
-
-        keys = [
-            AccountMeta(market, False, True),
-            AccountMeta(oracle.pubkey(), True, False),
-        ]
-
-        ix = Instruction(self.program_id, data, keys)
-        extra_signers = [oracle] if oracle.pubkey() != self.payer.pubkey() else None
-        return submit_and_confirm(self.client, [ix], self.payer, signers=extra_signers)
-
-    def resolve_market_signed(
-        self,
-        market: Pubkey,
-        resolver_hash: bytes,
-        open_ts: int,
-        oracle_keypair: Keypair,
-        outcome: MarketOutcome,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-        relayer_keypair: Optional[Keypair] = None,
-    ) -> str:
-        if len(resolver_hash) != 32:
-            raise ValueError("resolver_hash must be 32 bytes")
-        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
-            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
-
-        msg = self._build_resolve_message_v1(
-            market=market,
-            resolver_hash=resolver_hash,
-            open_ts=open_ts,
-            outcome=outcome,
-            proof_hash=proof_hash,
-            public_inputs_hash=public_inputs_hash,
-        )
-        sig_bytes = bytes(oracle_keypair.sign_message(msg))
-        ed_ix = build_ed25519_ix(msg, sig_bytes, bytes(oracle_keypair.pubkey()))
-
-        data = self._get_discriminator("resolve_market_signed")
-        data += struct.pack("B", self._outcome_index(outcome))
-        data += proof_hash
-        data += public_inputs_hash
-        data += sig_bytes
-
-        keys = [
-            AccountMeta(market, False, True),
-            AccountMeta(SYSVAR_INSTRUCTIONS_ID, False, False),
-        ]
-
-        resolve_ix = Instruction(self.program_id, data, keys)
-
-        payer = relayer_keypair or self.payer
-        return submit_and_confirm(self.client, [ed_ix, resolve_ix], payer, signers=None)
 
     def resolve_market_threshold(
         self,

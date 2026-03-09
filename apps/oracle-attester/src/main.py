@@ -189,7 +189,6 @@ def health_check():
         "zktls_mode": settings.ZKTLS_MODE,
         "require_zktls": settings.REQUIRE_ZKTLS,
         "app_env": settings.APP_ENV,
-        "allow_legacy_single_oracle": settings.ALLOW_LEGACY_SINGLE_ORACLE,
         "notary_signer_mode": settings.NOTARY_SIGNER_MODE,
         "resolver_registry_mode": settings.RESOLVER_REGISTRY_MODE,
         "attester_audit_log_path": settings.ATTESTER_AUDIT_LOG_PATH,

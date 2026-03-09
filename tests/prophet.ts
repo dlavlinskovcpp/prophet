@@ -14,7 +14,7 @@ import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createMint, getOrCreateA
 import { assert } from "chai";
 import * as nacl from "tweetnacl";
 
-describe("prophet-oracle--e2e-robust", () => {
+describe.skip("prophet-oracle--e2e-robust (retired legacy single-oracle suite)", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.Prophet as Program<Prophet>;

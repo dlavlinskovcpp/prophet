@@ -98,4 +98,8 @@ pub enum ErrorCode {
     MarketNotLocked,
     #[msg("Invalid new authority")]
     InvalidNewAuthority,
+    #[msg("Legacy single-oracle market creation has been removed")]
+    LegacyMarketCreationRemoved,
+    #[msg("Legacy single-oracle resolution has been removed")]
+    LegacyResolutionRemoved,
 }

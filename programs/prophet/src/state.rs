@@ -16,7 +16,7 @@ pub const MAX_ED25519_SCAN: usize = 16;
 pub struct Market {
     // 32
     pub authority: Pubkey,
-    // 32 (legacy single oracle signer; kept for backward compatibility)
+    // 32 (deprecated reserved signer field; kept for account layout compatibility)
     pub oracle_authority: Pubkey,
     // 32
     pub quote_mint: Pubkey,

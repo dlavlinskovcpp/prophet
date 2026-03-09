@@ -27,9 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description="Create a new Prophet Market")
     parser.add_argument("--resolver-file", required=True, help="Path to resolver definition JSON file")
     parser.add_argument("--mint", required=True, help="Quote Token Mint (Base58)")
-    parser.add_argument("--notary-config", default="", help="Preferred v2 path: NotaryConfig pubkey (Base58)")
-    parser.add_argument("--oracle", default="", help="Legacy oracle authority pubkey (Base58); only required with --legacy")
-    parser.add_argument("--legacy", action="store_true", help="Create a legacy single-oracle market instead of a v2 threshold market")
+    parser.add_argument("--notary-config", required=True, help="NotaryConfig pubkey (Base58)")
     parser.add_argument("--duration", type=int, default=3600, help="Duration in seconds until resolution")
     args = parser.parse_args()
 
@@ -51,7 +49,8 @@ def main():
         sys.exit(1)
 
     quote_mint = Pubkey.from_string(args.mint)
-    oracle_auth = Pubkey.from_string(args.oracle) if args.oracle else client.payer.pubkey()
+    oracle_auth = client.payer.pubkey()
+    notary_config = Pubkey.from_string(args.notary_config)
 
     now = int(time.time())
     open_ts = now
@@ -63,36 +62,19 @@ def main():
     print(f"  Resolver File: {args.resolver_file}")
     print(f"  Resolver Hash: {resolver_hash.hex()}")
     print(f"  Lock:   {lock_ts}")
+    print(f"  Mode:   v2 threshold")
+    print(f"  Notary: {notary_config}")
 
     try:
-        if args.legacy:
-            if not args.oracle:
-                raise ValueError("--oracle is required when --legacy is set")
-            print(f"  Mode:   legacy single-oracle")
-            print(f"  Oracle: {oracle_auth}")
-            sig = client.initialize_market(
-                resolver_hash=resolver_hash,
-                open_ts=open_ts,
-                lock_ts=lock_ts,
-                resolve_ts=resolve_ts,
-                oracle_authority=oracle_auth,
-                quote_mint=quote_mint,
-            )
-        else:
-            if not args.notary_config:
-                raise ValueError("v2 market creation requires --notary-config. Use --legacy --oracle for compatibility mode.")
-            notary_config = Pubkey.from_string(args.notary_config)
-            print(f"  Mode:   v2 threshold")
-            print(f"  Notary: {notary_config}")
-            sig = client.initialize_market_v2(
-                resolver_hash=resolver_hash,
-                open_ts=open_ts,
-                lock_ts=lock_ts,
-                resolve_ts=resolve_ts,
-                notary_config=notary_config,
-                oracle_authority=oracle_auth,
-                quote_mint=quote_mint,
-            )
+        sig = client.initialize_market_v2(
+            resolver_hash=resolver_hash,
+            open_ts=open_ts,
+            lock_ts=lock_ts,
+            resolve_ts=resolve_ts,
+            notary_config=notary_config,
+            oracle_authority=oracle_auth,
+            quote_mint=quote_mint,
+        )
         print(f"\nSuccess! Tx: {sig}")
         
         market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)

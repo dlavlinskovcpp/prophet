@@ -36,7 +36,6 @@ export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 - `emergency_resolve_invalid(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
-- `initialize_market(...)` / `resolve_market_signed(...)` / `resolve_market(...)` remain available for legacy compatibility
 
 ## Minimal Example
 
@@ -84,13 +83,11 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 ## Resolution Notes
 
 - `resolve_market_threshold` is the primary permissionless t-of-n notary flow for v2 markets.
-- The attester defaults to threshold markets and rejects legacy single-oracle markets unless `ALLOW_LEGACY_SINGLE_ORACLE=1`.
-- `resolve_market_signed` remains available for older single-oracle markets and migration tooling.
+- The attester only supports threshold-notary v2 markets.
 
 ## Example Scripts
 
 - Preferred v2 relayer example: `sdk/python/examples/resolve_threshold_relayer.py`
-- Legacy compatibility relayer example: `sdk/python/examples/resolve_signed_relayer.py`
 - Operated matching service: `docs/matching_keeper.md`
 
 ## Attester Helper Script

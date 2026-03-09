@@ -166,7 +166,6 @@ async def test_attester_resolves_threshold_market_via_remote_signer(tmp_path, mo
     monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
     monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
-    monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
 
     program_id = Pubkey.new_unique()
@@ -260,7 +259,6 @@ async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_sig
     monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
     monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
     monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
-    monkeypatch.setattr(settings, "ALLOW_LEGACY_SINGLE_ORACLE", False)
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
 
     program_id = Pubkey.new_unique()
