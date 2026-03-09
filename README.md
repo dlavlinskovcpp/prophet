@@ -67,6 +67,7 @@ Remote signer (for managed notary flow):
 
 ```bash
 cd apps/oracle-attester
+cp signer_allowlist.example.txt signer_allowlist.txt
 uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
 ```
 
@@ -104,12 +105,12 @@ bash scripts/check_zktls.sh
 
 - zkTLS proof verification is off-chain in the attester.
 - On-chain program verifies signed resolution messages and stores proof/public input hashes.
-- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer now supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
+- Attester production mode should use `NOTARY_SIGNER_MODE=remote` with a managed signer service; the bundled remote signer supports `REMOTE_SIGNER_BACKEND=command` so KMS/HSM wrappers can hold key material outside the process.
 - The attester only supports threshold-notary v2 markets.
 - `/resolve` is protected by bearer auth + rate limiting; `/metrics` exposes Prometheus-format counters.
-- Resolver definitions can be sourced from a local directory or an HTTP resolver registry, but are always re-hashed before use.
+- Resolver definitions can be sourced from a local directory or an HTTP resolver registry, are always re-hashed before use, and are cached with stale-on-error fallback for transient registry outages.
 - Both the attester and remote signer persist append-only JSONL audit logs by default.
-- Remote signer endpoint is `POST /sign` with bearer auth and optional signer allowlist.
+- Remote signer endpoint is `POST /sign` with bearer auth and a signer allowlist; for command/KMS backends that allowlist is required in production.
 - Do not commit private keys.
 
 ## License

@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     RESOLVER_REGISTRY_API_KEY: str = os.getenv("RESOLVER_REGISTRY_API_KEY", "")
     RESOLVER_REGISTRY_TIMEOUT_S: float = _env_float("RESOLVER_REGISTRY_TIMEOUT_S", 5.0)
     RESOLVER_REGISTRY_REQUIRE_TLS: bool = _env_bool("RESOLVER_REGISTRY_REQUIRE_TLS", True)
+    RESOLVER_REGISTRY_CACHE_TTL_S: float = _env_float("RESOLVER_REGISTRY_CACHE_TTL_S", 300.0)
+    RESOLVER_REGISTRY_CACHE_MAX_ENTRIES: int = _env_int("RESOLVER_REGISTRY_CACHE_MAX_ENTRIES", 1024)
+    RESOLVER_REGISTRY_ALLOW_STALE_ON_ERROR: bool = _env_bool("RESOLVER_REGISTRY_ALLOW_STALE_ON_ERROR", True)
     ATTESTER_AUDIT_LOG_PATH: str = os.getenv("ATTESTER_AUDIT_LOG_PATH", "./audit/attester.jsonl")
     REMOTE_SIGNER_AUDIT_LOG_PATH: str = os.getenv("REMOTE_SIGNER_AUDIT_LOG_PATH", "./audit/remote-signer.jsonl")
 
@@ -66,7 +69,11 @@ class Settings(BaseSettings):
     REMOTE_SIGNER_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_TIMEOUT_S", 5.0)
     REMOTE_SIGNER_REQUIRE_TLS: bool = _env_bool("REMOTE_SIGNER_REQUIRE_TLS", True)
     REMOTE_SIGNER_REQUIRE_AUTH: bool = _env_bool("REMOTE_SIGNER_REQUIRE_AUTH", True)
+    REMOTE_SIGNER_REQUIRE_ALLOWLIST: bool = _env_bool("REMOTE_SIGNER_REQUIRE_ALLOWLIST", False)
+    REMOTE_SIGNER_ALLOWLIST_MODE: str = os.getenv("REMOTE_SIGNER_ALLOWLIST_MODE", "env")
     REMOTE_SIGNER_ALLOWED_PUBKEYS: str = os.getenv("REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
+    REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH: str = os.getenv("REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH", "")
+    REMOTE_SIGNER_ALLOWLIST_REFRESH_S: float = _env_float("REMOTE_SIGNER_ALLOWLIST_REFRESH_S", 30.0)
     REMOTE_SIGNER_MAX_MESSAGE_BYTES: int = _env_int("REMOTE_SIGNER_MAX_MESSAGE_BYTES", 10_000)
     REMOTE_SIGNER_BACKEND: str = os.getenv("REMOTE_SIGNER_BACKEND", "local_keypairs")
     REMOTE_SIGNER_COMMAND: str = os.getenv("REMOTE_SIGNER_COMMAND", "")
@@ -168,6 +175,11 @@ class Settings(BaseSettings):
     def validate_resolver_registry_runtime(self) -> None:
         mode = (self.RESOLVER_REGISTRY_MODE or "").strip().lower()
 
+        if self.RESOLVER_REGISTRY_CACHE_TTL_S <= 0:
+            raise ValueError("RESOLVER_REGISTRY_CACHE_TTL_S must be > 0.")
+        if self.RESOLVER_REGISTRY_CACHE_MAX_ENTRIES <= 0:
+            raise ValueError("RESOLVER_REGISTRY_CACHE_MAX_ENTRIES must be > 0.")
+
         if mode not in {"directory", "http"}:
             raise ValueError(
                 f"Unsupported RESOLVER_REGISTRY_MODE '{self.RESOLVER_REGISTRY_MODE}'. "
@@ -200,6 +212,7 @@ class Settings(BaseSettings):
 
     def validate_remote_signer_service_runtime(self) -> None:
         backend = (self.REMOTE_SIGNER_BACKEND or "").strip().lower()
+        allowlist_mode = (self.REMOTE_SIGNER_ALLOWLIST_MODE or "").strip().lower()
         env = (self.APP_ENV or "production").strip().lower()
         is_dev_env = env in {"dev", "development", "local", "test"}
 
@@ -222,6 +235,30 @@ class Settings(BaseSettings):
                 )
             if self.REMOTE_SIGNER_COMMAND_TIMEOUT_S <= 0:
                 raise ValueError("REMOTE_SIGNER_COMMAND_TIMEOUT_S must be > 0.")
+
+        if allowlist_mode not in {"env", "file"}:
+            raise ValueError(
+                f"Unsupported REMOTE_SIGNER_ALLOWLIST_MODE '{self.REMOTE_SIGNER_ALLOWLIST_MODE}'. "
+                "Supported: env, file."
+            )
+        if self.REMOTE_SIGNER_ALLOWLIST_REFRESH_S <= 0:
+            raise ValueError("REMOTE_SIGNER_ALLOWLIST_REFRESH_S must be > 0.")
+
+        require_allowlist = bool(self.REMOTE_SIGNER_REQUIRE_ALLOWLIST)
+        if backend == "command" and not is_dev_env:
+            require_allowlist = True
+
+        if not require_allowlist:
+            return
+
+        if allowlist_mode == "env" and not self.REMOTE_SIGNER_ALLOWED_PUBKEYS.strip():
+            raise ValueError(
+                "REMOTE_SIGNER_ALLOWED_PUBKEYS must be configured when a signer allowlist is required."
+            )
+        if allowlist_mode == "file" and not self.REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH.strip():
+            raise ValueError(
+                "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH must be configured when REMOTE_SIGNER_ALLOWLIST_MODE=file."
+            )
 
     def validate_api_runtime(self) -> None:
         if self.REQUIRE_API_AUTH and not self.API_AUTH_TOKEN:

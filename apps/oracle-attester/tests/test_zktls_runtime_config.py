@@ -75,9 +75,43 @@ def test_validate_remote_signer_service_runtime_command_requires_command(monkeyp
     monkeypatch.setattr(settings, "APP_ENV", "production")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "11111111111111111111111111111111")
 
     with pytest.raises(ValueError):
         settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_remote_signer_service_runtime_command_requires_allowlist_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "kms-wrapper sign")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_REQUIRE_ALLOWLIST", False)
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_remote_signer_service_runtime_file_allowlist_requires_path(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "kms-wrapper sign")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "file")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH", "")
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_resolver_registry_runtime_rejects_non_positive_cache_ttl(monkeypatch):
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
+    monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", "./resolver_store")
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_CACHE_TTL_S", 0)
+
+    with pytest.raises(ValueError):
+        settings.validate_resolver_registry_runtime()
 
 
 def test_validate_api_runtime_requires_token_when_auth_enabled(monkeypatch):

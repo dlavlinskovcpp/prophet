@@ -5,7 +5,7 @@ import logging
 import time
 from collections import defaultdict, deque
 from threading import Lock
-from typing import Deque, Dict, Optional, Set, Tuple
+from typing import Deque, Dict, Optional, Tuple
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -14,6 +14,7 @@ from solders.pubkey import Pubkey
 
 from .audit import JsonlAuditLogger
 from .config import settings
+from .signer_allowlist import make_signer_allowlist
 from .signer_backend import make_remote_signer_backend
 
 logger = logging.getLogger("remote-signer")
@@ -83,19 +84,6 @@ class SlidingWindowRateLimiter:
             q.append(now)
             return True, 0
 
-def _parse_allowed_pubkeys(raw: str) -> Set[str]:
-    raw = (raw or "").strip()
-    if not raw:
-        return set()
-    out: Set[str] = set()
-    for item in raw.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        # Normalize/validate
-        out.add(str(Pubkey.from_string(item)))
-    return out
-
 
 def _validate_remote_signer_runtime() -> None:
     settings.validate_remote_signer_service_runtime()
@@ -126,7 +114,7 @@ def _client_ip(request: Request) -> str:
 
 _validate_remote_signer_runtime()
 signer_backend = make_remote_signer_backend()
-allowed_pubkeys = _parse_allowed_pubkeys(settings.REMOTE_SIGNER_ALLOWED_PUBKEYS)
+signer_allowlist = make_signer_allowlist()
 audit_log = JsonlAuditLogger(settings.REMOTE_SIGNER_AUDIT_LOG_PATH, "remote-signer")
 metrics = MetricsRegistry()
 rate_limiter = SlidingWindowRateLimiter(
@@ -177,11 +165,12 @@ async def security_middleware(request: Request, call_next):
 
 @app.get("/health")
 def health():
+    allowlist_health = signer_allowlist.health()
     payload = {
-        "ok": True,
-        "allowlist_size": len(allowed_pubkeys),
+        "ok": allowlist_health.get("allowlist_ready", True),
         "audit_log_path": settings.REMOTE_SIGNER_AUDIT_LOG_PATH,
     }
+    payload.update(allowlist_health)
     payload.update(signer_backend.health())
     return payload
 
@@ -195,6 +184,11 @@ def metrics_endpoint():
 
 @app.post("/sign", response_model=SignResponse)
 async def sign(req: SignRequest):
+    allowlist_health = signer_allowlist.health()
+    if not allowlist_health.get("allowlist_ready", True):
+        metrics.inc("prophet_remote_signer_sign_total", labels={"result": "allowlist_unavailable"})
+        return JSONResponse(status_code=503, content={"detail": "Signer allowlist unavailable"})
+
     loaded_pubkeys = signer_backend.loaded_pubkeys()
     if loaded_pubkeys == [] and signer_backend.name == "local_keypairs":
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "no_keys"})
@@ -206,7 +200,7 @@ async def sign(req: SignRequest):
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "bad_pubkey"})
         return JSONResponse(status_code=400, content={"detail": "Invalid public_key"})
 
-    if allowed_pubkeys and pk_str not in allowed_pubkeys:
+    if not signer_allowlist.contains(pk_str):
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "not_allowed"})
         return JSONResponse(status_code=403, content={"detail": "Signer not allowed"})
     if loaded_pubkeys and pk_str not in loaded_pubkeys:

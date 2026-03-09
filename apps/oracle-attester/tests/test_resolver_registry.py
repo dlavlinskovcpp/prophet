@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.resolver import compute_resolver_hash
-from src.resolver_registry import DirectoryResolverRegistry, HttpResolverRegistry
+from src.resolver_registry import CachingResolverRegistry, DirectoryResolverRegistry, HttpResolverRegistry
 
 
 def test_directory_resolver_registry_loads_and_verifies_hash(tmp_path):
@@ -94,3 +94,74 @@ def test_http_resolver_registry_rejects_hash_mismatch(monkeypatch):
     registry = HttpResolverRegistry("https://registry.example/resolvers", "", 3.0)
     with pytest.raises(ValueError):
         registry.load(requested_hash)
+
+
+def test_caching_resolver_registry_reuses_cached_entry():
+    resolver_def = {
+        "url": "https://example.test/value",
+        "method": "GET",
+        "path": "data.answer",
+        "predicate": "equals",
+        "target_value": 42,
+    }
+    resolver_hash = compute_resolver_hash(resolver_def)
+
+    class InnerRegistry:
+        mode = "memory"
+
+        def __init__(self):
+            self.calls = 0
+
+        def load(self, resolver_hash_arg):
+            assert resolver_hash_arg == resolver_hash
+            self.calls += 1
+            return DirectoryResolverRegistry._parse_and_verify(resolver_hash, resolver_def)
+
+        def health(self):
+            return {"mode": self.mode}
+
+    inner = InnerRegistry()
+    registry = CachingResolverRegistry(inner, ttl_s=60.0, max_entries=4, allow_stale_on_error=True)
+
+    first = registry.load(resolver_hash)
+    second = registry.load(resolver_hash)
+
+    assert first.path == second.path
+    assert inner.calls == 1
+    assert registry.health()["cache_hits"] == 1
+
+
+def test_caching_resolver_registry_serves_stale_on_backend_error():
+    resolver_def = {
+        "url": "https://example.test/value",
+        "method": "GET",
+        "path": "data.answer",
+        "predicate": "equals",
+        "target_value": 42,
+    }
+    resolver_hash = compute_resolver_hash(resolver_def)
+
+    class FlakyRegistry:
+        mode = "memory"
+
+        def __init__(self):
+            self.calls = 0
+
+        def load(self, _resolver_hash):
+            self.calls += 1
+            if self.calls == 1:
+                return DirectoryResolverRegistry._parse_and_verify(resolver_hash, resolver_def)
+            raise RuntimeError("registry unavailable")
+
+        def health(self):
+            return {"mode": self.mode}
+
+    registry = CachingResolverRegistry(FlakyRegistry(), ttl_s=0.001, max_entries=4, allow_stale_on_error=True)
+
+    first = registry.load(resolver_hash)
+    import time
+    time.sleep(0.01)
+    second = registry.load(resolver_hash)
+
+    assert first.path == second.path
+    assert registry.health()["cache_stale_hits"] == 1

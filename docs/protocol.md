@@ -42,6 +42,7 @@ Responsibilities:
 - Build resolve message/signatures
 - Submit permissionless resolve transaction for v2 threshold markets by default
 - Persist durable audit records for verification and submission steps
+- Cache resolver definitions from the registry and serve stale cached entries during transient registry failures
 
 ## Resolution Trust Model (MVP)
 
@@ -50,6 +51,7 @@ Responsibilities:
 - On-chain stores `proof_hash` + `public_inputs_hash` for auditability.
 - Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
 - Resolver definitions should come from a canonical registry source (directory mirror or HTTP registry) and must hash back to the on-chain `resolver_hash`.
+- Managed signer deployments should keep an explicit signer allowlist, especially when a command/KMS/HSM bridge is used.
 
 ## Agent Integration
 

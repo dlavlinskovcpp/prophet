@@ -184,15 +184,16 @@ async def security_and_metrics_middleware(request: Request, call_next):
 
 @app.get("/health")
 def health_check():
-    return {
+    payload = {
         "ok": True,
         "zktls_mode": settings.ZKTLS_MODE,
         "require_zktls": settings.REQUIRE_ZKTLS,
         "app_env": settings.APP_ENV,
-        "notary_signer_mode": settings.NOTARY_SIGNER_MODE,
-        "resolver_registry_mode": settings.RESOLVER_REGISTRY_MODE,
-        "attester_audit_log_path": settings.ATTESTER_AUDIT_LOG_PATH,
     }
+    service_health = getattr(service, "health", None)
+    if callable(service_health):
+        payload.update(service_health())
+    return payload
 
 
 @app.get("/metrics")
