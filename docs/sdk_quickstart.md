@@ -17,6 +17,7 @@ Set these before running examples:
 export RPC_URL="http://127.0.0.1:8899"
 export PROPHET_PROGRAM_ID="<your_program_id>"
 export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
+export QUOTE_MINT="<your_quote_mint>"
 ```
 
 ## Core Lifecycle API
@@ -63,10 +64,7 @@ resolve_ts = now + 180
 notary_keys = [client.payer.pubkey()]  # demo only; use real t-of-n keys in production
 notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
 
-try:
-    client.initialize_notary_config(1, notary_keys)
-except Exception:
-    pass  # config may already exist for this admin
+client.initialize_notary_config(1, notary_keys)
 
 client.initialize_market_v2(
     resolver_hash=resolver_hash,
@@ -86,6 +84,7 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 
 - `resolve_market_threshold` is the primary permissionless t-of-n notary flow for v2 markets.
 - The attester only supports threshold-notary v2 markets.
+- `initialize_notary_config(...)` is only idempotent when the existing PDA already matches the requested threshold and notary set. Use `update_notary_config(...)` when intentionally changing the config.
 - Fee config is frozen after the first order. Orders prefund a fee reserve, only taker executions accrue protocol fees, and unused reserve returns through `claim_refunds(...)`.
 
 ## Example Scripts

@@ -52,7 +52,7 @@ Responsibilities:
 - Submit permissionless resolve transaction for v2 threshold markets by default
 - Persist durable audit records for verification and submission steps
 - Cache resolver definitions from the registry and serve stale cached entries during transient registry failures
-- Publish canonical resolver definitions through an immutable resolver registry service before attestation
+- Load canonical resolver definitions from an immutable resolver registry service before attestation
 
 ## Resolution Trust Model (MVP)
 

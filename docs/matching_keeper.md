@@ -27,7 +27,7 @@ make keeper
 make localnet-up
 ```
 
-`make localnet-up` starts the validator, attester, matching keeper, and Prometheus from `docker-compose.localnet.yml`. Prometheus scrapes the keeper and attester with the sample config in `ops/monitoring/prometheus.yml` and alert rules in `ops/monitoring/alerts.yml`.
+`make localnet-up` starts the validator, resolver registry, remote signer, attester, matching keeper, Prometheus, and Grafana from `docker-compose.localnet.yml`. Prometheus scrapes the keeper and attester with the sample config in `ops/monitoring/prometheus.yml` and alert rules in `ops/monitoring/alerts.yml`.
 
 Required env:
 
