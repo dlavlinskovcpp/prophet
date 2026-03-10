@@ -15,7 +15,9 @@ from typing import Any, Dict
 
 
 ROOT = Path(__file__).resolve().parent.parent
-ENVIRONMENTS_DIR = ROOT / "deploy" / "environments"
+ENVIRONMENTS_DIR = Path(
+    os.getenv("PROPHET_RELEASE_ENVIRONMENTS_DIR", str(ROOT / "deploy" / "environments"))
+).resolve()
 DEFAULT_BUNDLE_ROOT = ROOT / "releases"
 TAG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -67,8 +69,14 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _rel(path: Path) -> str:
-    return str(path.resolve().relative_to(ROOT.resolve()))
+def _rel(path: Path, *, fallback: str = "") -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(ROOT.resolve()))
+    except ValueError:
+        if fallback:
+            return fallback
+        return str(resolved)
 
 
 def _expand_path(raw: str) -> Path:
@@ -214,6 +222,7 @@ def _build_manifest(
     ts_types_path = (ROOT / config["ts_types_path"]).resolve()
     keypair_path = (ROOT / config["program_keypair_path"]).resolve()
     wallet_path = _expand_path(config["wallet_path"])
+    env_rel = str(Path("deploy") / "environments" / env_path.name)
 
     versions = _collect_versions()
     program_id = _resolve_program_id(config, idl_path, keypair_path)
@@ -245,7 +254,7 @@ def _build_manifest(
             "ts_types": _artifact_metadata(ts_types_path),
         },
         "sources": {
-            "environment_config": _rel(env_path),
+            "environment_config": _rel(env_path, fallback=env_rel),
             "anchor_toml": _rel(ROOT / "Anchor.toml"),
             "program_cargo_toml": _rel(ROOT / "programs" / "prophet" / "Cargo.toml"),
             "sdk_pyproject": _rel(ROOT / "sdk" / "python" / "pyproject.toml"),
@@ -267,24 +276,30 @@ def _bundle_release(
     bundle_dir = bundle_root / manifest["release_tag"] / manifest["environment"]
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
-    copy_paths = [
-        ROOT / config["binary_path"],
-        ROOT / config["idl_path"],
-        ROOT / config["ts_types_path"],
-        ROOT / config["program_keypair_path"],
-        env_path,
-        ROOT / "Anchor.toml",
-        ROOT / "programs" / "prophet" / "Cargo.toml",
-        ROOT / "sdk" / "python" / "pyproject.toml",
-        ROOT / "apps" / "oracle-attester" / "pyproject.toml",
-        ROOT / "apps" / "matching-keeper" / "pyproject.toml",
-        ROOT / "package.json",
+    copy_specs = [
+        (ROOT / config["binary_path"], _rel(ROOT / config["binary_path"])),
+        (ROOT / config["idl_path"], _rel(ROOT / config["idl_path"])),
+        (ROOT / config["ts_types_path"], _rel(ROOT / config["ts_types_path"])),
+        (ROOT / config["program_keypair_path"], _rel(ROOT / config["program_keypair_path"])),
+        (env_path, str(Path("deploy") / "environments" / env_path.name)),
+        (ROOT / "Anchor.toml", _rel(ROOT / "Anchor.toml")),
+        (ROOT / "programs" / "prophet" / "Cargo.toml", _rel(ROOT / "programs" / "prophet" / "Cargo.toml")),
+        (ROOT / "sdk" / "python" / "pyproject.toml", _rel(ROOT / "sdk" / "python" / "pyproject.toml")),
+        (
+            ROOT / "apps" / "oracle-attester" / "pyproject.toml",
+            _rel(ROOT / "apps" / "oracle-attester" / "pyproject.toml"),
+        ),
+        (
+            ROOT / "apps" / "matching-keeper" / "pyproject.toml",
+            _rel(ROOT / "apps" / "matching-keeper" / "pyproject.toml"),
+        ),
+        (ROOT / "package.json", _rel(ROOT / "package.json")),
     ]
 
-    for src in copy_paths:
+    for src, rel_dst in copy_specs:
         if not src.exists():
             raise ReleaseError(f"Cannot bundle missing file: {src}")
-        dst = bundle_dir / src.resolve().relative_to(ROOT.resolve())
+        dst = bundle_dir / rel_dst
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 

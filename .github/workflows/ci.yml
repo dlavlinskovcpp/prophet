@@ -225,9 +225,30 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE_ROOT="/tmp/prophet-release-bundles"
-          python3 scripts/release.py bundle --environment localnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
-          python3 scripts/release.py bundle --environment devnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
-          python3 scripts/release.py bundle --environment mainnet-beta --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
+          CI_ENV_DIR="/tmp/prophet-release-envs"
+          PROPHET_PROGRAM_ID_CI="$(solana address -k target/deploy/prophet-keypair.json)"
+          mkdir -p "${CI_ENV_DIR}"
+          export CI_ENV_DIR PROPHET_PROGRAM_ID_CI
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          src_dir = Path("deploy/environments")
+          dst_dir = Path(os.environ["CI_ENV_DIR"])
+          program_id = os.environ["PROPHET_PROGRAM_ID_CI"]
+
+          for name in ("localnet", "devnet", "mainnet-beta"):
+              src = src_dir / f"{name}.json"
+              data = json.loads(src.read_text(encoding="utf-8"))
+              data["expected_program_id"] = program_id
+              (dst_dir / src.name).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+          PY
+
+          PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment localnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
+          PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment devnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
+          PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment mainnet-beta --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
 
       - name: Upload Release Bundles
         uses: actions/upload-artifact@v4
