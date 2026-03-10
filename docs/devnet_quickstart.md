@@ -51,6 +51,14 @@ export PROPHET_PROGRAM_ID="$(solana address -k target/deploy/prophet-keypair.jso
 export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
 ```
 
+Recommended for a clean smoke path: switch to a fresh devnet wallet for market creation and resolution so you do not inherit old `NotaryConfig` PDA state from previous runs.
+
+```bash
+solana-keygen new --no-bip39-passphrase --force -o /tmp/prophet-devnet-smoke.json
+solana airdrop 2 "$(solana address -k /tmp/prophet-devnet-smoke.json)" --url devnet
+export PAYER_KEYPAIR_PATH="/tmp/prophet-devnet-smoke.json"
+```
+
 ## 2. Create A Quote Mint
 
 Create a devnet SPL mint to use as the market quote asset:
@@ -86,6 +94,8 @@ print("TX=", sig)
 PY
 cd ../..
 ```
+
+If this step fails with `already in use` or later market creation fails with `AccountNotInitialized` for `notary_config`, your current admin wallet is reusing a stale devnet PDA. Generate a fresh smoke wallet with the commands above and retry this step.
 
 Export the printed `NOTARY_CONFIG` pubkey:
 
