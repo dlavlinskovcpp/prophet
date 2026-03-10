@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 
+from solders.hash import Hash
+from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 
+import src.solana_client as solana_client_mod
 from src.solana_client import MarketLayout, SolanaClient
 
 
@@ -72,3 +75,45 @@ def test_get_market_state_full_decodes_current_market_layout_from_raw_bytes():
     assert state["open_ts"] == 1_700_000_000
     assert state["resolve_ts"] == 1_700_000_200
     assert state["status"] == 0
+
+
+def test_submit_and_confirm_accepts_hash_object_blockhash(monkeypatch):
+    captured = {}
+    blockhash = Hash.default()
+    payer = Keypair()
+
+    class _FakeVersionedTx:
+        def __init__(self, msg, signers):
+            captured["msg"] = msg
+            captured["signers"] = list(signers)
+
+        def __bytes__(self):
+            return b"fake-tx"
+
+    class _FakeRpcClient:
+        def get_latest_blockhash(self):
+            return SimpleNamespace(value=SimpleNamespace(blockhash=blockhash))
+
+        def send_raw_transaction(self, raw_tx, opts=None):
+            captured["opts"] = opts
+            return SimpleNamespace(value="sig-123")
+
+        def confirm_transaction(self, sig, commitment=None):
+            captured["confirmed"] = (sig, commitment)
+
+    def _fake_try_compile(*, payer, instructions, address_lookup_table_accounts, recent_blockhash):
+        captured["payer"] = payer
+        captured["instructions"] = instructions
+        captured["recent_blockhash"] = recent_blockhash
+        return "fake-msg"
+
+    monkeypatch.setattr(solana_client_mod.MessageV0, "try_compile", staticmethod(_fake_try_compile))
+    monkeypatch.setattr(solana_client_mod, "VersionedTransaction", _FakeVersionedTx)
+
+    client = object.__new__(SolanaClient)
+    client.client = _FakeRpcClient()
+
+    sig = client.submit_and_confirm([], payer)
+
+    assert sig == "sig-123"
+    assert captured["recent_blockhash"] == blockhash

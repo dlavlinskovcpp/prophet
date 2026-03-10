@@ -198,7 +198,10 @@ jobs:
             exit 1
           fi
 
-          if ! (cd apps/oracle-attester && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="$(anchor keys list | awk '/prophet:/ {print $2}')" poetry run pytest -q tests/test_localnet_threshold_e2e.py); then
+          PROPHET_PROGRAM_ID_CI="$(anchor keys list | awk '/prophet:/ {print $2}')"
+          echo "Using deployed Prophet program id: ${PROPHET_PROGRAM_ID_CI}"
+
+          if ! (cd apps/oracle-attester && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" poetry run pytest -q tests/test_localnet_threshold_e2e.py); then
             echo "Attester localnet threshold e2e failed; validator log follows:"
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
@@ -208,7 +211,7 @@ jobs:
             exit 1
           fi
 
-          if ! (cd sdk/python && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PAYER_KEYPAIR_PATH="$ANCHOR_WALLET" ORACLE_KEYPAIR_PATH="$ANCHOR_WALLET" QUOTE_MINT="So11111111111111111111111111111111111111112" poetry run pytest -q tests/test_localnet_e2e.py); then
+          if ! (cd sdk/python && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" PAYER_KEYPAIR_PATH="$ANCHOR_WALLET" ORACLE_KEYPAIR_PATH="$ANCHOR_WALLET" QUOTE_MINT="So11111111111111111111111111111111111111112" poetry run pytest -q tests/test_localnet_e2e.py); then
             echo "SDK localnet threshold e2e failed; validator log follows:"
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
