@@ -1,11 +1,31 @@
 import os
+import json
+import time
+
 import pytest
 from prophet_sdk import ProphetClient, MarketOutcome, MarketStatus
 from prophet_sdk.pdas import derive_market_pda, derive_notary_config_pda
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
-import json
-import time
+from solana.rpc.api import Client
+
+
+def _write_keypair(path, kp: Keypair) -> None:
+    path.write_text(json.dumps(list(bytes(kp))), encoding="utf-8")
+
+
+def _airdrop(client: Client, pubkey: Pubkey, lamports: int) -> None:
+    sig = client.request_airdrop(pubkey, lamports).value
+    if not sig:
+        raise RuntimeError(f"airdrop request failed for {pubkey}")
+
+    for _ in range(30):
+        bal = client.get_balance(pubkey).value or 0
+        if bal >= lamports:
+            return
+        time.sleep(1)
+
+    raise RuntimeError(f"airdrop not confirmed for {pubkey}")
 
 @pytest.mark.parametrize(
     ("resolver_fill", "proof_fill", "pi_fill", "outcome"),
@@ -15,20 +35,23 @@ import time
     ],
 )
 @pytest.mark.skipif(not os.getenv("RUN_LOCALNET"), reason="Skipping localnet e2e")
-def test_localnet_resolve_flow(resolver_fill, proof_fill, pi_fill, outcome):
+def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, outcome):
     rpc_url = os.getenv("RPC_URL", "http://localhost:8899")
-    payer_kp = os.getenv("PAYER_KEYPAIR_PATH")
-    oracle_kp_path = os.getenv("ORACLE_KEYPAIR_PATH")
     quote_mint = os.getenv("QUOTE_MINT")
     
-    if not (payer_kp and oracle_kp_path and quote_mint):
+    if not quote_mint:
         pytest.skip("Missing env vars for localnet test")
 
-    client = ProphetClient(rpc_url=rpc_url, payer_keypair_path=payer_kp)
+    payer = Keypair()
+    oracle_kp = Keypair()
+    payer_kp = tmp_path / "payer.json"
+    _write_keypair(payer_kp, payer)
+
+    rpc = Client(rpc_url)
+    _airdrop(rpc, payer.pubkey(), 10_000_000_000)
+
+    client = ProphetClient(rpc_url=rpc_url, payer_keypair_path=str(payer_kp))
     mint = Pubkey.from_string(quote_mint)
-    
-    with open(oracle_kp_path, 'r') as f:
-        oracle_kp = Keypair.from_bytes(bytes(json.loads(f.read().strip())))
 
     resolver = bytes([resolver_fill] * 32)
     try:

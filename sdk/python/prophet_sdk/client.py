@@ -113,13 +113,35 @@ class ProphetClient:
         )
 
     def _fetch_notary_config_version(self, notary_config: Pubkey) -> int:
+        return self._fetch_notary_config_state(notary_config)["version"]
+
+    def _fetch_notary_config_state(self, notary_config: Pubkey) -> Dict[str, object]:
         resp = self.client.get_account_info(notary_config, commitment=Confirmed)
         if not resp.value:
             raise ValueError(f"Notary config {notary_config} not found")
         raw = extract_account_bytes(resp.value.data)
         if len(raw) < 8 + 48:
             raise ValueError("Notary config account data too short")
-        return int(struct.unpack_from("<Q", raw, 8 + 40)[0])
+        data = raw[8:]
+
+        threshold = data[32]
+        notary_count = data[33]
+        version = int(struct.unpack_from("<Q", data, 40)[0])
+
+        keys: List[Pubkey] = []
+        offset = 48
+        for i in range(int(notary_count)):
+            start = offset + i * 32
+            end = start + 32
+            if end > len(data):
+                break
+            keys.append(Pubkey.from_bytes(data[start:end]))
+
+        return {
+            "threshold": int(threshold),
+            "version": version,
+            "notary_keys": keys,
+        }
 
     # -------------------------------------------------------------------------
     # Fetch Helpers
@@ -269,8 +291,12 @@ class ProphetClient:
         except RuntimeError as err:
             if "already in use" not in str(err):
                 raise
-            resp = self.client.get_account_info(cfg_pda, commitment=Confirmed)
-            if not resp.value:
+            existing = self._fetch_notary_config_state(cfg_pda)
+            expected_keys = [Pubkey.from_bytes(bytes(pk)) for pk in notary_keys]
+            if (
+                existing["threshold"] != int(threshold)
+                or existing["notary_keys"] != expected_keys
+            ):
                 raise
             sig = ""
         return cfg_pda, sig
