@@ -120,4 +120,4 @@ This repo does not automate rollback execution because that is a destructive pro
 
 ## CI Role
 
-CI now validates the release path by generating release bundles for the tracked environments from the built artifacts and uploading them as workflow artifacts. That keeps the release manifest format and bundle contents exercised continuously even when no live deploy is happening.
+CI validates the release path by generating release bundles from the built artifacts and uploading them as workflow artifacts. Because the CI localnet flow deploys a throwaway test program id, the workflow rewrites `expected_program_id` in temporary copied environment configs before running `scripts/release.py`. Real release configs under `deploy/environments/` remain the source of truth for operator-driven releases.
