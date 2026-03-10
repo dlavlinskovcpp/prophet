@@ -171,4 +171,6 @@ Backup and restore procedures are documented in `docs/ops_runbook.md`.
 - Protocol details: `docs/protocol.md`
 - Security assumptions and boundaries: `docs/trust_model.md`
 - Minimal deploy-to-resolution path: `docs/devnet_quickstart.md`
+- Common reader questions: `docs/faq.md`
+- End-to-end flow diagrams: `docs/sequence_flows.md`
 - Release and rollback: `docs/release_runbook.md`
