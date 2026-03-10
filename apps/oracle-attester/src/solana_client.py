@@ -208,7 +208,9 @@ class SolanaClient:
 
     def submit_and_confirm(self, ixs: List[Instruction], payer: Keypair) -> str:
         latest = self.client.get_latest_blockhash().value
-        blockhash = Hash.from_string(latest.blockhash)
+        blockhash = latest.blockhash
+        if isinstance(blockhash, str):
+            blockhash = Hash.from_string(blockhash)
 
         msg = MessageV0.try_compile(
             payer=payer.pubkey(),

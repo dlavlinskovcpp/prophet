@@ -2,7 +2,6 @@ import os
 import pytest
 from prophet_sdk import ProphetClient, MarketOutcome, MarketStatus
 from prophet_sdk.pdas import derive_market_pda, derive_notary_config_pda
-from prophet_sdk.ata import ensure_ata
 from solders.pubkey import Pubkey
 from solders.keypair import Keypair
 import json
@@ -30,8 +29,6 @@ def test_localnet_resolve_flow(resolver_fill, proof_fill, pi_fill, outcome):
     
     with open(oracle_kp_path, 'r') as f:
         oracle_kp = Keypair.from_bytes(bytes(json.loads(f.read().strip())))
-
-    ensure_ata(client.client, client.payer, client.payer.pubkey(), mint)
 
     resolver = bytes([resolver_fill] * 32)
     try:
