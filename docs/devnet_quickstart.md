@@ -227,6 +227,7 @@ It does not prove the full operated path:
 
 After this smoke path, the next practical step is to move to the operated path:
 
+- full operated devnet flow: `docs/operated_devnet.md`
 - release process: `docs/release_runbook.md`
 - ops and monitoring: `docs/ops_runbook.md`
 - system overview: `docs/architecture.md`

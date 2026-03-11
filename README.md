@@ -32,6 +32,7 @@ Prophet is a Solana prediction market protocol built for agent and bot execution
 - System architecture: `docs/architecture.md`
 - Trust model and security boundaries: `docs/trust_model.md`
 - Fastest deploy-to-resolution walkthrough: `docs/devnet_quickstart.md`
+- Full operated devnet walkthrough: `docs/operated_devnet.md`
 - Reader FAQ and glossary: `docs/faq.md`
 - End-to-end sequence diagrams: `docs/sequence_flows.md`
 - Protocol and account model: `docs/protocol.md`
