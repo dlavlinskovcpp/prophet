@@ -4,7 +4,7 @@
 
 validator:
 	@mkdir -p .anchor/test-ledger
-	solana-test-validator --reset --rpc-port 8899 --ws-port 8900 --ledger .anchor/test-ledger
+	solana-test-validator --reset --rpc-port 8899  --ledger .anchor/test-ledger
 
 build:
 	anchor build

@@ -15,11 +15,14 @@ def _load_bytes(b64: str, raw: str, file_path: str) -> bytes:
         return raw.encode()
     return b""
 
-def _post_json(url: str, payload: dict, timeout_s: float = 15.0) -> tuple[int, str]:
+def _post_json(url: str, payload: dict, timeout_s: float = 15.0, api_token: str = "") -> tuple[int, str]:
+    headers = {"Content-Type": "application/json"}
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     req = urllib.request.Request(
         url=url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -36,6 +39,7 @@ def main():
     parser.add_argument("market", help="Market pubkey")
     parser.add_argument("outcome", choices=["YES", "NO", "INVALID"], help="Outcome to submit")
     parser.add_argument("--url", default="http://localhost:8000/resolve", help="Attester resolve URL")
+    parser.add_argument("--api-token", default="", help="Optional bearer token for attester auth")
     parser.add_argument("--proof-b64", default="", help="Base64 proof bytes")
     parser.add_argument("--proof-str", default="", help="Raw proof string (debug only)")
     parser.add_argument("--proof-file", default="", help="Proof file path")
@@ -66,7 +70,7 @@ def main():
     print(f"Submitting to {args.url}...")
     print(json.dumps(payload, indent=2))
 
-    status, body = _post_json(args.url, payload, timeout_s=15.0)
+    status, body = _post_json(args.url, payload, timeout_s=15.0, api_token=args.api_token)
     if status == 200:
         print("\nSuccess!")
         print(json.dumps(json.loads(body), indent=2))
