@@ -120,6 +120,10 @@ make ops-restore ARCHIVE=ops/backups/<snapshot>.tar.gz FORCE=--force
 
 Release environments live under `deploy/environments/*.json` for `localnet`, `devnet`, and `mainnet-beta`.
 
+Non-local operated deployment templates live under `deploy/operated/devnet/` and `deploy/operated/mainnet-beta/`.
+
+Render the operated env files from one values file with `make render-operated ENV=devnet`.
+
 Common release commands:
 
 ```bash

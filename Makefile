@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -23,6 +23,10 @@ release-bundle:
 release-deploy:
 	# Usage: make release-deploy ENV=devnet TAG=v0.2.3
 	python3 scripts/release.py deploy --environment $(ENV) --release-tag $(TAG)
+
+render-operated:
+	# Usage: cp deploy/operated/$(ENV)/stack.env.example deploy/operated/$(ENV)/stack.env && make render-operated ENV=$(ENV)
+	python3 scripts/render_operated_stack.py --environment $(ENV) $(if $(VALUES),--values-file $(VALUES),) $(if $(OUT),--output-dir $(OUT),) $(if $(NO_SYNC_ENV_JSON),--skip-sync-env-json,) $(if $(GENERATE_SECRETS),--generate-secrets,)
 
 test:
 	anchor test

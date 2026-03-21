@@ -25,5 +25,8 @@ validator.log
 .logs/
 apps/matching-keeper/state/
 ops/backups/
+deploy/operated/*/*.env
+deploy/operated/*/.env
+deploy/operated/*/stack.env
 releases/*
 !releases/.gitkeep

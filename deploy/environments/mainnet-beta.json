@@ -10,9 +10,17 @@
   "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
   "service_endpoints": {
-    "attester_base_url": "",
-    "remote_signer_url": "",
-    "resolver_registry_url": "",
-    "matching_keeper_base_url": ""
+    "attester_base_url": "https://oracle-attester.mainnet-beta.prophet.example",
+    "remote_signer_url": "https://remote-signer.mainnet-beta.prophet.example/sign",
+    "resolver_registry_url": "https://resolver-registry.mainnet-beta.prophet.example/resolvers",
+    "matching_keeper_base_url": "https://matching-keeper.mainnet-beta.prophet.example"
+  },
+  "deployment_artifacts": {
+    "compose_manifest": "deploy/operated/mainnet-beta/docker-compose.yml",
+    "stack_values_template": "deploy/operated/mainnet-beta/stack.env.example",
+    "oracle_attester_env_template": "deploy/operated/mainnet-beta/oracle-attester.env.example",
+    "remote_signer_env_template": "deploy/operated/mainnet-beta/remote-signer.env.example",
+    "resolver_registry_env_template": "deploy/operated/mainnet-beta/resolver-registry.env.example",
+    "matching_keeper_env_template": "deploy/operated/mainnet-beta/matching-keeper.env.example"
   }
 }
