@@ -2,6 +2,8 @@
 
 This guide runs Prophet in the production-shaped service model while still using Solana devnet for the on-chain program.
 
+If you want the CI/localnet operated smoke path instead of the full manual devnet walkthrough, use `make operated-smoke` after the local validator is running and the program is deployed.
+
 Unlike `docs/devnet_quickstart.md`, this path uses:
 
 - a resolver registry over HTTP

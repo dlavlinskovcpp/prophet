@@ -221,6 +221,16 @@ jobs:
             exit 1
           fi
 
+          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py); then
+            echo "Operated localnet smoke failed; validator log follows:"
+            if [ -f "${VALIDATOR_LOG}" ]; then
+              cat "${VALIDATOR_LOG}" || true
+            else
+              echo "Validator log file not found at ${VALIDATOR_LOG}"
+            fi
+            exit 1
+          fi
+
       - name: Generate Release Bundles
         run: |
           set -euo pipefail

@@ -100,6 +100,7 @@ Primary test paths:
 ```bash
 anchor test
 make reliability
+make operated-smoke
 cd sdk/python && pytest tests/test_smoke.py
 ```
 
