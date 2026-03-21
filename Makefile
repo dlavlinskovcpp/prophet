@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -27,6 +27,10 @@ release-deploy:
 render-operated:
 	# Usage: cp deploy/operated/$(ENV)/stack.env.example deploy/operated/$(ENV)/stack.env && make render-operated ENV=$(ENV)
 	python3 scripts/render_operated_stack.py --environment $(ENV) $(if $(VALUES),--values-file $(VALUES),) $(if $(OUT),--output-dir $(OUT),) $(if $(NO_SYNC_ENV_JSON),--skip-sync-env-json,) $(if $(GENERATE_SECRETS),--generate-secrets,)
+
+operated-smoke:
+	# Usage: make operated-smoke [RPC_URL=http://127.0.0.1:8899] [PROPHET_PROGRAM_ID=<program id>]
+	python3 scripts/operated_localnet_smoke.py $(if $(RPC_URL),--rpc-url $(RPC_URL),) $(if $(PROPHET_PROGRAM_ID),--program-id $(PROPHET_PROGRAM_ID),) $(if $(QUOTE_MINT),--quote-mint $(QUOTE_MINT),) $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
 
 test:
 	anchor test
