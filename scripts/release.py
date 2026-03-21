@@ -20,6 +20,20 @@ ENVIRONMENTS_DIR = Path(
 ).resolve()
 DEFAULT_BUNDLE_ROOT = ROOT / "releases"
 TAG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+REQUIRED_SERVICE_ENDPOINT_KEYS = (
+    "attester_base_url",
+    "remote_signer_url",
+    "resolver_registry_url",
+    "matching_keeper_base_url",
+)
+NON_LOCAL_DEPLOYMENT_ARTIFACT_KEYS = (
+    "compose_manifest",
+    "stack_values_template",
+    "oracle_attester_env_template",
+    "remote_signer_env_template",
+    "resolver_registry_env_template",
+    "matching_keeper_env_template",
+)
 
 
 class ReleaseError(RuntimeError):
@@ -100,6 +114,58 @@ def _load_environment(name: str) -> tuple[Path, Dict[str, Any]]:
             f"Environment config mismatch: file {path} declares {config.get('environment')!r}"
         )
     return path, config
+
+
+def _string_map(raw: Any, *, field_name: str) -> Dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ReleaseError(f"{field_name} must be a JSON object.")
+
+    result: Dict[str, str] = {}
+    for key, value in raw.items():
+        name = str(key).strip()
+        if not name:
+            raise ReleaseError(f"{field_name} contains an empty key.")
+        if not isinstance(value, str) or not value.strip():
+            raise ReleaseError(f"{field_name}.{name} must be a non-empty string.")
+        result[name] = value.strip()
+    return result
+
+
+def _service_endpoints(config: Dict[str, Any]) -> Dict[str, str]:
+    endpoints = _string_map(config.get("service_endpoints", {}), field_name="service_endpoints")
+    missing = [key for key in REQUIRED_SERVICE_ENDPOINT_KEYS if key not in endpoints]
+    if missing:
+        raise ReleaseError(f"Missing required service_endpoints entries: {', '.join(missing)}")
+    return endpoints
+
+
+def _repo_relative(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(ROOT.resolve()))
+    except ValueError as exc:
+        raise ReleaseError(f"Expected repo-relative path, got {resolved}") from exc
+
+
+def _deployment_artifact_paths(config: Dict[str, Any], *, env_name: str) -> Dict[str, Path]:
+    artifacts = _string_map(config.get("deployment_artifacts", {}), field_name="deployment_artifacts")
+    if env_name != "localnet":
+        missing = [key for key in NON_LOCAL_DEPLOYMENT_ARTIFACT_KEYS if key not in artifacts]
+        if missing:
+            raise ReleaseError(
+                f"Missing required deployment_artifacts entries for {env_name}: {', '.join(missing)}"
+            )
+
+    resolved: Dict[str, Path] = {}
+    for key, raw_path in artifacts.items():
+        path = _resolve_repo_path(raw_path)
+        if not path.exists():
+            raise ReleaseError(f"Deployment artifact {key} does not exist: {path}")
+        _repo_relative(path)
+        resolved[key] = path
+    return resolved
 
 
 def _artifact_metadata(path: Path) -> Dict[str, Any]:
@@ -226,9 +292,14 @@ def _build_manifest(
 
     versions = _collect_versions()
     program_id = _resolve_program_id(config, idl_path, keypair_path)
+    service_endpoints = _service_endpoints(config)
+    deployment_artifacts = {
+        name: _artifact_metadata(path)
+        for name, path in _deployment_artifact_paths(config, env_name=env_name).items()
+    }
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "release_tag": release_tag,
         "environment": env_name,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -237,7 +308,8 @@ def _build_manifest(
             "anchor_cluster": config["anchor_cluster"],
             "rpc_url": config["rpc_url"],
             "wallet_path": str(wallet_path),
-            "service_endpoints": config.get("service_endpoints", {}),
+            "service_endpoints": service_endpoints,
+            "deployment_artifacts": deployment_artifacts,
         },
         "git": {
             "commit": _git_output(["rev-parse", "HEAD"]),
@@ -295,8 +367,14 @@ def _bundle_release(
         ),
         (ROOT / "package.json", _rel(ROOT / "package.json")),
     ]
+    for path in _deployment_artifact_paths(config, env_name=manifest["environment"]).values():
+        copy_specs.append((path, _repo_relative(path)))
 
+    seen_dsts = set()
     for src, rel_dst in copy_specs:
+        if rel_dst in seen_dsts:
+            continue
+        seen_dsts.add(rel_dst)
         if not src.exists():
             raise ReleaseError(f"Cannot bundle missing file: {src}")
         dst = bundle_dir / rel_dst

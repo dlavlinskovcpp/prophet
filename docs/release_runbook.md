@@ -28,6 +28,7 @@ Each config pins:
 - build artifact paths
 - expected program id
 - service endpoint metadata for the release manifest
+- deployment manifests and env templates for the operated services
 
 ## Preconditions
 
@@ -38,6 +39,7 @@ Before any non-localnet release:
 3. The git tree should be clean.
 4. The wallet in the selected environment config must hold the upgrade authority and enough SOL for deployment.
 5. The environment config's `expected_program_id` should match the actual program keypair and IDL address.
+6. If you use the operated stack templates, render them first with `python3 scripts/render_operated_stack.py --environment <env>` so the tracked environment config carries the real public service endpoints.
 
 ## Commands
 
@@ -85,6 +87,8 @@ It includes:
 - `target/types/prophet.ts`
 - `target/deploy/prophet-keypair.json`
 - environment config used for the release
+- operated deployment templates referenced by the environment config
+- the operated stack values template referenced by the environment config
 - version source files (`Anchor.toml`, relevant `pyproject.toml`, `Cargo.toml`, `package.json`)
 
 That bundle is the rollback artifact set.
