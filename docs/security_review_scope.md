@@ -2,6 +2,14 @@
 
 This note packages the scope and expectations for an external security/adversarial review.
 
+Generate the handoff bundle with:
+
+```bash
+make security-review-bundle ENV=devnet TAG=v0.2.3
+```
+
+The packaging workflow and remediation loop are documented in `docs/security_review_process.md`.
+
 ## Components In Scope
 - on-chain program `prophet` (v2 threshold-only surface)
 - attester service (resolver load, zkTLS verification, resolve assembly)

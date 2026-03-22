@@ -30,3 +30,5 @@ deploy/operated/*/.env
 deploy/operated/*/stack.env
 releases/*
 !releases/.gitkeep
+security-reviews/*
+!security-reviews/.gitkeep

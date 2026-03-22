@@ -138,6 +138,7 @@ For the actual release flow, rollback expectations, monitoring, and recovery pro
 - `docs/release_runbook.md`
 - `docs/ops_runbook.md`
 - `docs/signer_kms_ops.md`
+- `docs/security_review_process.md`
 
 ## Security Notes
 

@@ -72,6 +72,7 @@ Equivalent make targets:
 - `make release-plan ENV=devnet TAG=v0.2.3`
 - `make release-bundle ENV=devnet TAG=v0.2.3`
 - `make release-deploy ENV=devnet TAG=v0.2.3`
+- `make security-review-bundle ENV=devnet TAG=v0.2.3`
 
 ## What The Bundle Contains
 
@@ -92,6 +93,22 @@ It includes:
 - version source files (`Anchor.toml`, relevant `pyproject.toml`, `Cargo.toml`, `package.json`)
 
 That bundle is the rollback artifact set.
+
+## Review Package
+
+Generate the external-review handoff package after the release artifacts are ready:
+
+```bash
+make security-review-bundle ENV=devnet TAG=v0.2.3
+```
+
+That writes `security-reviews/<TAG>/<ENV>/` with:
+
+- a safe release snapshot for reviewers
+- redacted configs
+- sample resolver/proof/public-input fixtures
+- invariant mapping
+- findings and remediation trackers
 
 ## Post-Deploy Checks
 
