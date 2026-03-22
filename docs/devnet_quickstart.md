@@ -228,6 +228,7 @@ It does not prove the full operated path:
 After this smoke path, the next practical step is to move to the operated path:
 
 - full operated devnet flow: `docs/operated_devnet.md`
+- one-command operated devnet runner: `make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"`
 - release process: `docs/release_runbook.md`
 - ops and monitoring: `docs/ops_runbook.md`
 - system overview: `docs/architecture.md`

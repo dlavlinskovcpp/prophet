@@ -2,7 +2,15 @@
 
 This guide runs Prophet in the production-shaped service model while still using Solana devnet for the on-chain program.
 
-If you want the CI/localnet operated smoke path instead of the full manual devnet walkthrough, use `make operated-smoke` after the local validator is running and the program is deployed.
+If you want the CI/localnet operated smoke path instead of devnet, use `make operated-smoke` after the local validator is running and the program is deployed.
+
+If you want the repo to drive this devnet walkthrough in one command, use:
+
+```bash
+make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"
+```
+
+That command still starts the resolver registry, remote signer, and attester locally on `127.0.0.1`, but it points them at devnet and requires a real Reclaim verifier plus proof/public-input payloads that the verifier accepts.
 
 Unlike `docs/devnet_quickstart.md`, this path uses:
 
@@ -43,6 +51,15 @@ Before starting this guide, you should already have:
 - a reachable Reclaim verifier endpoint for `RECLAIM_VERIFY_URL`
 
 Important: the attester runtime does not support mock zkTLS. You need a real verifier endpoint and proof/public-input payloads that it accepts.
+
+If you use `make operated-devnet`, the script will:
+
+- start the resolver registry, remote signer, and attester with auth enabled
+- generate a dedicated temporary notary key unless you pass `--notary-keypair`
+- publish a resolver, initialize or reuse the on-chain `NotaryConfig`, create a short-lived market, resolve it through the attester, and verify final on-chain state
+- fail if the resolver does not evaluate to the requested outcome for your supplied `public_inputs.json`
+
+By default the script will not mutate an existing mismatched `NotaryConfig` PDA for the payer wallet. Pass `--allow-update-notary-config` only if you explicitly want it to call `update_notary_config(...)` for that admin wallet.
 
 ## Ports Used
 
@@ -341,6 +358,8 @@ You are passing a PDA that exists in address space but does not hold a valid ini
 ### `already in use` during `initialize_notary_config`
 
 That admin wallet has already derived the same `NotaryConfig` PDA. Use a fresh admin wallet or call `update_notary_config(...)` instead.
+
+For `make operated-devnet`, the script stops on this condition unless you rerun it with `--allow-update-notary-config`.
 
 ### `Signer not allowed`
 
