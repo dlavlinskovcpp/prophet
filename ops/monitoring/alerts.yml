@@ -54,14 +54,14 @@ groups:
   - name: prophet-matching-keeper
     rules:
       - alert: ProphetMatchingKeeperDown
-        expr: prophet_matching_keeper_up == 0
+        expr: up{job="prophet-matching-keeper"} == 0 or prophet_matching_keeper_up == 0
         for: 1m
         labels:
           severity: critical
           service: matching-keeper
         annotations:
           summary: Prophet matching keeper is down
-          description: The matching keeper process is not reporting itself as up.
+          description: Prometheus cannot scrape the keeper or the keeper reports itself as down.
 
       - alert: ProphetMatchingKeeperWebsocketStale
         expr: prophet_matching_keeper_websocket_stale == 1
@@ -72,6 +72,26 @@ groups:
         annotations:
           summary: Prophet matching keeper websocket feed is stale
           description: The keeper has active markets but websocket ingestion is stale.
+
+      - alert: ProphetMatchingKeeperDirtyOrderBacklog
+        expr: prophet_matching_keeper_active_markets > 0 and prophet_matching_keeper_dirty_orders > 100
+        for: 10m
+        labels:
+          severity: warning
+          service: matching-keeper
+        annotations:
+          summary: Prophet matching keeper dirty-order backlog is growing
+          description: Dirty orders have stayed above 100 across active markets for the last 10 minutes.
+
+      - alert: ProphetMatchingKeeperSnapshotLag
+        expr: prophet_matching_keeper_active_markets > 0 and prophet_matching_keeper_max_snapshot_age_seconds > 600
+        for: 10m
+        labels:
+          severity: warning
+          service: matching-keeper
+        annotations:
+          summary: Prophet matching keeper snapshots are lagging
+          description: The oldest active market snapshot has been stale for more than 10 minutes.
 
       - alert: ProphetMatchingKeeperNoActiveMarkets
         expr: prophet_matching_keeper_active_markets == 0

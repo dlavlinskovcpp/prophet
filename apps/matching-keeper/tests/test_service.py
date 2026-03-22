@@ -3,6 +3,8 @@ import time
 
 from solders.pubkey import Pubkey
 
+from prophet_sdk import OrderSide
+from prophet_sdk.types import OrderAccount
 from prophet_sdk.types import MarketAccount, MarketOutcome, MarketStatus
 
 from src.service import MatchingKeeperService
@@ -40,6 +42,20 @@ def _market_account(*, status: MarketStatus, notary_config: Pubkey) -> MarketAcc
         status=status,
         outcome=MarketOutcome.Undecided,
         bump=255,
+    )
+
+
+def _order(*, market: Pubkey, owner_seed: int, side: OrderSide, seq: int, price: int, qty: int) -> OrderAccount:
+    return OrderAccount(
+        market=market,
+        owner=_pk(owner_seed),
+        side=side,
+        seq=seq,
+        limit_p_yes_e8=price,
+        qty_remaining_atoms=qty,
+        escrow_remaining_atoms=qty,
+        fee_remaining_atoms=0,
+        created_ts=1_700_000_000 + seq,
     )
 
 
@@ -102,3 +118,50 @@ def test_health_reports_stale_websocket_for_active_markets(tmp_path):
 
     assert health["websocket_stale"] is True
     assert health["ok"] is False
+
+
+def test_metrics_report_dirty_backlog_and_snapshot_lag(tmp_path, monkeypatch):
+    now = 1_700_000_500
+    monkeypatch.setattr(time, "time", lambda: now)
+
+    market = _pk(20)
+    order_yes = _pk(21)
+    order_no = _pk(22)
+    settings = Settings(
+        DB_PATH=str(tmp_path / "matcher.db"),
+        MARKET_DISCOVERY_MODE="explicit",
+        MARKETS=str(market),
+    )
+    service = MatchingKeeperService(settings, client=FakeClient([]))
+
+    service._running = True
+    service._market_sources[market] = "explicit"
+    service.engine.activate_market(market, discovery_source="explicit", seen_at=now - 30)
+    service.engine.set_market_metadata(
+        market,
+        quote_mint=_pk(30),
+        market_status="Open",
+        discovery_source="explicit",
+        seen_at=now - 30,
+    )
+    service.engine.replace_orders(
+        market,
+        [
+            (order_yes, _order(market=market, owner_seed=2, side=OrderSide.BuyYes, seq=1, price=70_000_000, qty=10)),
+            (order_no, _order(market=market, owner_seed=3, side=OrderSide.BuyNo, seq=2, price=60_000_000, qty=8)),
+        ],
+    )
+    service.engine.mark_dirty(market, order_yes)
+    service.engine.mark_dirty(market, order_no)
+    service.engine._markets[market].last_snapshot_at = now - 120
+    service._last_discovery_at = now - 5
+    service._last_ws_connected_at = now - 2
+    service._last_ws_message_at = now - 1
+
+    metrics = service.metrics_text()
+    health = service.health()
+
+    assert "prophet_matching_keeper_dirty_orders 2" in metrics
+    assert "prophet_matching_keeper_max_snapshot_age_seconds 120" in metrics
+    assert health["dirty_orders"] == 2
+    assert health["max_snapshot_age_s"] == 120
