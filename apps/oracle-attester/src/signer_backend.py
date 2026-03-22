@@ -126,6 +126,44 @@ def _make_aws_kms_client(*, region_name: str, endpoint_url: str, timeout_s: floa
     return boto3.client("kms", **kwargs)
 
 
+def _parse_aws_kms_public_key_response(
+    requested_key_id: str, response: Dict[str, Any]
+) -> Dict[str, Any]:
+    key_spec = str(response.get("KeySpec", "")).strip()
+    key_usage = str(response.get("KeyUsage", "")).strip()
+    algorithms = [str(x) for x in response.get("SigningAlgorithms", [])]
+    if key_spec != "ECC_NIST_EDWARDS25519":
+        raise ValueError(
+            f"AWS KMS key {requested_key_id} has unsupported KeySpec {key_spec!r}; expected ECC_NIST_EDWARDS25519."
+        )
+    if key_usage != "SIGN_VERIFY":
+        raise ValueError(
+            f"AWS KMS key {requested_key_id} has unsupported KeyUsage {key_usage!r}; expected SIGN_VERIFY."
+        )
+    if "ED25519_SHA_512" not in algorithms:
+        raise ValueError(
+            f"AWS KMS key {requested_key_id} does not advertise ED25519_SHA_512 support."
+        )
+
+    public_key_der = response.get("PublicKey")
+    if not isinstance(public_key_der, (bytes, bytearray)):
+        raise ValueError(
+            f"AWS KMS key {requested_key_id} returned an invalid PublicKey payload."
+        )
+
+    raw_pubkey = _ed25519_pubkey_from_spki(bytes(public_key_der))
+    pubkey_str = str(Pubkey.from_bytes(raw_pubkey))
+    resolved_key_id = str(response.get("KeyId", requested_key_id)).strip() or requested_key_id
+
+    return {
+        "key_spec": key_spec,
+        "key_usage": key_usage,
+        "signing_algorithms": algorithms,
+        "pubkey": pubkey_str,
+        "resolved_key_id": resolved_key_id,
+    }
+
+
 class LocalKeypairSignerBackend(SignerBackend):
     name = "local_keypairs"
 
@@ -259,30 +297,9 @@ class AwsKmsSignerBackend(SignerBackend):
             response = self.client.get_public_key(KeyId=key_id)
         except Exception as exc:
             raise RuntimeError(f"AWS KMS GetPublicKey failed for {key_id}: {exc}")
-
-        key_spec = str(response.get("KeySpec", "")).strip()
-        key_usage = str(response.get("KeyUsage", "")).strip()
-        algorithms = [str(x) for x in response.get("SigningAlgorithms", [])]
-        if key_spec != "ECC_NIST_EDWARDS25519":
-            raise ValueError(
-                f"AWS KMS key {key_id} has unsupported KeySpec {key_spec!r}; expected ECC_NIST_EDWARDS25519."
-            )
-        if key_usage != "SIGN_VERIFY":
-            raise ValueError(
-                f"AWS KMS key {key_id} has unsupported KeyUsage {key_usage!r}; expected SIGN_VERIFY."
-            )
-        if "ED25519_SHA_512" not in algorithms:
-            raise ValueError(
-                f"AWS KMS key {key_id} does not advertise ED25519_SHA_512 support."
-            )
-
-        public_key_der = response.get("PublicKey")
-        if not isinstance(public_key_der, (bytes, bytearray)):
-            raise ValueError(f"AWS KMS key {key_id} returned an invalid PublicKey payload.")
-
-        raw_pubkey = _ed25519_pubkey_from_spki(bytes(public_key_der))
-        pubkey_str = str(Pubkey.from_bytes(raw_pubkey))
-        resolved_key_id = str(response.get("KeyId", key_id)).strip() or key_id
+        parsed = _parse_aws_kms_public_key_response(key_id, response)
+        pubkey_str = parsed["pubkey"]
+        resolved_key_id = parsed["resolved_key_id"]
 
         existing = self._pubkey_to_key_id.get(pubkey_str)
         if existing and existing != resolved_key_id:

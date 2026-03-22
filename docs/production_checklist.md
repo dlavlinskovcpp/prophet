@@ -10,8 +10,10 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 
 ## Signer / KMS
 - `NOTARY_SIGNER_MODE=remote` in attester
-- remote signer backend set to cloud KMS/HSM (or command wrapper) and tested with a dry-run sign
-- signer allowlist present and loaded; rotated keys documented
+- remote signer backend set to cloud KMS/HSM (or command wrapper); `make signer-kms-bootstrap` output archived for the target release
+- `make signer-dry-run ARGS="backend"` passes on the signer host
+- `make signer-dry-run ARGS="--public-key <pubkey> service --url <https signer url> --api-key <token>"` passes against the live service path
+- signer allowlist present, loaded, and rotated with `make signer-allowlist`; current and next key sets documented
 - KMS IAM/policies scoped to the notary keys only; audit logging enabled
 
 ## Resolver Registry
@@ -51,4 +53,5 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 
 ## Runbook Readiness
 - docs/operated_devnet.md and docs/ops_runbook.md steps rehearsed
+- docs/signer_kms_ops.md steps rehearsed
 - incident contacts, escalation paths, and rollback decision owners defined

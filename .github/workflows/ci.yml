@@ -121,6 +121,10 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry install --no-interaction --no-root
 
+      - name: Run Attester Unit Tests
+        working-directory: apps/oracle-attester
+        run: poetry run pytest -q tests/test_signer_backend.py tests/test_signer_allowlist.py tests/test_remote_signer.py tests/test_signer_ops.py
+
       - name: Install SDK Python dependencies
         working-directory: sdk/python
         run: poetry install --no-interaction
