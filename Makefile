@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke signer-kms-bootstrap signer-dry-run signer-allowlist
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -23,6 +23,10 @@ release-bundle:
 release-deploy:
 	# Usage: make release-deploy ENV=devnet TAG=v0.2.3
 	python3 scripts/release.py deploy --environment $(ENV) --release-tag $(TAG)
+
+security-review-bundle:
+	# Usage: make security-review-bundle ENV=devnet TAG=v0.2.3 [OUT=/tmp/prophet-security-review]
+	python3 scripts/security_review_bundle.py --environment $(ENV) $(if $(TAG),--release-tag $(TAG),) $(if $(OUT),--review-root $(OUT),)
 
 render-operated:
 	# Usage: cp deploy/operated/$(ENV)/stack.env.example deploy/operated/$(ENV)/stack.env && make render-operated ENV=$(ENV)

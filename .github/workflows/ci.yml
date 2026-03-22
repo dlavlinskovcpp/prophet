@@ -46,6 +46,7 @@ jobs:
       ANCHOR_WALLET: /home/runner/.config/solana/id.json
       ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
       ANCHOR_CLI_VERSION: 0.32.1
+      CI_ENV_DIR: /tmp/prophet-release-envs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -239,7 +240,6 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE_ROOT="/tmp/prophet-release-bundles"
-          CI_ENV_DIR="/tmp/prophet-release-envs"
           PROPHET_PROGRAM_ID_CI="$(solana address -k target/deploy/prophet-keypair.json)"
           mkdir -p "${CI_ENV_DIR}"
           export CI_ENV_DIR PROPHET_PROGRAM_ID_CI
@@ -269,6 +269,19 @@ jobs:
         with:
           name: prophet-release-bundles
           path: /tmp/prophet-release-bundles
+
+      - name: Generate Security Review Bundles
+        run: |
+          set -euo pipefail
+          REVIEW_ROOT="/tmp/prophet-security-review-bundles"
+          PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/security_review_bundle.py --environment devnet --release-tag "ci-${GITHUB_SHA}" --review-root "${REVIEW_ROOT}"
+          PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/security_review_bundle.py --environment mainnet-beta --release-tag "ci-${GITHUB_SHA}" --review-root "${REVIEW_ROOT}"
+
+      - name: Upload Security Review Bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: prophet-security-review-bundles
+          path: /tmp/prophet-security-review-bundles
 
   sdk-python:
     name: SDK Python Tests
