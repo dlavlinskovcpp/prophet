@@ -133,6 +133,7 @@ def test_metrics_report_dirty_backlog_and_snapshot_lag(tmp_path, monkeypatch):
         MARKETS=str(market),
     )
     service = MatchingKeeperService(settings, client=FakeClient([]))
+    service.store.init()
 
     service._running = True
     service._market_sources[market] = "explicit"

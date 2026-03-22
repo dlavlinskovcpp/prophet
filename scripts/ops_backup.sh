@@ -27,6 +27,15 @@ copy_dir_or_empty() {
   fi
 }
 
+copy_file_if_exists() {
+  local src="$1"
+  local dest="$2"
+  if [ -f "${src}" ]; then
+    mkdir -p "$(dirname "${dest}")"
+    cp "${src}" "${dest}"
+  fi
+}
+
 manifest="${snapshot_root}/manifest.txt"
 cat >"${manifest}" <<EOF
 created_at_utc=${timestamp}
@@ -40,8 +49,8 @@ copy_dir_or_empty "${ROOT_DIR}/resolver_store" "${snapshot_root}/resolver_store"
 copy_dir_or_empty "${ROOT_DIR}/apps/matching-keeper/state" "${snapshot_root}/apps/matching-keeper/state"
 cp -R "${ROOT_DIR}/ops/monitoring" "${snapshot_root}/ops/monitoring"
 cp "${ROOT_DIR}/docker-compose.localnet.yml" "${snapshot_root}/docker-compose.localnet.yml"
-cp "${ROOT_DIR}/apps/oracle-attester/.env.example" "${snapshot_root}/apps/oracle-attester/.env.example"
-cp "${ROOT_DIR}/apps/matching-keeper/.env.example" "${snapshot_root}/apps/matching-keeper/.env.example"
+copy_file_if_exists "${ROOT_DIR}/apps/oracle-attester/.env.example" "${snapshot_root}/apps/oracle-attester/.env.example"
+copy_file_if_exists "${ROOT_DIR}/apps/matching-keeper/.env.example" "${snapshot_root}/apps/matching-keeper/.env.example"
 
 tar -czf "${archive_path}" -C "${tmpdir}" "${archive_base%.tar.gz}"
 
