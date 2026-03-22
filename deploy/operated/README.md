@@ -35,3 +35,5 @@ The renderer writes:
 - `matching-keeper.env`
 
 It also syncs `deploy/environments/<environment>.json` service endpoints so release manifests and bundles carry the real operated metadata for that environment.
+
+After rendering `remote-signer.env`, use `docs/signer_kms_ops.md` to bootstrap the KMS aliases, generate `signer_allowlist.txt`, and run the signer dry-run checks before bringing the stack live.

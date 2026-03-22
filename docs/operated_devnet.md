@@ -31,6 +31,8 @@ It still does not prove:
 - AWS KMS or HSM integration
 - backup/restore or rollback drills
 
+For the production signer path after this walkthrough, use `docs/signer_kms_ops.md`.
+
 ## Preconditions
 
 Before starting this guide, you should already have:

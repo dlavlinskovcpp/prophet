@@ -43,6 +43,21 @@ Primary alerts:
 - `ProphetMatchingKeeperWebsocketStale`
 - `ProphetMatchingKeeperNoActiveMarkets`
 
+## Signer / KMS Checks
+
+Use the dedicated signer runbook for full bootstrap and rotation steps:
+
+- `docs/signer_kms_ops.md`
+
+Operational commands:
+
+```bash
+make signer-kms-bootstrap ARGS="--region us-east-1 --key-id alias/prophet-devnet-notary-01"
+make signer-dry-run ARGS="backend"
+make signer-dry-run ARGS="--public-key <pubkey> service --url https://signer.example/sign --api-key <token>"
+make signer-allowlist ARGS="--path /etc/prophet/devnet/signer_allowlist.txt show"
+```
+
 ## Backup
 
 Create an ops snapshot:
@@ -83,8 +98,18 @@ Restore rehydrates only:
 3. Inspect the corresponding audit log in `audit/`.
 4. For keeper issues, inspect `apps/matching-keeper/state/matcher.db` and `/attempts`.
 5. For registry issues, verify `resolver_store/` still contains the expected resolver hashes.
-6. For signer issues, verify the allowlist and signer backend health from `/health`.
+6. For signer issues, verify the allowlist and signer backend health from `/health`, then rerun `make signer-dry-run`.
 7. If state corruption is suspected, stop the affected service, restore from the latest ops snapshot, and restart the stack.
+
+## Signer Incidents
+
+For signer-specific failures:
+
+1. Check `/health` for `ok`, `allowlist_ready`, `aws_loaded_key_ids`, and recent audit log writes.
+2. Run `make signer-dry-run ARGS="backend"` on the signer host to isolate backend or IAM/KMS issues.
+3. If the HTTP path is suspect, run `make signer-dry-run ARGS="--public-key <pubkey> service --url <signer url> --api-key <token>"`.
+4. If a key is compromised, remove it from the allowlist first, then update on-chain `NotaryConfig`, then re-run the dry-runs on the surviving signer set.
+5. Remember that updating `NotaryConfig` bumps the version bound into `resolve_market_threshold`, so old signatures must be re-collected after emergency rotation.
 
 ## Drill Cadence
 

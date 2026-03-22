@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke signer-kms-bootstrap signer-dry-run signer-allowlist
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -31,6 +31,18 @@ render-operated:
 operated-smoke:
 	# Usage: make operated-smoke [RPC_URL=http://127.0.0.1:8899] [PROPHET_PROGRAM_ID=<program id>]
 	python3 scripts/operated_localnet_smoke.py $(if $(RPC_URL),--rpc-url $(RPC_URL),) $(if $(PROPHET_PROGRAM_ID),--program-id $(PROPHET_PROGRAM_ID),) $(if $(QUOTE_MINT),--quote-mint $(QUOTE_MINT),) $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
+
+signer-kms-bootstrap:
+	# Usage: make signer-kms-bootstrap ARGS="--region us-east-1 --key-id alias/prophet-devnet-notary --output-allowlist /tmp/signer_allowlist.txt"
+	cd apps/oracle-attester && poetry install && poetry run python scripts/kms_bootstrap.py $(ARGS)
+
+signer-dry-run:
+	# Usage: make signer-dry-run ARGS="--public-key <pubkey> backend" or make signer-dry-run ARGS="--public-key <pubkey> service --url https://signer.example/sign --api-key token"
+	cd apps/oracle-attester && poetry install && poetry run python scripts/signer_dry_run.py $(ARGS)
+
+signer-allowlist:
+	# Usage: make signer-allowlist ARGS="--path /etc/prophet/devnet/signer_allowlist.txt show"
+	cd apps/oracle-attester && poetry install && poetry run python scripts/manage_signer_allowlist.py $(ARGS)
 
 test:
 	anchor test
