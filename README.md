@@ -32,7 +32,7 @@ Prophet is a Solana prediction market protocol built for agent and bot execution
 - System architecture: `docs/architecture.md`
 - Trust model and security boundaries: `docs/trust_model.md`
 - Fastest deploy-to-resolution walkthrough: `docs/devnet_quickstart.md`
-- Full operated devnet walkthrough: `docs/operated_devnet.md`
+- Full operated devnet walkthrough and one-command runner: `docs/operated_devnet.md`
 - Production preflight: `docs/production_checklist.md`
 - Security review scope: `docs/security_review_scope.md`
 - Reader FAQ and glossary: `docs/faq.md`
@@ -104,6 +104,12 @@ make operated-smoke
 cd sdk/python && pytest tests/test_smoke.py
 ```
 
+For the real devnet operated path with auth-protected local services and a real Reclaim verifier, use:
+
+```bash
+make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"
+```
+
 zkTLS guardrail audit:
 
 ```bash
@@ -124,6 +130,8 @@ Release environments live under `deploy/environments/*.json` for `localnet`, `de
 Non-local operated deployment templates live under `deploy/operated/devnet/` and `deploy/operated/mainnet-beta/`.
 
 Render the operated env files from one values file with `make render-operated ENV=devnet`.
+
+To exercise the full local-services-on-devnet path after deploy, use `make operated-devnet ...` as documented in `docs/operated_devnet.md`.
 
 Common release commands:
 
