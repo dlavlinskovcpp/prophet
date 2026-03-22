@@ -43,6 +43,8 @@ def _write_fixture_tree(root: Path) -> None:
 
     for rel in REFERENCE_COPIES:
         src = ROOT / rel
+        if not src.exists():
+            continue
         dst = root / rel
         if src.is_dir():
             shutil.copytree(src, dst)
