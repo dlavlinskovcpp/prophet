@@ -38,13 +38,14 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 
 ## Monitoring and Alerting
 - Prometheus scraping all services; Grafana dashboards linked to on-call
-- alerts for: attester 5xx/error rate, signer health, registry health, keeper lag/backoff, Solana RPC errors, program errors in logs
+- `make ops-validate-alerts` passes against `ops/monitoring/prometheus.yml` and `ops/monitoring/alerts.yml`
+- alerts for: attester 5xx/error rate, signer health, registry health, keeper websocket staleness, snapshot lag, backlog growth, Solana RPC errors, program errors in logs
 
 ## Backup / Restore
 - program/IDL/types bundle archived
 - resolver registry data backup tested
 - signer allowlist and config backups stored
-- ops backup/restore scripts (`make ops-backup` / `make ops-restore`) validated on a staging copy
+- `make ops-verify-restore` passes and exercises `make ops-backup` / `make ops-restore --force` on a staging copy
 
 ## Security Controls
 - secrets stored in a secret manager; no keys in repo or CI artifacts

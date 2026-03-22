@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke signer-kms-bootstrap signer-dry-run signer-allowlist
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke signer-kms-bootstrap signer-dry-run signer-allowlist
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -97,6 +97,16 @@ ops-backup:
 ops-restore:
 	# Usage: make ops-restore ARCHIVE=ops/backups/prophet-ops.tgz [FORCE=--force]
 	bash scripts/ops_restore.sh $(FORCE) $(ARCHIVE)
+
+ops-verify-restore:
+	python3 scripts/verify_ops_backup_restore.py
+
+ops-validate-alerts:
+	python3 scripts/validate_alert_rules.py
+
+ops-drills:
+	python3 scripts/verify_ops_backup_restore.py
+	python3 scripts/validate_alert_rules.py
 
 keeper-example:
 	# Usage: make keeper-example MARKETS="m1 m2" WS_URL=ws://127.0.0.1:8900

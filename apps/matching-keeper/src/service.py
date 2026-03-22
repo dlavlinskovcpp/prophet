@@ -437,7 +437,18 @@ class MatchingKeeperService:
 
     def health(self) -> dict:
         now = int(time.time())
+        snapshots = self.engine.all_market_snapshots()
+        active_snapshots = [item for item in snapshots if item["active"]]
         active_markets = len(self._market_sources)
+        dirty_orders = sum(int(item["dirty_orders"]) for item in active_snapshots)
+        max_snapshot_age = max(
+            (
+                now - int(item["last_snapshot_at"])
+                for item in active_snapshots
+                if int(item["last_snapshot_at"]) > 0
+            ),
+            default=-1,
+        )
         ws_activity_at = max(self._last_ws_message_at, self._last_ws_connected_at)
         ws_age = now - ws_activity_at if ws_activity_at else None
         discovery_age = now - self._last_discovery_at if self._last_discovery_at else None
@@ -451,6 +462,8 @@ class MatchingKeeperService:
             "ws_url": self.settings.ws_url_effective,
             "discovery_mode": self.settings.MARKET_DISCOVERY_MODE,
             "active_markets": active_markets,
+            "dirty_orders": dirty_orders,
+            "max_snapshot_age_s": max_snapshot_age,
             "websocket_stale": ws_stale,
             "last_ws_connected_at": self._last_ws_connected_at,
             "last_ws_message_at": self._last_ws_message_at,
@@ -478,8 +491,18 @@ class MatchingKeeperService:
         now = int(time.time())
         snapshots = self.engine.all_market_snapshots()
         attempts = self.store.summarize_attempts()
-        active_markets = sum(1 for item in snapshots if item["active"])
-        open_orders = sum(int(item["open_orders"]) for item in snapshots if item["active"])
+        active_snapshots = [item for item in snapshots if item["active"]]
+        active_markets = len(active_snapshots)
+        open_orders = sum(int(item["open_orders"]) for item in active_snapshots)
+        dirty_orders = sum(int(item["dirty_orders"]) for item in active_snapshots)
+        max_snapshot_age = max(
+            (
+                now - int(item["last_snapshot_at"])
+                for item in active_snapshots
+                if int(item["last_snapshot_at"]) > 0
+            ),
+            default=-1,
+        )
         ws_activity_at = max(self._last_ws_message_at, self._last_ws_connected_at)
         ws_age = now - ws_activity_at if ws_activity_at else -1
         discovery_age = now - self._last_discovery_at if self._last_discovery_at else -1
@@ -496,6 +519,9 @@ class MatchingKeeperService:
             "# HELP prophet_matching_keeper_open_orders Open orders across active markets.",
             "# TYPE prophet_matching_keeper_open_orders gauge",
             f"prophet_matching_keeper_open_orders {open_orders}",
+            "# HELP prophet_matching_keeper_dirty_orders Dirty orders waiting for refresh across active markets.",
+            "# TYPE prophet_matching_keeper_dirty_orders gauge",
+            f"prophet_matching_keeper_dirty_orders {dirty_orders}",
             "# HELP prophet_matching_keeper_match_attempts_total Total match attempts retained in SQLite.",
             "# TYPE prophet_matching_keeper_match_attempts_total counter",
             f"prophet_matching_keeper_match_attempts_total {attempts['total']}",
@@ -514,6 +540,9 @@ class MatchingKeeperService:
             "# HELP prophet_matching_keeper_last_discovery_age_seconds Age of the last market discovery cycle.",
             "# TYPE prophet_matching_keeper_last_discovery_age_seconds gauge",
             f"prophet_matching_keeper_last_discovery_age_seconds {discovery_age}",
+            "# HELP prophet_matching_keeper_max_snapshot_age_seconds Max age of the last market snapshot across active markets.",
+            "# TYPE prophet_matching_keeper_max_snapshot_age_seconds gauge",
+            f"prophet_matching_keeper_max_snapshot_age_seconds {max_snapshot_age}",
             "# HELP prophet_matching_keeper_last_prune_age_seconds Age of the last match-attempt prune cycle.",
             "# TYPE prophet_matching_keeper_last_prune_age_seconds gauge",
             f"prophet_matching_keeper_last_prune_age_seconds {prune_age}",

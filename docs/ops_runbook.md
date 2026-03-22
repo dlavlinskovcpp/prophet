@@ -41,7 +41,15 @@ Primary alerts:
 - `ProphetRemoteSignerBackendErrors`
 - `ProphetMatchingKeeperDown`
 - `ProphetMatchingKeeperWebsocketStale`
+- `ProphetMatchingKeeperDirtyOrderBacklog`
+- `ProphetMatchingKeeperSnapshotLag`
 - `ProphetMatchingKeeperNoActiveMarkets`
+
+Config validation:
+
+```bash
+make ops-validate-alerts
+```
 
 ## Signer / KMS Checks
 
@@ -73,6 +81,14 @@ make ops-backup OUT=ops/backups/prophet-ops-manual.tar.gz
 ```
 
 The archive includes the mutable runtime state plus the monitoring/config snapshot that was active when the backup was taken. Config files are included for reference; restore only rehydrates mutable state.
+
+Repeatable verification:
+
+```bash
+make ops-verify-restore
+```
+
+That check stages fixture state in a temporary workspace, runs the backup script, verifies the checksum and manifest, confirms restore refuses to overwrite non-empty state without `--force`, and then validates a forced restore reproduces the original mutable state.
 
 ## Restore
 
@@ -115,6 +131,7 @@ For signer-specific failures:
 
 Recommended operator drills:
 
-- monthly backup/restore rehearsal using `make ops-backup` and `make ops-restore`
-- monthly Grafana/alert validation using `make localnet-up`
+- weekly `make ops-validate-alerts`
+- monthly `make ops-verify-restore`
+- monthly Grafana/dashboard review using `make localnet-up`
 - before each release, verify alerts, dashboards, and writable state directories on the target environment
