@@ -52,6 +52,18 @@ def _split_env_list(raw: str) -> List[str]:
     return out
 
 
+def _normalize_pubkeys(items: List[str]) -> List[str]:
+    out: List[str] = []
+    seen = set()
+    for item in items:
+        pubkey = str(Pubkey.from_string(str(item).strip()))
+        if pubkey in seen:
+            continue
+        seen.add(pubkey)
+        out.append(pubkey)
+    return out
+
+
 def _read_der_length(blob: bytes, offset: int) -> tuple[int, int]:
     if offset >= len(blob):
         raise ValueError("Invalid DER length")
@@ -182,17 +194,27 @@ class LocalKeypairSignerBackend(SignerBackend):
 
     def health(self) -> Dict[str, Any]:
         payload = super().health()
-        payload["pubkeys"] = self.loaded_pubkeys()
+        loaded = self.loaded_pubkeys()
+        payload.update(
+            {
+                "backend_ready": bool(loaded),
+                "loaded_pubkeys": loaded,
+                "pubkeys": loaded,
+            }
+        )
+        if not loaded:
+            payload["backend_ready_reason"] = "No local signer keypairs loaded."
         return payload
 
 
 class CommandSignerBackend(SignerBackend):
     name = "command"
 
-    def __init__(self, command: str, timeout_s: float):
+    def __init__(self, command: str, timeout_s: float, *, public_keys: List[str] | None = None):
         self.command = command
         self.timeout_s = timeout_s
         self.argv = shlex.split(command)
+        self.public_keys = _normalize_pubkeys(public_keys or [])
         if not self.argv:
             raise ValueError("REMOTE_SIGNER_COMMAND is empty")
 
@@ -252,14 +274,25 @@ class CommandSignerBackend(SignerBackend):
 
         return signature
 
+    def loaded_pubkeys(self) -> List[str]:
+        return list(self.public_keys)
+
     def health(self) -> Dict[str, Any]:
         payload = super().health()
         payload.update(
             {
+                "backend_ready": bool(self.public_keys),
                 "command_argv": self.argv,
                 "command_timeout_s": self.timeout_s,
+                "loaded_pubkeys": self.loaded_pubkeys(),
+                "pubkeys": self.loaded_pubkeys(),
             }
         )
+        if not self.public_keys:
+            payload["backend_ready_reason"] = (
+                "Command signer did not expose any public keys. Configure "
+                "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS or NOTARY_KEYPAIR_PATHS."
+            )
         return payload
 
 
@@ -339,13 +372,17 @@ class AwsKmsSignerBackend(SignerBackend):
 
     def health(self) -> Dict[str, Any]:
         payload = super().health()
+        loaded = self.loaded_pubkeys()
         payload.update(
             {
+                "backend_ready": bool(loaded),
                 "aws_region": self.region_name,
                 "aws_endpoint_url": self.endpoint_url,
                 "aws_configured_key_ids": list(self.configured_key_ids),
+                "loaded_pubkeys": loaded,
+                "pubkeys": loaded,
                 "aws_loaded_key_ids": {
-                    pubkey: self._pubkey_to_arn[pubkey] for pubkey in self.loaded_pubkeys()
+                    pubkey: self._pubkey_to_arn[pubkey] for pubkey in loaded
                 },
             }
         )
@@ -369,6 +406,25 @@ def _load_signers_from_settings() -> Dict[str, Keypair]:
     return out
 
 
+def _configured_command_pubkeys() -> List[str]:
+    explicit = _normalize_pubkeys(_split_env_list(settings.REMOTE_SIGNER_COMMAND_PUBLIC_KEYS))
+    from_keypairs: List[str] = []
+    if (settings.NOTARY_KEYPAIR_PATHS or "").strip():
+        from_keypairs = sorted(_load_signers_from_settings().keys())
+    else:
+        fallback = settings._load_keypair(settings.ORACLE_KEYPAIR_PATH)
+        if fallback is not None:
+            from_keypairs = [str(fallback.pubkey())]
+    combined: List[str] = []
+    seen = set()
+    for pubkey in [*explicit, *from_keypairs]:
+        if pubkey in seen:
+            continue
+        seen.add(pubkey)
+        combined.append(pubkey)
+    return combined
+
+
 def make_remote_signer_backend() -> SignerBackend:
     backend = (settings.REMOTE_SIGNER_BACKEND or "local_keypairs").strip().lower()
     if backend == "aws_kms":
@@ -382,5 +438,6 @@ def make_remote_signer_backend() -> SignerBackend:
         return CommandSignerBackend(
             command=settings.REMOTE_SIGNER_COMMAND,
             timeout_s=settings.REMOTE_SIGNER_COMMAND_TIMEOUT_S,
+            public_keys=_configured_command_pubkeys(),
         )
     return LocalKeypairSignerBackend(_load_signers_from_settings())

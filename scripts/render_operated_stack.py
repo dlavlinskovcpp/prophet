@@ -18,20 +18,27 @@ SERVICES = (
     "resolver-registry",
     "matching-keeper",
 )
-REQUIRED_VALUES = (
+COMMON_REQUIRED_VALUES = (
     "ATTESTER_BASE_URL",
     "REMOTE_SIGNER_PUBLIC_URL",
     "RESOLVER_REGISTRY_PUBLIC_URL",
     "MATCHING_KEEPER_BASE_URL",
     "RECLAIM_VERIFY_URL",
+)
+AWS_KMS_REQUIRED_VALUES = (
     "REMOTE_SIGNER_AWS_KMS_REGION",
     "REMOTE_SIGNER_AWS_KMS_KEY_IDS",
+)
+COMMAND_REQUIRED_VALUES = (
+    "REMOTE_SIGNER_COMMAND",
+    "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS",
 )
 SECRET_VALUE_KEYS = (
     "REMOTE_SIGNER_API_KEY",
     "RESOLVER_REGISTRY_SERVICE_API_KEY",
     "API_AUTH_TOKEN",
 )
+SUPPORTED_REMOTE_SIGNER_BACKENDS = {"aws_kms", "command"}
 
 
 class RenderError(RuntimeError):
@@ -116,6 +123,12 @@ def _final_values(
         "PROPHET_SECRET_ROOT": f"/etc/prophet/{env_name}",
         "REMOTE_SIGNER_INTERNAL_URL": "http://remote-signer:8100/sign",
         "RESOLVER_REGISTRY_INTERNAL_URL": "http://resolver-registry:8200/resolvers",
+        "REMOTE_SIGNER_BACKEND": "aws_kms",
+        "REMOTE_SIGNER_COMMAND": "",
+        "REMOTE_SIGNER_COMMAND_TIMEOUT_S": "5",
+        "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": "",
+        "REMOTE_SIGNER_AWS_KMS_REGION": "",
+        "REMOTE_SIGNER_AWS_KMS_KEY_IDS": "",
         "RECLAIM_API_KEY": "",
         "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL": "",
         "MARKET_DISCOVERY_MODE": "program_scan",
@@ -130,12 +143,23 @@ def _final_values(
     if not values.get("WS_URL"):
         values["WS_URL"] = _derive_ws_url(values["RPC_URL"])
 
+    backend = str(values.get("REMOTE_SIGNER_BACKEND", "aws_kms")).strip().lower()
+    if backend not in SUPPORTED_REMOTE_SIGNER_BACKENDS:
+        raise RenderError(
+            "REMOTE_SIGNER_BACKEND must be one of: aws_kms, command."
+        )
+    values["REMOTE_SIGNER_BACKEND"] = backend
+
     if generate_secrets:
         for key in SECRET_VALUE_KEYS:
             if not values.get(key):
                 values[key] = secrets.token_urlsafe(32)
 
-    missing = [key for key in REQUIRED_VALUES if not values.get(key)]
+    missing = [key for key in COMMON_REQUIRED_VALUES if not values.get(key)]
+    if backend == "aws_kms":
+        missing.extend(key for key in AWS_KMS_REQUIRED_VALUES if not values.get(key))
+    if backend == "command":
+        missing.extend(key for key in COMMAND_REQUIRED_VALUES if not values.get(key))
     missing.extend(key for key in SECRET_VALUE_KEYS if not values.get(key))
     if missing:
         joined = ", ".join(sorted(set(missing)))
@@ -210,7 +234,11 @@ def _service_replacements(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
             "API_AUTH_TOKEN": values["API_AUTH_TOKEN"],
         },
         "remote-signer": {
+            "REMOTE_SIGNER_BACKEND": values["REMOTE_SIGNER_BACKEND"],
             "REMOTE_SIGNER_API_KEY": values["REMOTE_SIGNER_API_KEY"],
+            "REMOTE_SIGNER_COMMAND": values["REMOTE_SIGNER_COMMAND"],
+            "REMOTE_SIGNER_COMMAND_TIMEOUT_S": values["REMOTE_SIGNER_COMMAND_TIMEOUT_S"],
+            "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": values["REMOTE_SIGNER_COMMAND_PUBLIC_KEYS"],
             "REMOTE_SIGNER_AWS_KMS_REGION": values["REMOTE_SIGNER_AWS_KMS_REGION"],
             "REMOTE_SIGNER_AWS_KMS_KEY_IDS": values["REMOTE_SIGNER_AWS_KMS_KEY_IDS"],
             "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL": values["REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL"],

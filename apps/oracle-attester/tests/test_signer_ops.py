@@ -3,6 +3,7 @@ from solders.keypair import Keypair
 from src.signer_backend import LocalKeypairSignerBackend
 from src.signer_ops import (
     bootstrap_aws_kms_keys,
+    discover_pubkeys_from_signer_health,
     derive_remote_signer_health_url,
     run_backend_dry_run,
     write_allowlist_file,
@@ -76,3 +77,13 @@ def test_run_backend_dry_run_uses_loaded_pubkeys_when_none_requested():
     assert payload["loaded_pubkeys"] == [str(signer.pubkey())]
     assert payload["results"][0]["public_key"] == str(signer.pubkey())
     assert payload["results"][0]["signature_len"] == 64
+
+
+def test_discover_pubkeys_from_signer_health_reads_loaded_pubkeys():
+    signer = Keypair()
+
+    payload = discover_pubkeys_from_signer_health(
+        {"loaded_pubkeys": [str(signer.pubkey())]}
+    )
+
+    assert payload == [str(signer.pubkey())]

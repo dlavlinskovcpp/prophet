@@ -166,12 +166,16 @@ async def security_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     allowlist_health = signer_allowlist.health()
+    backend_health = signer_backend.health()
     payload = {
-        "ok": allowlist_health.get("allowlist_ready", True),
+        "ok": bool(
+            allowlist_health.get("allowlist_ready", True)
+            and backend_health.get("backend_ready", True)
+        ),
         "audit_log_path": settings.REMOTE_SIGNER_AUDIT_LOG_PATH,
     }
     payload.update(allowlist_health)
-    payload.update(signer_backend.health())
+    payload.update(backend_health)
     return payload
 
 

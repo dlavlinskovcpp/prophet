@@ -82,6 +82,21 @@ def test_command_signer_backend_rejects_bad_signature(monkeypatch):
         backend.sign(kp.pubkey(), b"x", {})
 
 
+def test_command_signer_backend_health_reports_loaded_pubkeys():
+    kp = Keypair()
+
+    backend = CommandSignerBackend(
+        "kms-wrapper sign",
+        5.0,
+        public_keys=[str(kp.pubkey())],
+    )
+    health = backend.health()
+
+    assert health["backend_ready"] is True
+    assert health["loaded_pubkeys"] == [str(kp.pubkey())]
+    assert health["pubkeys"] == [str(kp.pubkey())]
+
+
 def test_aws_kms_signer_backend_loads_pubkeys_and_signs(monkeypatch):
     kp = Keypair()
     expected_sig = bytes([4] * 64)

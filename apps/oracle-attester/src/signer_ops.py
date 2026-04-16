@@ -165,6 +165,10 @@ def discover_pubkeys_from_signer_health(payload: Dict[str, Any]) -> List[str]:
     if isinstance(aws_loaded, dict):
         pubkeys.extend([str(key) for key in aws_loaded.keys()])
 
+    loaded = payload.get("loaded_pubkeys")
+    if isinstance(loaded, list):
+        pubkeys.extend([str(item) for item in loaded])
+
     direct = payload.get("pubkeys")
     if isinstance(direct, list):
         pubkeys.extend([str(item) for item in direct])
