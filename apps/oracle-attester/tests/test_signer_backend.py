@@ -5,7 +5,13 @@ import subprocess
 import pytest
 from solders.keypair import Keypair
 
-from src.signer_backend import AwsKmsSignerBackend, CommandSignerBackend, LocalKeypairSignerBackend
+from src.config import settings
+from src.signer_backend import (
+    AwsKmsSignerBackend,
+    CommandSignerBackend,
+    LocalKeypairSignerBackend,
+    _configured_command_pubkeys,
+)
 
 
 def _ed25519_spki_from_pubkey(raw_pubkey: bytes) -> bytes:
@@ -95,6 +101,22 @@ def test_command_signer_backend_health_reports_loaded_pubkeys():
     assert health["backend_ready"] is True
     assert health["loaded_pubkeys"] == [str(kp.pubkey())]
     assert health["pubkeys"] == [str(kp.pubkey())]
+
+
+def test_configured_command_pubkeys_do_not_probe_missing_oracle_keypair_when_explicit(monkeypatch):
+    kp = Keypair()
+
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS", str(kp.pubkey()))
+    monkeypatch.setattr(settings, "NOTARY_KEYPAIR_PATHS", "")
+    monkeypatch.setattr(settings, "ORACLE_KEYPAIR_PATH", "./id.json")
+
+    assert _configured_command_pubkeys() == [str(kp.pubkey())]
+
+
+def test_settings_load_keypair_returns_none_for_missing_path_like_value(tmp_path):
+    missing = tmp_path / "missing-keypair.json"
+
+    assert settings._load_keypair(str(missing)) is None
 
 
 def test_aws_kms_signer_backend_loads_pubkeys_and_signs(monkeypatch):

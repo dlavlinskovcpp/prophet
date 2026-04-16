@@ -101,8 +101,8 @@ The registry stores canonical resolver definitions and lets operators:
 
 The signer keeps notary key material outside the attester process. In this repo it supports:
 
-- AWS KMS-backed Ed25519 signing
-- command-backed signing for other KMS/HSM wrappers
+- Vault Transit-backed Ed25519 signing through the bundled command wrapper
+- command-backed signing for other KMS/HSM wrappers, plus AWS KMS compatibility
 
 ### Matching Keeper
 

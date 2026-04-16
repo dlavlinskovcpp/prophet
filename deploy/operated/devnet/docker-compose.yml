@@ -37,6 +37,7 @@ services:
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/audit:/app/audit
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/signer_allowlist.txt:/app/signer_allowlist.txt:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/remote-signer:/app/remote-signer-secrets:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3).read()"]
@@ -82,4 +83,3 @@ services:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/keeper-id.json:/app/keeper-id.json:ro
     restart: unless-stopped
-

@@ -130,16 +130,18 @@ INVARIANT_MAP = [
             "apps/oracle-attester/src/signer_backend.py",
             "apps/oracle-attester/src/signer_allowlist.py",
             "apps/oracle-attester/src/signer_ops.py",
+            "apps/oracle-attester/src/vault_transit.py",
         ],
         "doc_refs": [
             "docs/security_review_scope.md",
-            "docs/signer_kms_ops.md",
+            "docs/signer_vault_ops.md",
         ],
         "test_refs": [
             "apps/oracle-attester/tests/test_remote_signer.py",
             "apps/oracle-attester/tests/test_signer_backend.py",
             "apps/oracle-attester/tests/test_signer_allowlist.py",
             "apps/oracle-attester/tests/test_signer_ops.py",
+            "apps/oracle-attester/tests/test_vault_transit.py",
         ],
     },
     {

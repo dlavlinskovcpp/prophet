@@ -30,6 +30,13 @@ class SmokeError(RuntimeError):
     pass
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _run(
     argv: list[str],
     *,
@@ -164,6 +171,185 @@ def _generate_keypair(path: Path) -> str:
         ]
     )
     return _run(["solana", "address", "-k", str(path)]).strip()
+
+
+def _write_allowlist(path: Path, pubkeys: Iterable[str]) -> None:
+    entries = [str(item).strip() for item in pubkeys if str(item).strip()]
+    if not entries:
+        raise SmokeError("allowlist requires at least one pubkey")
+    path.write_text("".join(f"{entry}\n" for entry in entries), encoding="utf-8")
+
+
+def _bootstrap_vault_notaries(
+    *,
+    base_env: Dict[str, str],
+    vault_addr: str,
+    vault_namespace: str,
+    vault_token: str,
+    vault_token_file: str,
+    vault_cacert: str,
+    vault_skip_verify: bool,
+    vault_transit_mount: str,
+    vault_transit_timeout_s: float,
+    vault_key_names: Iterable[str],
+) -> Dict[str, object]:
+    key_names = [str(item).strip() for item in vault_key_names if str(item).strip()]
+    if not key_names:
+        raise SmokeError("Vault Transit bootstrap requires at least one key name.")
+    env = {
+        **base_env,
+        "VAULT_ADDR": vault_addr,
+        "VAULT_NAMESPACE": vault_namespace,
+        "VAULT_TRANSIT_MOUNT": vault_transit_mount,
+        "VAULT_TRANSIT_TIMEOUT_S": str(vault_transit_timeout_s),
+        "VAULT_TRANSIT_KEY_NAMES": ",".join(key_names),
+    }
+    if vault_token:
+        env["VAULT_TOKEN"] = vault_token
+    if vault_token_file:
+        env["VAULT_TOKEN_FILE"] = vault_token_file
+    if vault_cacert:
+        env["VAULT_CACERT"] = vault_cacert
+    if vault_skip_verify:
+        env["VAULT_SKIP_VERIFY"] = "1"
+
+    code = """
+import json
+import os
+from src.vault_transit import VaultTransitConfig, bootstrap_vault_transit_keys
+
+config = VaultTransitConfig.from_env()
+payload = bootstrap_vault_transit_keys(
+    config=config,
+    key_names=os.environ["VAULT_TRANSIT_KEY_NAMES"].split(","),
+)
+print(json.dumps(payload, sort_keys=True))
+"""
+    payload = _poetry_python(ATTESTER_DIR, code, env)
+    pubkeys = payload.get("allowlist_pubkeys")
+    if not isinstance(pubkeys, list) or len(pubkeys) != len(key_names):
+        raise SmokeError("Vault Transit bootstrap returned an unexpected notary pubkey set.")
+    key_map = payload.get("key_map")
+    if not isinstance(key_map, dict):
+        raise SmokeError("Vault Transit bootstrap did not return a key_map payload.")
+    return payload
+
+
+def _write_vault_key_map(path: Path, *, mount: str, keys: Iterable[Dict[str, object]]) -> None:
+    entries: Dict[str, Dict[str, str]] = {}
+    for item in keys:
+        pubkey = str(item.get("solana_pubkey", "")).strip()
+        key_name = str(item.get("key_name", "")).strip()
+        if not pubkey or not key_name:
+            raise SmokeError("Vault Transit key-map entries must include solana_pubkey and key_name.")
+        entries[pubkey] = {"key_name": key_name}
+    path.write_text(
+        json.dumps(
+            {
+                "format": "prophet-vault-transit-key-map-v1",
+                "mount": mount,
+                "keys": entries,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _remote_signer_sign_request(
+    *,
+    signer_url: str,
+    api_key: str,
+    public_key: str,
+    operation: str,
+) -> Tuple[int, str]:
+    smoke_message = base64.b64encode(operation.encode("utf-8")).decode("ascii")
+    return _http_json(
+        signer_url,
+        method="POST",
+        token=api_key,
+        payload={
+            "public_key": public_key,
+            "message_b64": smoke_message,
+            "context": {"operation": operation},
+        },
+    )
+
+
+def _wait_for_remote_sign_status(
+    *,
+    signer_url: str,
+    api_key: str,
+    public_key: str,
+    expected_status: int,
+    operation: str,
+    timeout_s: float = 5.0,
+) -> str:
+    deadline = time.time() + timeout_s
+    last_status = -1
+    last_body = ""
+    while time.time() < deadline:
+        status, body = _remote_signer_sign_request(
+            signer_url=signer_url,
+            api_key=api_key,
+            public_key=public_key,
+            operation=operation,
+        )
+        if status == expected_status:
+            return body
+        last_status = status
+        last_body = body
+        time.sleep(0.1)
+    raise SmokeError(
+        f"remote signer did not return HTTP {expected_status} for {public_key}; "
+        f"last status was {last_status}: {last_body}"
+    )
+
+
+def _remote_signer_direct_smoke(
+    *,
+    signer_url: str,
+    api_key: str,
+    public_key: str,
+    operation: str = "operated_localnet_smoke",
+) -> Dict[str, object]:
+    body = _wait_for_remote_sign_status(
+        signer_url=signer_url,
+        api_key=api_key,
+        public_key=public_key,
+        expected_status=200,
+        operation=operation,
+    )
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise SmokeError(f"remote signer authorized sign returned invalid JSON: {body}") from exc
+    if not isinstance(payload, dict):
+        raise SmokeError("remote signer authorized sign returned a non-object payload")
+
+    returned_pubkey = str(payload.get("public_key", "")).strip()
+    if returned_pubkey != public_key:
+        raise SmokeError(
+            f"remote signer authorized sign returned unexpected public_key {returned_pubkey!r}"
+        )
+
+    signature_b64 = str(payload.get("signature_b64", "")).strip()
+    if not signature_b64:
+        raise SmokeError("remote signer authorized sign missing signature_b64")
+    try:
+        signature = base64.b64decode(signature_b64, validate=True)
+    except Exception as exc:
+        raise SmokeError(f"remote signer authorized sign returned invalid signature_b64: {exc}")
+    if len(signature) != 64:
+        raise SmokeError(
+            f"remote signer authorized sign returned invalid signature length: {len(signature)}"
+        )
+    return {
+        "public_key": returned_pubkey,
+        "signature_len": len(signature),
+    }
 
 
 def _derive_program_id(cli_arg: str) -> str:
@@ -371,8 +557,65 @@ def main() -> int:
     parser.add_argument("--rpc-url", default=os.getenv("RPC_URL", "http://127.0.0.1:8899"))
     parser.add_argument("--program-id", default="")
     parser.add_argument("--quote-mint", default=os.getenv("QUOTE_MINT", NATIVE_MINT))
+    parser.add_argument(
+        "--signer-backend",
+        choices=["local_keypairs", "vault_transit"],
+        default=os.getenv("SIGNER_BACKEND", "local_keypairs"),
+    )
+    parser.add_argument("--vault-addr", default=os.getenv("VAULT_ADDR", ""))
+    parser.add_argument("--vault-namespace", default=os.getenv("VAULT_NAMESPACE", ""))
+    parser.add_argument("--vault-token", default=os.getenv("VAULT_TOKEN", ""))
+    parser.add_argument("--vault-token-file", default=os.getenv("VAULT_TOKEN_FILE", ""))
+    parser.add_argument("--vault-cacert", default=os.getenv("VAULT_CACERT", ""))
+    parser.add_argument(
+        "--vault-skip-verify",
+        action="store_true",
+        default=_env_bool("VAULT_SKIP_VERIFY", False),
+    )
+    parser.add_argument(
+        "--vault-transit-mount",
+        default=os.getenv("VAULT_TRANSIT_MOUNT", "transit"),
+    )
+    parser.add_argument(
+        "--vault-transit-timeout-s",
+        type=float,
+        default=float(os.getenv("VAULT_TRANSIT_TIMEOUT_S", "5")),
+    )
+    parser.add_argument(
+        "--vault-key-name",
+        default=os.getenv("VAULT_TRANSIT_KEY_NAME", ""),
+    )
+    parser.add_argument(
+        "--vault-next-key-name",
+        default=os.getenv("VAULT_NEXT_KEY_NAME", ""),
+        help="Optional second Vault Transit key name to exercise live allowlist/key-map rotation.",
+    )
     parser.add_argument("--keep-artifacts", action="store_true")
     args = parser.parse_args()
+
+    if args.signer_backend == "vault_transit":
+        if not args.vault_addr:
+            parser.error("--vault-addr is required when --signer-backend vault_transit.")
+        if not args.vault_key_name:
+            parser.error("--vault-key-name is required when --signer-backend vault_transit.")
+        if not (args.vault_token or args.vault_token_file):
+            parser.error(
+                "--vault-token or --vault-token-file is required when --signer-backend vault_transit."
+            )
+        if args.vault_transit_timeout_s <= 0:
+            parser.error("--vault-transit-timeout-s must be > 0.")
+        if args.vault_next_key_name and args.vault_next_key_name == args.vault_key_name:
+            parser.error("--vault-next-key-name must differ from --vault-key-name.")
+    if args.vault_token_file:
+        vault_token_file = Path(args.vault_token_file).expanduser().resolve()
+        if not vault_token_file.exists():
+            raise SystemExit(f"vault token file missing: {vault_token_file}")
+        args.vault_token_file = str(vault_token_file)
+    if args.vault_cacert:
+        vault_cacert = Path(args.vault_cacert).expanduser().resolve()
+        if not vault_cacert.exists():
+            raise SystemExit(f"vault CA bundle missing: {vault_cacert}")
+        args.vault_cacert = str(vault_cacert)
 
     program_id = _derive_program_id(args.program_id)
     temp_root = Path(tempfile.mkdtemp(prefix="prophet-operated-smoke-"))
@@ -389,17 +632,16 @@ def main() -> int:
         proof_path = temp_root / "proof.bin"
         public_inputs_path = temp_root / "public_inputs.json"
         allowlist_path = temp_root / "signer_allowlist.txt"
+        signer_secrets_dir = temp_root / "remote-signer-secrets"
         resolver_store = temp_root / "resolver_store"
         proof_store = temp_root / "proof_store"
         audit_dir = temp_root / "audit"
         logs_dir = temp_root / "logs"
-        for path in (resolver_store, proof_store, audit_dir, logs_dir):
+        for path in (resolver_store, proof_store, audit_dir, logs_dir, signer_secrets_dir):
             path.mkdir(parents=True, exist_ok=True)
 
         payer_pubkey = _generate_keypair(payer_path)
         relayer_pubkey = _generate_keypair(relayer_path)
-        notary_pubkey = _generate_keypair(notary_path)
-        allowlist_path.write_text(f"{notary_pubkey}\n", encoding="utf-8")
 
         _airdrop(args.rpc_url, payer_pubkey, 10_000_000_000)
         _airdrop(args.rpc_url, relayer_pubkey, 10_000_000_000)
@@ -432,6 +674,88 @@ def main() -> int:
         base_env = os.environ.copy()
         base_env["PYTHONUNBUFFERED"] = "1"
 
+        signer_env = {
+            **base_env,
+            "APP_ENV": "development",
+            "ALLOW_LOCAL_NOTARY_KEYS": "0",
+            "NOTARY_KEYPAIR_PATHS": "",
+            "REMOTE_SIGNER_REQUIRE_AUTH": "1",
+            "REMOTE_SIGNER_API_KEY": signer_token,
+            "REMOTE_SIGNER_REQUIRE_ALLOWLIST": "1",
+            "REMOTE_SIGNER_ALLOWLIST_MODE": "file",
+            "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH": str(allowlist_path),
+            "REMOTE_SIGNER_ALLOWLIST_REFRESH_S": "0.05",
+            "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": "",
+            "REMOTE_SIGNER_AUDIT_LOG_PATH": str(audit_dir / "remote-signer.jsonl"),
+            "RATE_LIMIT_ENABLED": "0",
+            "METRICS_ENABLED": "1",
+        }
+
+        vault_bootstrap = None
+        vault_rotation = None
+        if args.signer_backend == "vault_transit":
+            key_map_path = signer_secrets_dir / "vault-transit-key-map.json"
+            requested_key_names = [args.vault_key_name]
+            if args.vault_next_key_name:
+                requested_key_names.append(args.vault_next_key_name)
+            vault_bootstrap = _bootstrap_vault_notaries(
+                base_env=base_env,
+                vault_addr=args.vault_addr,
+                vault_namespace=args.vault_namespace,
+                vault_token=args.vault_token,
+                vault_token_file=args.vault_token_file,
+                vault_cacert=args.vault_cacert,
+                vault_skip_verify=bool(args.vault_skip_verify),
+                vault_transit_mount=args.vault_transit_mount,
+                vault_transit_timeout_s=args.vault_transit_timeout_s,
+                vault_key_names=requested_key_names,
+            )
+            resolved_keys = vault_bootstrap.get("keys")
+            if not isinstance(resolved_keys, list) or not resolved_keys:
+                raise SmokeError("Vault Transit bootstrap did not return any resolved keys.")
+            first_key = resolved_keys[0]
+            notary_pubkey = str(first_key["solana_pubkey"])
+            _write_allowlist(allowlist_path, [notary_pubkey])
+            _write_vault_key_map(
+                key_map_path,
+                mount=str(vault_bootstrap.get("transit_mount", args.vault_transit_mount)),
+                keys=[first_key],
+            )
+            signer_env.update(
+                {
+                    "REMOTE_SIGNER_BACKEND": "command",
+                    "REMOTE_SIGNER_COMMAND": "python scripts/vault_transit_signer.py",
+                    "REMOTE_SIGNER_COMMAND_TIMEOUT_S": str(max(args.vault_transit_timeout_s + 5.0, 10.0)),
+                    "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": str(
+                        vault_bootstrap.get("command_public_keys_csv", notary_pubkey)
+                    ),
+                    "VAULT_ADDR": args.vault_addr,
+                    "VAULT_NAMESPACE": args.vault_namespace,
+                    "VAULT_TRANSIT_MOUNT": args.vault_transit_mount,
+                    "VAULT_TRANSIT_TIMEOUT_S": str(args.vault_transit_timeout_s),
+                    "VAULT_TRANSIT_KEY_MAP_PATH": str(key_map_path),
+                    "VAULT_TRANSIT_KEY_NAME": "",
+                }
+            )
+            if args.vault_token:
+                signer_env["VAULT_TOKEN"] = args.vault_token
+            if args.vault_token_file:
+                signer_env["VAULT_TOKEN_FILE"] = args.vault_token_file
+            if args.vault_cacert:
+                signer_env["VAULT_CACERT"] = args.vault_cacert
+            if args.vault_skip_verify:
+                signer_env["VAULT_SKIP_VERIFY"] = "1"
+        else:
+            notary_pubkey = _generate_keypair(notary_path)
+            _write_allowlist(allowlist_path, [notary_pubkey])
+            signer_env.update(
+                {
+                    "ALLOW_LOCAL_NOTARY_KEYS": "1",
+                    "NOTARY_KEYPAIR_PATHS": str(notary_path),
+                    "REMOTE_SIGNER_BACKEND": "local_keypairs",
+                }
+            )
+
         registry_env = {
             **base_env,
             "APP_ENV": "development",
@@ -452,21 +776,6 @@ def main() -> int:
             )
         )
 
-        signer_env = {
-            **base_env,
-            "APP_ENV": "development",
-            "ALLOW_LOCAL_NOTARY_KEYS": "1",
-            "NOTARY_KEYPAIR_PATHS": str(notary_path),
-            "REMOTE_SIGNER_REQUIRE_AUTH": "1",
-            "REMOTE_SIGNER_API_KEY": signer_token,
-            "REMOTE_SIGNER_REQUIRE_ALLOWLIST": "1",
-            "REMOTE_SIGNER_ALLOWLIST_MODE": "file",
-            "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH": str(allowlist_path),
-            "REMOTE_SIGNER_BACKEND": "local_keypairs",
-            "REMOTE_SIGNER_AUDIT_LOG_PATH": str(audit_dir / "remote-signer.jsonl"),
-            "RATE_LIMIT_ENABLED": "0",
-            "METRICS_ENABLED": "1",
-        }
         services.append(
             _start_service(
                 "remote-signer",
@@ -518,6 +827,9 @@ def main() -> int:
         attester_health = _wait_for_health(f"http://127.0.0.1:{attester_port}/health")
         for service in services:
             _ensure_running(service)
+        loaded_pubkeys = signer_health.get("pubkeys") or signer_health.get("loaded_pubkeys") or []
+        if not isinstance(loaded_pubkeys, list) or notary_pubkey not in [str(item) for item in loaded_pubkeys]:
+            raise SmokeError("remote signer health does not include the requested notary pubkey")
 
         status, body = _http_json(f"http://127.0.0.1:{registry_port}/resolvers?limit=1")
         _assert_status(status, 401, "resolver registry unauthorized list", body)
@@ -533,6 +845,54 @@ def main() -> int:
             payload={"market": "11111111111111111111111111111111", "outcome": "YES"},
         )
         _assert_status(status, 401, "attester unauthorized resolve", body)
+
+        signer_direct_smoke = _remote_signer_direct_smoke(
+            signer_url=f"http://127.0.0.1:{signer_port}/sign",
+            api_key=signer_token,
+            public_key=notary_pubkey,
+        )
+        if args.signer_backend == "vault_transit" and args.vault_next_key_name:
+            resolved_keys = vault_bootstrap["keys"]
+            current_key = resolved_keys[0]
+            next_key = resolved_keys[1]
+            next_pubkey = str(next_key["solana_pubkey"])
+
+            _wait_for_remote_sign_status(
+                signer_url=f"http://127.0.0.1:{signer_port}/sign",
+                api_key=signer_token,
+                public_key=next_pubkey,
+                expected_status=403,
+                operation="operated_localnet_smoke_rotation_precheck",
+            )
+
+            _write_allowlist(allowlist_path, [next_pubkey])
+            _write_vault_key_map(
+                key_map_path,
+                mount=str(vault_bootstrap.get("transit_mount", args.vault_transit_mount)),
+                keys=[next_key],
+            )
+
+            _wait_for_remote_sign_status(
+                signer_url=f"http://127.0.0.1:{signer_port}/sign",
+                api_key=signer_token,
+                public_key=str(current_key["solana_pubkey"]),
+                expected_status=403,
+                operation="operated_localnet_smoke_rotation_old_denied",
+            )
+            rotated_smoke = _remote_signer_direct_smoke(
+                signer_url=f"http://127.0.0.1:{signer_port}/sign",
+                api_key=signer_token,
+                public_key=next_pubkey,
+                operation="operated_localnet_smoke_rotation_new_active",
+            )
+            vault_rotation = {
+                "from_pubkey": str(current_key["solana_pubkey"]),
+                "to_pubkey": next_pubkey,
+                "from_key_name": str(current_key["key_name"]),
+                "to_key_name": str(next_key["key_name"]),
+                "rotated_signer_smoke": rotated_smoke,
+            }
+            notary_pubkey = next_pubkey
 
         publish_status, publish_body = _http_json(
             f"http://127.0.0.1:{registry_port}/resolvers",
@@ -596,11 +956,22 @@ def main() -> int:
             "signature": resolved["signature"],
             "proof_hash_hex": verified["proof_hash_hex"],
             "public_inputs_hash_hex": verified["public_inputs_hash_hex"],
+            "signer_backend": args.signer_backend,
+            "signer_direct_smoke": signer_direct_smoke,
             "registry_health": registry_health,
             "signer_health": signer_health,
             "attester_health": attester_health,
             "artifacts_retained": bool(args.keep_artifacts),
         }
+        if vault_bootstrap is not None:
+            summary["vault_bootstrap"] = {
+                "transit_mount": vault_bootstrap.get("transit_mount"),
+                "vault_addr": vault_bootstrap.get("vault_addr"),
+                "vault_namespace": vault_bootstrap.get("vault_namespace"),
+                "keys": vault_bootstrap.get("keys"),
+            }
+        if vault_rotation is not None:
+            summary["vault_rotation"] = vault_rotation
         if args.keep_artifacts:
             summary["artifacts_dir"] = str(temp_root)
         print(json.dumps(summary, indent=2, sort_keys=True))

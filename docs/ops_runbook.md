@@ -51,16 +51,16 @@ Config validation:
 make ops-validate-alerts
 ```
 
-## Signer / KMS Checks
+## Signer / Vault Checks
 
 Use the dedicated signer runbook for full bootstrap and rotation steps:
 
-- `docs/signer_kms_ops.md`
+- `docs/signer_vault_ops.md`
 
 Operational commands:
 
 ```bash
-make signer-kms-bootstrap ARGS="--region us-east-1 --key-id alias/prophet-devnet-notary-01"
+make signer-vault-bootstrap ARGS="--vault-addr https://vault.example --key-name prophet-devnet-notary-01"
 make signer-dry-run ARGS="backend"
 make signer-dry-run ARGS="--public-key <pubkey> service --url https://signer.example/sign --api-key <token>"
 make signer-allowlist ARGS="--path /etc/prophet/devnet/signer_allowlist.txt show"
@@ -121,8 +121,8 @@ Restore rehydrates only:
 
 For signer-specific failures:
 
-1. Check `/health` for `ok`, `allowlist_ready`, `aws_loaded_key_ids`, and recent audit log writes.
-2. Run `make signer-dry-run ARGS="backend"` on the signer host to isolate backend or IAM/KMS issues.
+1. Check `/health` for `ok`, `allowlist_ready`, `loaded_pubkeys`, and recent audit log writes.
+2. Run `make signer-dry-run ARGS="backend"` on the signer host to isolate backend or Vault policy/TLS issues.
 3. If the HTTP path is suspect, run `make signer-dry-run ARGS="--public-key <pubkey> service --url <signer url> --api-key <token>"`.
 4. If a key is compromised, remove it from the allowlist first, then update on-chain `NotaryConfig`, then re-run the dry-runs on the surviving signer set.
 5. Remember that updating `NotaryConfig` bumps the version bound into `resolve_market_threshold`, so old signatures must be re-collected after emergency rotation.

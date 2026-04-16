@@ -109,6 +109,15 @@ class Settings(BaseSettings):
         if os.path.exists(val):
             with open(val, 'r') as f:
                 val = f.read().strip()
+        else:
+            looks_like_path = (
+                val.startswith(".")
+                or val.endswith(".json")
+                or os.sep in val
+                or (os.altsep is not None and os.altsep in val)
+            )
+            if looks_like_path:
+                return None
 
         kp = None
         if val.startswith("[") and val.endswith("]"):
@@ -129,7 +138,9 @@ class Settings(BaseSettings):
             try:
                 from solders.keypair import Keypair as SKeypair
                 kp = SKeypair.from_base58_string(val)
-            except Exception:
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                    raise
                 pass
 
         return kp

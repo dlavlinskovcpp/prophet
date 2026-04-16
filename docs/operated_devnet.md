@@ -12,6 +12,22 @@ make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-
 
 That command still starts the resolver registry, remote signer, and attester locally on `127.0.0.1`, but it points them at devnet and requires a real Reclaim verifier plus proof/public-input payloads that the verifier accepts.
 
+By default it uses a generated local notary key through `python scripts/local_command_signer.py`. To prove the real Vault-backed signer path instead, pass Vault Transit settings:
+
+```bash
+make operated-devnet ARGS="\
+  --quote-mint <mint> \
+  --payer-keypair <path> \
+  --reclaim-verify-url <url> \
+  --proof-file ./proof.bin \
+  --public-inputs-file ./public_inputs.json \
+  --signer-backend vault_transit \
+  --vault-addr https://vault.devnet.example \
+  --vault-key-name prophet-devnet-notary-01 \
+  --vault-token-file /path/to/vault-token \
+  --vault-cacert /path/to/vault-ca.pem"
+```
+
 Unlike `docs/devnet_quickstart.md`, this path uses:
 
 - a resolver registry over HTTP
@@ -32,14 +48,20 @@ This walkthrough proves the full operated path works together:
 - attester health and auth path
 - attester-driven `resolve_market_threshold`
 
+When you run it with `--signer-backend vault_transit`, it also proves:
+
+- Vault Transit key-to-pubkey discovery
+- file-backed signer allowlist and Vault key-map generation
+- real managed-key signing behind the auth-protected remote signer service
+
 It still does not prove:
 
 - cloud deployment
 - production TLS termination
-- AWS KMS or HSM integration
 - backup/restore or rollback drills
+- signer providers you did not actually run in this walkthrough
 
-For the production signer path after this walkthrough, use `docs/signer_kms_ops.md`.
+For the production signer path after this walkthrough, use `docs/signer_vault_ops.md`.
 
 ## Preconditions
 
@@ -55,7 +77,8 @@ Important: the attester runtime does not support mock zkTLS. You need a real ver
 If you use `make operated-devnet`, the script will:
 
 - start the resolver registry, remote signer, and attester with auth enabled
-- generate a dedicated temporary notary key unless you pass `--notary-keypair`
+- generate a dedicated temporary notary key unless you pass `--notary-keypair` or select `--signer-backend vault_transit`
+- when `--signer-backend vault_transit` is selected, resolve the Vault Transit key into a Solana pubkey, generate a signer allowlist plus key-map file, and run the remote signer through `python scripts/vault_transit_signer.py`
 - publish a resolver, initialize or reuse the on-chain `NotaryConfig`, create a short-lived market, resolve it through the attester, and verify final on-chain state
 - fail if the resolver does not evaluate to the requested outcome for your supplied `public_inputs.json`
 
@@ -173,6 +196,28 @@ export REMOTE_SIGNER_ALLOWLIST_MODE=file
 export REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH=./signer_allowlist.txt
 export REMOTE_SIGNER_BACKEND=command
 export REMOTE_SIGNER_COMMAND="python scripts/local_command_signer.py"
+export RATE_LIMIT_ENABLED=0
+poetry run uvicorn src.remote_signer_main:app --host 127.0.0.1 --port 8100
+```
+
+Vault Transit-backed alternative:
+
+```bash
+cd apps/oracle-attester
+export APP_ENV=development
+export REMOTE_SIGNER_REQUIRE_AUTH=1
+export REMOTE_SIGNER_API_KEY="devnet-signer-token"
+export REMOTE_SIGNER_REQUIRE_ALLOWLIST=1
+export REMOTE_SIGNER_ALLOWLIST_MODE=file
+export REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH=./signer_allowlist.txt
+export REMOTE_SIGNER_BACKEND=command
+export REMOTE_SIGNER_COMMAND="python scripts/vault_transit_signer.py"
+export REMOTE_SIGNER_COMMAND_PUBLIC_KEYS="<vault-notary-pubkey>"
+export VAULT_ADDR="https://vault.devnet.example"
+export VAULT_TOKEN_FILE="/path/to/vault-token"
+export VAULT_CACERT="/path/to/vault-ca.pem"
+export VAULT_TRANSIT_MOUNT="transit"
+export VAULT_TRANSIT_KEY_MAP_PATH="./vault-transit-key-map.json"
 export RATE_LIMIT_ENABLED=0
 poetry run uvicorn src.remote_signer_main:app --host 127.0.0.1 --port 8100
 ```

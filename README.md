@@ -8,7 +8,7 @@ Prophet is a Solana prediction market protocol built for agent and bot execution
 - a Python SDK for market creation, trading, governance, and threshold resolution flows
 - an oracle attester service for resolver evaluation, zkTLS verification, and resolve transaction assembly
 - a resolver registry service for canonical resolver definition storage and retrieval
-- a remote signer service with AWS KMS and command-backend support for managed notary keys
+- a remote signer service with bundled Vault Transit tooling plus command/AWS-backed support for managed notary keys
 - a persistent matching keeper for off-chain order discovery and `match_orders` submission
 
 ## System Model
@@ -104,11 +104,25 @@ make operated-smoke
 cd sdk/python && pytest tests/test_smoke.py
 ```
 
+To run the auth-protected localnet operated smoke against a local Vault dev server instead of local keypair signing:
+
+```bash
+make operated-smoke SIGNER_BACKEND=vault_transit VAULT_ADDR=http://127.0.0.1:18200 VAULT_TOKEN=root VAULT_KEY_NAME=prophet-ci-notary
+```
+
+To also prove live allowlist/key-map rotation from one Transit key to another without restarting the signer:
+
+```bash
+make operated-smoke SIGNER_BACKEND=vault_transit VAULT_ADDR=http://127.0.0.1:18200 VAULT_TOKEN=root VAULT_KEY_NAME=prophet-ci-notary VAULT_NEXT_KEY_NAME=prophet-ci-notary-rotated
+```
+
 For the real devnet operated path with auth-protected local services and a real Reclaim verifier, use:
 
 ```bash
 make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"
 ```
+
+Pass `--signer-backend vault_transit --vault-addr ... --vault-key-name ... --vault-token-file ...` to exercise the Vault-backed signer path instead of the local command signer.
 
 zkTLS guardrail audit:
 
@@ -145,15 +159,16 @@ For the actual release flow, rollback expectations, monitoring, and recovery pro
 
 - `docs/release_runbook.md`
 - `docs/ops_runbook.md`
-- `docs/signer_kms_ops.md`
+- `docs/signer_vault_ops.md`
 - `docs/security_review_process.md`
 
 ## Security Notes
 
 - Use `NOTARY_SIGNER_MODE=remote` in production.
-- The bundled remote signer supports `REMOTE_SIGNER_BACKEND=aws_kms` for managed Ed25519 notary keys and `REMOTE_SIGNER_BACKEND=command` for other KMS/HSM wrappers.
-- Command-backed signers should set `REMOTE_SIGNER_COMMAND_PUBLIC_KEYS` unless `NOTARY_KEYPAIR_PATHS` already points at the signer key material; that is how `/health` and the dry-run tooling discover the served notary pubkeys.
-- Use `docs/signer_kms_ops.md` for AWS KMS bootstrap, dry-run signer checks, allowlist rotation, and compromised-key response.
+- The bundled operated signer path uses `REMOTE_SIGNER_BACKEND=command` with `python /app/scripts/vault_transit_signer.py` against HashiCorp Vault Transit.
+- `REMOTE_SIGNER_BACKEND=aws_kms` remains available for compatibility, and generic command-backed signers still work for other KMS/HSM wrappers.
+- Command-backed signers should set `REMOTE_SIGNER_COMMAND_PUBLIC_KEYS`; that is how `/health` and the dry-run tooling discover the served notary pubkeys.
+- Use `docs/signer_vault_ops.md` for Vault bootstrap, dry-run signer checks, allowlist rotation, and compromised-key response.
 - Resolver definitions are always re-hashed before use and can be loaded from a local directory or HTTP registry.
 - The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.
 - Market authorities can set a fee recipient and protocol fee bps before the first order only.
