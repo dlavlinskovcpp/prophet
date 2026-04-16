@@ -8,13 +8,13 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 - rollback bundle archived and accessible (program.so, IDL, types, config, git sha)
 - change freeze window and on-call owners set
 
-## Signer / KMS
+## Signer / Vault
 - `NOTARY_SIGNER_MODE=remote` in attester
-- remote signer backend set to cloud KMS/HSM (or command wrapper); `make signer-kms-bootstrap` output archived for the target release
+- remote signer backend set to Vault Transit or another managed signer path; `make signer-vault-bootstrap` output archived for the target release
 - `make signer-dry-run ARGS="backend"` passes on the signer host
 - `make signer-dry-run ARGS="--public-key <pubkey> service --url <https signer url> --api-key <token>"` passes against the live service path
 - signer allowlist present, loaded, and rotated with `make signer-allowlist`; current and next key sets documented
-- KMS IAM/policies scoped to the notary keys only; audit logging enabled
+- Vault policies/tokens scoped to the notary keys only; audit logging enabled
 
 ## Resolver Registry
 - registry runs with TLS and auth enabled
@@ -49,10 +49,10 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 
 ## Security Controls
 - secrets stored in a secret manager; no keys in repo or CI artifacts
-- API tokens rotated and scoped; least-privilege IAM for RPC/KMS/storage
+- API tokens rotated and scoped; least-privilege policy access for RPC/Vault/storage
 - firewall rules/TLS in place for attester, registry, signer
 
 ## Runbook Readiness
 - docs/operated_devnet.md and docs/ops_runbook.md steps rehearsed
-- docs/signer_kms_ops.md steps rehearsed
+- docs/signer_vault_ops.md steps rehearsed
 - incident contacts, escalation paths, and rollback decision owners defined

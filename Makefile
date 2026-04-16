@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -33,12 +33,16 @@ render-operated:
 	python3 scripts/render_operated_stack.py --environment $(ENV) $(if $(VALUES),--values-file $(VALUES),) $(if $(OUT),--output-dir $(OUT),) $(if $(NO_SYNC_ENV_JSON),--skip-sync-env-json,) $(if $(GENERATE_SECRETS),--generate-secrets,)
 
 operated-smoke:
-	# Usage: make operated-smoke [RPC_URL=http://127.0.0.1:8899] [PROPHET_PROGRAM_ID=<program id>]
-	python3 scripts/operated_localnet_smoke.py $(if $(RPC_URL),--rpc-url $(RPC_URL),) $(if $(PROPHET_PROGRAM_ID),--program-id $(PROPHET_PROGRAM_ID),) $(if $(QUOTE_MINT),--quote-mint $(QUOTE_MINT),) $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
+	# Usage: make operated-smoke [RPC_URL=http://127.0.0.1:8899] [PROPHET_PROGRAM_ID=<program id>] [SIGNER_BACKEND=vault_transit VAULT_ADDR=http://127.0.0.1:18200 VAULT_TOKEN=root VAULT_KEY_NAME=prophet-ci-notary VAULT_NEXT_KEY_NAME=prophet-ci-notary-rotated]
+	python3 scripts/operated_localnet_smoke.py $(if $(RPC_URL),--rpc-url $(RPC_URL),) $(if $(PROPHET_PROGRAM_ID),--program-id $(PROPHET_PROGRAM_ID),) $(if $(QUOTE_MINT),--quote-mint $(QUOTE_MINT),) $(if $(SIGNER_BACKEND),--signer-backend $(SIGNER_BACKEND),) $(if $(VAULT_ADDR),--vault-addr $(VAULT_ADDR),) $(if $(VAULT_NAMESPACE),--vault-namespace $(VAULT_NAMESPACE),) $(if $(VAULT_TOKEN),--vault-token $(VAULT_TOKEN),) $(if $(VAULT_TOKEN_FILE),--vault-token-file $(VAULT_TOKEN_FILE),) $(if $(VAULT_CACERT),--vault-cacert $(VAULT_CACERT),) $(if $(VAULT_SKIP_VERIFY),--vault-skip-verify,) $(if $(VAULT_TRANSIT_MOUNT),--vault-transit-mount $(VAULT_TRANSIT_MOUNT),) $(if $(VAULT_TRANSIT_TIMEOUT_S),--vault-transit-timeout-s $(VAULT_TRANSIT_TIMEOUT_S),) $(if $(VAULT_KEY_NAME),--vault-key-name $(VAULT_KEY_NAME),) $(if $(VAULT_NEXT_KEY_NAME),--vault-next-key-name $(VAULT_NEXT_KEY_NAME),) $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
 
 operated-devnet:
-	# Usage: make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"
+	# Usage: make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json [--signer-backend vault_transit --vault-addr https://vault.example --vault-key-name prophet-devnet-notary-01 --vault-token-file /path/to/vault-token]"
 	python3 scripts/operated_devnet_smoke.py $(ARGS)
+
+signer-vault-bootstrap:
+	# Usage: make signer-vault-bootstrap ARGS="--vault-addr https://vault.example --key-name prophet-devnet-notary-01 --output-allowlist /tmp/signer_allowlist.txt --output-key-map /tmp/vault-transit-key-map.json"
+	cd apps/oracle-attester && poetry install && poetry run python scripts/vault_transit_bootstrap.py $(ARGS)
 
 signer-kms-bootstrap:
 	# Usage: make signer-kms-bootstrap ARGS="--region us-east-1 --key-id alias/prophet-devnet-notary --output-allowlist /tmp/signer_allowlist.txt"

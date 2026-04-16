@@ -124,7 +124,7 @@ jobs:
 
       - name: Run Attester Unit Tests
         working-directory: apps/oracle-attester
-        run: poetry run pytest -q tests/test_signer_backend.py tests/test_signer_allowlist.py tests/test_remote_signer.py tests/test_signer_ops.py
+        run: poetry run pytest -q tests/test_signer_backend.py tests/test_signer_allowlist.py tests/test_remote_signer.py tests/test_signer_ops.py tests/test_vault_transit.py
 
       - name: Install SDK Python dependencies
         working-directory: sdk/python
@@ -149,9 +149,15 @@ jobs:
         run: |
           set -euo pipefail
           solana config set --url "$ANCHOR_PROVIDER_URL"
+          VAULT_CONTAINER="prophet-ci-vault"
+          VAULT_ADDR_LOCAL="http://127.0.0.1:18200"
+          VAULT_TOKEN_LOCAL="root"
+          VAULT_KEY_NAME_LOCAL="prophet-ci-notary"
+          VAULT_NEXT_KEY_NAME_LOCAL="prophet-ci-notary-rotated"
 
           mkdir -p .anchor/test-ledger
-          VALIDATOR_LOG=".anchor/test-ledger/test-ledger-log.txt"
+          VALIDATOR_LOG="/tmp/prophet-ci-validator.log"
+          rm -f "${VALIDATOR_LOG}"
 
           solana-test-validator --reset \
             --ledger .anchor/test-ledger \
@@ -165,6 +171,7 @@ jobs:
           VALIDATOR_PID=$!
 
           cleanup() {
+            docker rm -f "${VAULT_CONTAINER}" >/dev/null 2>&1 || true
             kill "${VALIDATOR_PID}" 2>/dev/null || true
             wait "${VALIDATOR_PID}" 2>/dev/null || true
           }
@@ -228,6 +235,68 @@ jobs:
 
           if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py); then
             echo "Operated localnet smoke failed; validator log follows:"
+            if [ -f "${VALIDATOR_LOG}" ]; then
+              cat "${VALIDATOR_LOG}" || true
+            else
+              echo "Validator log file not found at ${VALIDATOR_LOG}"
+            fi
+            exit 1
+          fi
+
+          docker rm -f "${VAULT_CONTAINER}" >/dev/null 2>&1 || true
+          docker run -d --rm --name "${VAULT_CONTAINER}" -p 127.0.0.1:18200:8200 hashicorp/vault:1.16 \
+            vault server -dev -dev-root-token-id="${VAULT_TOKEN_LOCAL}" -dev-listen-address=0.0.0.0:8200
+
+          for i in $(seq 1 60); do
+            if curl -fsS "${VAULT_ADDR_LOCAL}/v1/sys/health" >/dev/null; then
+              echo "Vault dev server is ready"
+              break
+            fi
+
+            if [ "${i}" -eq 60 ]; then
+              echo "Vault dev server did not become ready in time"
+              docker logs "${VAULT_CONTAINER}" || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          curl -fsS \
+            -X POST \
+            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
+            -H "Content-Type: application/json" \
+            --data '{"type":"transit"}' \
+            "${VAULT_ADDR_LOCAL}/v1/sys/mounts/transit" >/dev/null
+
+          curl -fsS \
+            -X POST \
+            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
+            -H "Content-Type: application/json" \
+            --data '{"type":"ed25519"}' \
+            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_LOCAL}" >/dev/null
+
+          curl -fsS \
+            -X POST \
+            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
+            -H "Content-Type: application/json" \
+            --data '{"type":"ed25519"}' \
+            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_NEXT_KEY_NAME_LOCAL}" >/dev/null
+
+          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py --signer-backend vault_transit --vault-addr "${VAULT_ADDR_LOCAL}" --vault-token "${VAULT_TOKEN_LOCAL}" --vault-key-name "${VAULT_KEY_NAME_LOCAL}"); then
+            echo "Operated localnet Vault smoke failed; validator log follows:"
+            docker logs "${VAULT_CONTAINER}" || true
+            if [ -f "${VALIDATOR_LOG}" ]; then
+              cat "${VALIDATOR_LOG}" || true
+            else
+              echo "Validator log file not found at ${VALIDATOR_LOG}"
+            fi
+            exit 1
+          fi
+
+          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py --signer-backend vault_transit --vault-addr "${VAULT_ADDR_LOCAL}" --vault-token "${VAULT_TOKEN_LOCAL}" --vault-key-name "${VAULT_KEY_NAME_LOCAL}" --vault-next-key-name "${VAULT_NEXT_KEY_NAME_LOCAL}"); then
+            echo "Operated localnet Vault rotation smoke failed; validator log follows:"
+            docker logs "${VAULT_CONTAINER}" || true
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
             else

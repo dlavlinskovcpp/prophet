@@ -409,7 +409,9 @@ def _load_signers_from_settings() -> Dict[str, Keypair]:
 def _configured_command_pubkeys() -> List[str]:
     explicit = _normalize_pubkeys(_split_env_list(settings.REMOTE_SIGNER_COMMAND_PUBLIC_KEYS))
     from_keypairs: List[str] = []
-    if (settings.NOTARY_KEYPAIR_PATHS or "").strip():
+    if explicit:
+        from_keypairs = []
+    elif (settings.NOTARY_KEYPAIR_PATHS or "").strip():
         from_keypairs = sorted(_load_signers_from_settings().keys())
     else:
         fallback = settings._load_keypair(settings.ORACLE_KEYPAIR_PATH)

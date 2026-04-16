@@ -33,6 +33,9 @@ COMMAND_REQUIRED_VALUES = (
     "REMOTE_SIGNER_COMMAND",
     "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS",
 )
+VAULT_COMMAND_REQUIRED_VALUES = (
+    "VAULT_ADDR",
+)
 SECRET_VALUE_KEYS = (
     "REMOTE_SIGNER_API_KEY",
     "RESOLVER_REGISTRY_SERVICE_API_KEY",
@@ -123,10 +126,19 @@ def _final_values(
         "PROPHET_SECRET_ROOT": f"/etc/prophet/{env_name}",
         "REMOTE_SIGNER_INTERNAL_URL": "http://remote-signer:8100/sign",
         "RESOLVER_REGISTRY_INTERNAL_URL": "http://resolver-registry:8200/resolvers",
-        "REMOTE_SIGNER_BACKEND": "aws_kms",
-        "REMOTE_SIGNER_COMMAND": "",
+        "REMOTE_SIGNER_BACKEND": "command",
+        "REMOTE_SIGNER_COMMAND": "python /app/scripts/vault_transit_signer.py",
         "REMOTE_SIGNER_COMMAND_TIMEOUT_S": "5",
         "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": "",
+        "VAULT_ADDR": "",
+        "VAULT_NAMESPACE": "",
+        "VAULT_TOKEN_FILE": "/app/remote-signer-secrets/vault-token",
+        "VAULT_CACERT": "/app/remote-signer-secrets/vault-ca.pem",
+        "VAULT_SKIP_VERIFY": "0",
+        "VAULT_TRANSIT_MOUNT": "transit",
+        "VAULT_TRANSIT_KEY_NAME": "",
+        "VAULT_TRANSIT_KEY_MAP_PATH": "/app/remote-signer-secrets/vault-transit-key-map.json",
+        "VAULT_TRANSIT_TIMEOUT_S": "5",
         "REMOTE_SIGNER_AWS_KMS_REGION": "",
         "REMOTE_SIGNER_AWS_KMS_KEY_IDS": "",
         "RECLAIM_API_KEY": "",
@@ -160,6 +172,10 @@ def _final_values(
         missing.extend(key for key in AWS_KMS_REQUIRED_VALUES if not values.get(key))
     if backend == "command":
         missing.extend(key for key in COMMAND_REQUIRED_VALUES if not values.get(key))
+        if "vault_transit_signer.py" in str(values.get("REMOTE_SIGNER_COMMAND", "")):
+            missing.extend(
+                key for key in VAULT_COMMAND_REQUIRED_VALUES if not values.get(key)
+            )
     missing.extend(key for key in SECRET_VALUE_KEYS if not values.get(key))
     if missing:
         joined = ", ".join(sorted(set(missing)))
@@ -239,6 +255,15 @@ def _service_replacements(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
             "REMOTE_SIGNER_COMMAND": values["REMOTE_SIGNER_COMMAND"],
             "REMOTE_SIGNER_COMMAND_TIMEOUT_S": values["REMOTE_SIGNER_COMMAND_TIMEOUT_S"],
             "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": values["REMOTE_SIGNER_COMMAND_PUBLIC_KEYS"],
+            "VAULT_ADDR": values["VAULT_ADDR"],
+            "VAULT_NAMESPACE": values["VAULT_NAMESPACE"],
+            "VAULT_TOKEN_FILE": values["VAULT_TOKEN_FILE"],
+            "VAULT_CACERT": values["VAULT_CACERT"],
+            "VAULT_SKIP_VERIFY": values["VAULT_SKIP_VERIFY"],
+            "VAULT_TRANSIT_MOUNT": values["VAULT_TRANSIT_MOUNT"],
+            "VAULT_TRANSIT_KEY_NAME": values["VAULT_TRANSIT_KEY_NAME"],
+            "VAULT_TRANSIT_KEY_MAP_PATH": values["VAULT_TRANSIT_KEY_MAP_PATH"],
+            "VAULT_TRANSIT_TIMEOUT_S": values["VAULT_TRANSIT_TIMEOUT_S"],
             "REMOTE_SIGNER_AWS_KMS_REGION": values["REMOTE_SIGNER_AWS_KMS_REGION"],
             "REMOTE_SIGNER_AWS_KMS_KEY_IDS": values["REMOTE_SIGNER_AWS_KMS_KEY_IDS"],
             "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL": values["REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL"],

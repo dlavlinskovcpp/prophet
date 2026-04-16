@@ -78,8 +78,8 @@ The registry is the canonical storage layer for resolver definitions. It lets op
 
 The remote signer isolates notary key material from the attester process. In this repo it supports:
 
-- AWS KMS-backed Ed25519 signing
-- command-backed signing for external KMS/HSM wrappers
+- Vault Transit-backed Ed25519 signing through the bundled command wrapper
+- generic command-backed signing for external KMS/HSM wrappers, plus AWS KMS compatibility
 
 ### What is the fastest way to see Prophet work end to end?
 
