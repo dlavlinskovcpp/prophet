@@ -7,6 +7,8 @@ This runbook covers the production remote-signer path:
 - signer allowlist rotation
 - compromised or retired notary key handling
 
+It is AWS-first because the bundled managed-key integration today is `aws_kms`, but the repo also supports `REMOTE_SIGNER_BACKEND=command` for other KMS/HSM wrappers. For command-backed signers, configure `REMOTE_SIGNER_COMMAND_PUBLIC_KEYS` when the signer pubkeys cannot be inferred from local keypair files.
+
 The repo-side helpers are:
 
 - `make signer-kms-bootstrap`
@@ -69,6 +71,19 @@ REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH=/app/signer_allowlist.txt
 ```
 
 Before bringing the service up, copy the rendered allowlist into the secret mount used by the environment.
+
+For a command-backed signer instead, set:
+
+```dotenv
+REMOTE_SIGNER_BACKEND=command
+REMOTE_SIGNER_COMMAND=/usr/local/bin/your-kms-wrapper sign
+REMOTE_SIGNER_COMMAND_PUBLIC_KEYS=<pubkey-1>,<pubkey-2>
+REMOTE_SIGNER_REQUIRE_ALLOWLIST=1
+REMOTE_SIGNER_ALLOWLIST_MODE=file
+REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH=/app/signer_allowlist.txt
+```
+
+`REMOTE_SIGNER_COMMAND_PUBLIC_KEYS` is what makes `/health` and the service dry-run path report the signer set when the wrapper does not read local keypair files.
 
 ## 3. Dry-Run Signing Checks
 

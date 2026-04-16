@@ -152,6 +152,7 @@ For the actual release flow, rollback expectations, monitoring, and recovery pro
 
 - Use `NOTARY_SIGNER_MODE=remote` in production.
 - The bundled remote signer supports `REMOTE_SIGNER_BACKEND=aws_kms` for managed Ed25519 notary keys and `REMOTE_SIGNER_BACKEND=command` for other KMS/HSM wrappers.
+- Command-backed signers should set `REMOTE_SIGNER_COMMAND_PUBLIC_KEYS` unless `NOTARY_KEYPAIR_PATHS` already points at the signer key material; that is how `/health` and the dry-run tooling discover the served notary pubkeys.
 - Use `docs/signer_kms_ops.md` for AWS KMS bootstrap, dry-run signer checks, allowlist rotation, and compromised-key response.
 - Resolver definitions are always re-hashed before use and can be loaded from a local directory or HTTP registry.
 - The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.

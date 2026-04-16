@@ -3,7 +3,7 @@ Non-local operated deployment templates live here.
 Each environment directory contains:
 
 - `docker-compose.yml`: a production-shaped stack for resolver registry, remote signer, oracle attester, and matching keeper
-- `stack.env.example`: the single input file for public URLs, secrets, RPC/KMS settings, and runtime roots
+- `stack.env.example`: the single input file for public URLs, secrets, RPC/signer-backend settings, and runtime roots
 - `*.env.example`: service runtime templates that the renderer turns into concrete `*.env` files
 
 The compose manifests assume:
@@ -36,4 +36,4 @@ The renderer writes:
 
 It also syncs `deploy/environments/<environment>.json` service endpoints so release manifests and bundles carry the real operated metadata for that environment.
 
-After rendering `remote-signer.env`, use `docs/signer_kms_ops.md` to bootstrap the KMS aliases, generate `signer_allowlist.txt`, and run the signer dry-run checks before bringing the stack live.
+After rendering `remote-signer.env`, use `docs/signer_kms_ops.md` to bootstrap the signer backend, generate `signer_allowlist.txt`, and run the signer dry-run checks before bringing the stack live.

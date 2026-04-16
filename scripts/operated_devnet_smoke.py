@@ -725,8 +725,10 @@ def main() -> int:
             "registry_health": registry_health,
             "signer_health": signer_health,
             "attester_health": attester_health,
-            "artifacts_dir": str(artifacts_dir),
+            "artifacts_retained": bool(args.keep_artifacts),
         }
+        if args.keep_artifacts:
+            summary["artifacts_dir"] = str(artifacts_dir)
         print(json.dumps(summary, indent=2, sort_keys=True))
         success = True
         return 0

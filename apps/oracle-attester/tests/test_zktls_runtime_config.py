@@ -86,6 +86,7 @@ def test_validate_remote_signer_service_runtime_command_requires_allowlist_in_pr
     monkeypatch.setattr(settings, "APP_ENV", "production")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "kms-wrapper sign")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS", "11111111111111111111111111111111")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_REQUIRE_ALLOWLIST", False)
@@ -98,8 +99,23 @@ def test_validate_remote_signer_service_runtime_file_allowlist_requires_path(mon
     monkeypatch.setattr(settings, "APP_ENV", "production")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "kms-wrapper sign")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS", "11111111111111111111111111111111")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "file")
     monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS_PATH", "")
+
+    with pytest.raises(ValueError):
+        settings.validate_remote_signer_service_runtime()
+
+
+def test_validate_remote_signer_service_runtime_command_requires_pubkey_hints_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_BACKEND", "command")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND", "kms-wrapper sign")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS", "")
+    monkeypatch.setattr(settings, "NOTARY_KEYPAIR_PATHS", "")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWLIST_MODE", "env")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_ALLOWED_PUBKEYS", "11111111111111111111111111111111")
+    monkeypatch.setattr(settings, "REMOTE_SIGNER_REQUIRE_ALLOWLIST", True)
 
     with pytest.raises(ValueError):
         settings.validate_remote_signer_service_runtime()

@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     REMOTE_SIGNER_BACKEND: str = os.getenv("REMOTE_SIGNER_BACKEND", "local_keypairs")
     REMOTE_SIGNER_COMMAND: str = os.getenv("REMOTE_SIGNER_COMMAND", "")
     REMOTE_SIGNER_COMMAND_TIMEOUT_S: float = _env_float("REMOTE_SIGNER_COMMAND_TIMEOUT_S", 5.0)
+    REMOTE_SIGNER_COMMAND_PUBLIC_KEYS: str = os.getenv("REMOTE_SIGNER_COMMAND_PUBLIC_KEYS", "")
     REMOTE_SIGNER_AWS_KMS_KEY_IDS: str = os.getenv("REMOTE_SIGNER_AWS_KMS_KEY_IDS", "")
     REMOTE_SIGNER_AWS_KMS_REGION: str = os.getenv("REMOTE_SIGNER_AWS_KMS_REGION", "")
     REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL: str = os.getenv("REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL", "")
@@ -246,6 +247,14 @@ class Settings(BaseSettings):
                 )
             if self.REMOTE_SIGNER_COMMAND_TIMEOUT_S <= 0:
                 raise ValueError("REMOTE_SIGNER_COMMAND_TIMEOUT_S must be > 0.")
+            if not is_dev_env and not (
+                self.REMOTE_SIGNER_COMMAND_PUBLIC_KEYS.strip()
+                or self.NOTARY_KEYPAIR_PATHS.strip()
+            ):
+                raise ValueError(
+                    "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS or NOTARY_KEYPAIR_PATHS is required "
+                    "when REMOTE_SIGNER_BACKEND=command in production."
+                )
 
         if backend == "aws_kms":
             if not self.REMOTE_SIGNER_AWS_KMS_REGION.strip():
