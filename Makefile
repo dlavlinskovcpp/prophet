@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle
+.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -62,6 +62,10 @@ test:
 reliability:
 	cargo test -p prophet --lib
 	bash scripts/check_zktls.sh
+
+demo:
+	cd apps/oracle-attester && poetry run python ../../scripts/demo_agent_market.py
+	cd apps/oracle-attester && poetry run python ../../scripts/demo_agent_market.py --conflict
 
 clean:
 	rm -rf target .anchor/test-ledger node_modules sdk/python/__pycache__

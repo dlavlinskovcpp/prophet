@@ -8,6 +8,7 @@ from .pdas import (
 )
 from .resolver_hash import compute_resolver_hash_hex, load_resolver_definition
 from .types import MarketOutcome, MarketStatus, OrderSide
+from .agent import ProphetAgent, ResolverConfig, MarketHandle
 
 __all__ = [
     "ProphetClient",
@@ -21,4 +22,7 @@ __all__ = [
     "derive_associated_token_account",
     "compute_resolver_hash_hex",
     "load_resolver_definition",
+    "ProphetAgent",
+    "ResolverConfig",
+    "MarketHandle",
 ]
