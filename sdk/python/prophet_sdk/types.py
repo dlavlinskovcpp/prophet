@@ -48,6 +48,7 @@ class MarketAccount:
     status: MarketStatus
     outcome: MarketOutcome
     bump: int
+    invalid_payout_remainder: int = 0
 
 
 @dataclass
@@ -61,6 +62,8 @@ class OrderAccount:
     escrow_remaining_atoms: int
     fee_remaining_atoms: int
     created_ts: int
+    taker_cost_basis_atoms: int = 0
+    protocol_fee_paid_atoms: int = 0
 
 
 @dataclass

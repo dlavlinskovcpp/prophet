@@ -42,6 +42,7 @@ MarketLayout = CStruct(
     "status" / U8,
     "outcome" / U8,
     "bump" / U8,
+    "invalid_payout_remainder" / U8,
 )
 
 OrderLayout = CStruct(
@@ -54,6 +55,8 @@ OrderLayout = CStruct(
     "escrow_remaining_atoms" / U64,
     "fee_remaining_atoms" / U64,
     "created_ts" / I64,
+    "taker_cost_basis_atoms" / U64,
+    "protocol_fee_paid_atoms" / U64,
 )
 
 PositionLayout = CStruct(
@@ -110,6 +113,7 @@ def decode_market(data: bytes) -> MarketAccount:
         status=MarketStatus(parsed.status),
         outcome=MarketOutcome(parsed.outcome),
         bump=parsed.bump,
+        invalid_payout_remainder=parsed.invalid_payout_remainder,
     )
 
 
@@ -127,6 +131,8 @@ def decode_order(data: bytes) -> OrderAccount:
         escrow_remaining_atoms=parsed.escrow_remaining_atoms,
         fee_remaining_atoms=parsed.fee_remaining_atoms,
         created_ts=parsed.created_ts,
+        taker_cost_basis_atoms=parsed.taker_cost_basis_atoms,
+        protocol_fee_paid_atoms=parsed.protocol_fee_paid_atoms,
     )
 
 
