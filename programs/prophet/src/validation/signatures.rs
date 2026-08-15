@@ -2,13 +2,9 @@ use crate::{
     errors::ErrorCode,
     state::{NotaryConfig, MAX_ED25519_SCAN},
 };
-use anchor_lang::{
-    prelude::*,
-    solana_program::{
-        ed25519_program::ID as ED25519_ID_NATIVE,
-        sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-    },
-};
+use anchor_lang::prelude::*;
+use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
+use solana_sdk_ids::ed25519_program::ID as ED25519_ID_NATIVE;
 
 /// Validates the bounded set of preceding native Ed25519 instructions and
 /// returns the number of distinct authorized signatures over `expected_message`.

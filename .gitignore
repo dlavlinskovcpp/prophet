@@ -6,6 +6,7 @@ node_modules
 test-ledger
 .env*
 *.json
+!docs/migration/anchor_0_30_protocol_snapshot.json
 !id.json
 !oracle-keypair.json
 !package.json

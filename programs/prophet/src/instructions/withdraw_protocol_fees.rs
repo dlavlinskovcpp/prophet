@@ -49,7 +49,7 @@ pub(crate) fn withdraw_protocol_fees(
     ];
     token::transfer(
         CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            Token::id(),
             Transfer {
                 from: ctx.accounts.quote_vault.to_account_info(),
                 to: ctx.accounts.fee_recipient_quote_ata.to_account_info(),

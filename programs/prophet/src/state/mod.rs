@@ -80,9 +80,9 @@ mod tests {
             redeemed: false,
         };
 
-        assert!(market.try_to_vec().unwrap().len() <= Market::LEN);
-        assert!(config.try_to_vec().unwrap().len() <= NotaryConfig::LEN);
-        assert!(order.try_to_vec().unwrap().len() <= Order::LEN);
-        assert!(position.try_to_vec().unwrap().len() <= Position::LEN);
+        assert!(borsh::to_vec(&market).unwrap().len() <= Market::LEN);
+        assert!(borsh::to_vec(&config).unwrap().len() <= NotaryConfig::LEN);
+        assert!(borsh::to_vec(&order).unwrap().len() <= Order::LEN);
+        assert!(borsh::to_vec(&position).unwrap().len() <= Position::LEN);
     }
 }

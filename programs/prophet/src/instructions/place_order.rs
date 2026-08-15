@@ -107,7 +107,7 @@ pub(crate) fn place_order(
 
     token::transfer(
         CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
+            Token::id(),
             Transfer {
                 from: ctx.accounts.owner_quote_ata.to_account_info(),
                 to: ctx.accounts.quote_vault.to_account_info(),
