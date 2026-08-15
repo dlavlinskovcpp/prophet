@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "programs/prophet"
+    "programs/prophet",
+    "crates/resolver-v2",
 ]
 resolver = "2"
 
