@@ -19,6 +19,8 @@ poetry.lock
 proof_store/
 resolver_store/
 audit/
+!docs/audit/
+!docs/audit/**
 signer_allowlist.txt
 markets.jsonl
 .localnet.pid
