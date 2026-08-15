@@ -142,6 +142,8 @@ Mitigation:
 - ops runbooks
 - explicit environment configs
 - durable audit logs
+- on-chain rejection of zero market limits, unusable notary keys, and threshold
+  configurations that cannot fit in the canonical V2 resolution transaction
 
 ## Non-Goals
 

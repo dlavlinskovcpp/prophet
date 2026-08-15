@@ -457,6 +457,22 @@ describe("prophet-governance", () => {
       .signers([authority])
       .rpc();
 
+    let invalidRecipientRejected = false;
+    try {
+      await (program.methods as any)
+        .setMarketFeeConfig(market, 500)
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      invalidRecipientRejected = true;
+    }
+    assert.equal(
+      invalidRecipientRejected,
+      true,
+      "the market vault authority must not be accepted as its own fee recipient"
+    );
+
     await (program.methods as any)
       .setMarketFeeConfig(treasury.publicKey, 500)
       .accounts({ market, authority: authority.publicKey })

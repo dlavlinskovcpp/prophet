@@ -37,6 +37,7 @@ Economics notes:
 - `place_order` prefunds both order escrow and a fee reserve derived from the order's maximum escrow requirement.
 - `match_orders` only accrues protocol fees on the taker side of each execution, so maker liquidity is not charged for resting on the book.
 - Any unused fee reserve is returned through the normal refund path when an order is fully filled or cancelled.
+- Invalid-outcome redemptions carry half-atom rounding between claimants, so aggregate payouts conserve the market's matched collateral even when individual positions are odd-sized.
 - `withdraw_protocol_fees` is authority-only and can only transfer already accrued protocol fees from the market quote vault to the configured treasury recipient.
 
 ## Off-Chain Components
@@ -60,6 +61,10 @@ Responsibilities:
 - On-chain verifies Ed25519 signatures and message canonicality.
 - On-chain stores `proof_hash` + `public_inputs_hash` for auditability.
 - Threshold mode reduces trust by requiring distinct t-of-n notary signatures.
+- Canonical V2 transactions support a maximum threshold of two because each
+  self-contained signature repeats the 235-byte resolve message and the current
+  client path uses Solana legacy transactions. Larger notary sets remain useful
+  for rotation and availability, but `threshold` must be `1` or `2`.
 - Resolver definitions should come from a canonical registry source (directory mirror or HTTP registry) and must hash back to the on-chain `resolver_hash`.
 - The bundled resolver registry service provides authenticated publish/load APIs, durable audit logs, and a canonical file-backed store that the attester can consume over HTTP.
 - Managed signer deployments should keep an explicit signer allowlist. The repo now ships a Vault Transit signer wrapper for the operated path and still supports generic command/KMS/HSM bridges plus the legacy AWS KMS backend.
