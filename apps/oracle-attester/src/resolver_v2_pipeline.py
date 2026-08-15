@@ -347,6 +347,10 @@ class SignerPolicy:
     threshold: int
     emergency_denylist: Tuple[str, ...] = ()
     forbid_deprecated_resolvers: bool = True
+    required_verifier_count: int = 1
+    required_verifier_ids: Tuple[str, ...] = ()
+    minimum_agreeing_verifiers: int = 1
+    exact_verifier_agreement: bool = True
 
 
 @dataclass(frozen=True)
@@ -359,7 +363,7 @@ class PolicyDecision:
 
 class SignerPolicyEngine:
     def __init__(self, policy: SignerPolicy, *, deprecated_resolver_ids: Sequence[str] = ()):
-        if policy.threshold <= 0:
+        if policy.threshold <= 0 or policy.required_verifier_count <= 0 or policy.minimum_agreeing_verifiers <= 0:
             raise PipelineRejected("policy threshold must be positive")
         self.policy = policy
         self.deprecated_resolver_ids = frozenset(deprecated_resolver_ids)
@@ -386,6 +390,20 @@ class SignerPolicyEngine:
             return PolicyDecision(False, "unknown_trust_model", self.policy.policy_id, self.policy.policy_version)
         if verifier["adapter_id"] not in self.policy.allowed_verifier_ids or verifier["adapter_version"] not in self.policy.allowed_verifier_versions:
             return PolicyDecision(False, "unexpected_verifier", self.policy.policy_id, self.policy.policy_version)
+        # The agreement engine compares only normalized structured V2 results.
+        from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
+        agreement = evaluate_agreement(bundle["verification_results"], AgreementPolicy(
+            required_verifier_ids=self.policy.required_verifier_ids,
+            required_verifier_count=self.policy.required_verifier_count,
+            minimum_agreeing_verifiers=self.policy.minimum_agreeing_verifiers,
+            exact_agreement=self.policy.exact_verifier_agreement,
+        ), now_ms=now_ms)
+        if not agreement.allowed:
+            return PolicyDecision(False, agreement.reason, self.policy.policy_id, self.policy.policy_version)
+        for result in bundle["verification_results"]:
+            result_verifier = result["verifier"]
+            if result_verifier["adapter_id"] not in self.policy.allowed_verifier_ids or result_verifier["adapter_version"] not in self.policy.allowed_verifier_versions:
+                return PolicyDecision(False, "unexpected_verifier", self.policy.policy_id, self.policy.policy_version)
         if bundle["market"] != self.policy.market:
             return PolicyDecision(False, "market_mismatch", self.policy.policy_id, self.policy.policy_version)
         if bundle["cluster_genesis_hash"] != self.policy.cluster_genesis_hash:
@@ -469,11 +487,15 @@ class SigningAuthorization:
 
 class ThresholdSigningGate:
     """The only signer-facing boundary; raw source bytes never cross it."""
-    def __init__(self, backend: SignerBackend, policy: SignerPolicyEngine, equivocation: EquivocationStore, audit: JsonlAuditLogger):
+    def __init__(self, backend: SignerBackend, policy: SignerPolicyEngine, equivocation: EquivocationStore, audit: JsonlAuditLogger, *, conflict_state: Any = None, equivocation_monitor: Any = None):
         self.backend, self.policy, self.equivocation, self.audit = backend, policy, equivocation, audit
+        self.conflict_state, self.equivocation_monitor = conflict_state, equivocation_monitor
 
     def authorize(self, bundle: Mapping[str, Any], *, now_ms: int, expected_bundle_hash: Optional[str], settlement_message: bytes) -> SigningAuthorization:
         bundle_hash = resolver_v2.resolution_bundle_hash(bundle).hex()
+        if self.conflict_state is not None and self.conflict_state.is_open(bundle):
+            self.audit.write("resolver_v2_signer_rejected", {"market": bundle.get("market", ""), "bundle_hash": bundle_hash, "reason": "conflict_open"})
+            raise PipelineRejected("conflict_open")
         decision = self.policy.evaluate(bundle, now_ms=now_ms, expected_bundle_hash=expected_bundle_hash)
         if not decision.allowed:
             self.audit.write("resolver_v2_signer_rejected", {"market": bundle.get("market", ""), "bundle_hash": bundle_hash, "reason": decision.reason, "policy_version": decision.policy_version})
@@ -484,7 +506,16 @@ class ThresholdSigningGate:
 
     def sign(self, authorization: SigningAuthorization, pubkeys: Sequence[Pubkey]) -> Dict[str, bytes]:
         signatures: Dict[str, bytes] = {}
+        bundle = resolver_v2.parse_canonical_json(authorization.canonical_bundle)
+        domain = ":".join((bundle["market"], bundle["cluster_genesis_hash"], bundle["notary_config"], bundle["notary_config_version"], bundle["resolution_nonce"]))
         for pubkey in pubkeys:
+            # Reserve the signer observation before calling the signing backend.
+            # A conflicting candidate therefore cannot obtain a new signature.
+            if self.equivocation_monitor is not None and self.equivocation_monitor.observe_signer(
+                str(pubkey), domain=domain, outcome=bundle["outcome"], bundle_hash=authorization.bundle_hash,
+                resolver=bundle["resolver_definition_hash"], market=bundle["market"], timestamp_ms=bundle["observed_at_ms"],
+            ):
+                raise PipelineRejected("signer_equivocation_detected")
             # Context contains only commitments and policy metadata, never source bytes.
             signatures[str(pubkey)] = self.backend.sign(pubkey, authorization.settlement_message, {
                 "bundle_hash": authorization.bundle_hash,
