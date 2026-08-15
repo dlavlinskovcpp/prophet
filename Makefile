@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo
+.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -74,6 +74,21 @@ clean:
 attester:
 	cd apps/oracle-attester && poetry install && poetry run uvicorn src.main:app --host 0.0.0.0 --port 8000
 
+verifier-a-run:
+	cd apps/oracle-attester && poetry install && poetry run uvicorn src.verifier_a_main:app --host $${VERIFIER_HOST:-127.0.0.1} --port $${VERIFIER_A_PORT:-8301}
+
+verifier-b-run:
+	cd apps/oracle-attester && poetry install && poetry run uvicorn src.verifier_b_main:app --host $${VERIFIER_HOST:-127.0.0.1} --port $${VERIFIER_B_PORT:-8302}
+
+verifier-services-test:
+	cd apps/oracle-attester && poetry run pytest -q tests/test_verifier_services.py
+
+coordinator-run:
+	cd apps/oracle-attester && poetry install && poetry run uvicorn src.coordinator_main:app --host $${COORDINATOR_HOST:-127.0.0.1} --port $${COORDINATOR_PORT:-8400}
+
+coordinator-service-test:
+	cd apps/oracle-attester && poetry run pytest -q tests/test_coordinator_service.py
+
 remote-signer:
 	cd apps/oracle-attester && poetry install && poetry run uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
 
@@ -137,3 +152,19 @@ localnet-down:
 
 zktls-audit:
 	./scripts/check_zktls.sh
+
+devnet-runtime-up:
+	RUNTIME_ENV=$${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} python3 scripts/public_devnet_runtime_preflight.py
+	docker compose --env-file $${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} -f deploy/operated/public-devnet/docker-compose.yml up -d
+
+devnet-runtime-status:
+	docker compose --env-file $${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} -f deploy/operated/public-devnet/docker-compose.yml ps
+
+devnet-runtime-preflight:
+	RUNTIME_ENV=$${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} python3 scripts/public_devnet_runtime_preflight.py
+
+devnet-runtime-logs:
+	docker compose --env-file $${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} -f deploy/operated/public-devnet/docker-compose.yml logs --tail=200
+
+devnet-runtime-down:
+	docker compose --env-file $${RUNTIME_ENV:-/etc/prophet/public-devnet/runtime.env} -f deploy/operated/public-devnet/docker-compose.yml down

@@ -26,9 +26,11 @@ markets.jsonl
 .localnet.pid
 validator.log
 .logs/
+private/
 apps/matching-keeper/state/
 ops/backups/
 deploy/operated/*/*.env
+deploy/operated/*/*.hcl
 deploy/operated/*/.env
 deploy/operated/*/stack.env
 releases/*

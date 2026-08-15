@@ -1,0 +1,17 @@
+groups:
+  - name: prophet-public-devnet-critical
+    rules:
+      - alert: ProphetVaultUnavailable
+        expr: up{job="vault"} == 0
+        for: 5m
+        labels: {severity: critical}
+      - alert: ProphetVerifierDisagreement
+        expr: increase(prophet_resolver_v2_verifier_disagreement_total[10m]) > 0
+        labels: {severity: high}
+      - alert: ProphetSignerEquivocation
+        expr: increase(prophet_resolver_v2_equivocation_total{actor="signer"}[10m]) > 0
+        labels: {severity: critical}
+      - alert: ProphetKeeperUnavailable
+        expr: up{job="prophet-matching-keeper"} == 0
+        for: 2m
+        labels: {severity: high}

@@ -1,0 +1,19 @@
+# Copy outside Git as /etc/prophet/public-devnet/vault/vault.hcl and provide
+# TLS material through the adjacent secret directory. Never use Vault dev mode.
+ui = false
+disable_mlock = true
+
+storage "file" {
+  path = "/vault/file"
+}
+
+listener "tcp" {
+  address = "0.0.0.0:8200"
+  tls_disable = 0
+  tls_cert_file = "/vault/tls/tls.crt"
+  tls_key_file = "/vault/tls/tls.key"
+}
+
+api_addr = "https://vault:8200"
+cluster_addr = "https://vault:8201"
+log_level = "info"

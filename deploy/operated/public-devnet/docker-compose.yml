@@ -1,0 +1,90 @@
+# Public-devnet single-host foundation. All admin services remain private to
+# Docker; place a TLS-authenticated reverse proxy in front of selected APIs only.
+services:
+  vault:
+    image: hashicorp/vault:1.17.6
+    command: vault server -config=/vault/config/vault.hcl
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/vault:/vault/file
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/vault-audit:/vault/audit
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/vault.hcl:/vault/config/vault.hcl:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/tls:/vault/tls:ro
+    networks: [private]
+    restart: unless-stopped
+
+  resolver-registry:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
+    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/resolver-registry.env]
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver-store:/app/resolver_store
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
+    networks: [private]
+    restart: unless-stopped
+
+  remote-signer:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/remote-signer.env]
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/signer_allowlist.txt:/app/signer_allowlist.txt:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/remote-signer:/app/remote-signer-secrets:ro
+    networks: [private]
+    restart: unless-stopped
+
+  oracle-attester:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/oracle-attester.env]
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/proof-store:/app/proof_store
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/oracle-keypair.json:/app/oracle-keypair.json:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/relayer-keypair.json:/app/relayer-keypair.json:ro
+    networks: [private]
+    restart: unless-stopped
+
+  matching-keeper:
+    build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }
+    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/matching-keeper.env]
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/keeper:/app/apps/matching-keeper/state
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-id.json:/app/keeper-id.json:ro
+    networks: [private]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --web.enable-admin-api=false]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/prometheus:/prometheus
+    networks: [private]
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command: [--config.file=/run/secrets/alertmanager.yml, --storage.path=/alertmanager]
+    volumes:
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/alertmanager.yml:/run/secrets/alertmanager.yml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/alertmanager:/alertmanager
+    networks: [private]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.4
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/grafana-admin-password
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/grafana:/var/lib/grafana
+    networks: [private]
+    restart: unless-stopped
+
+networks:
+  private:
+    internal: true

@@ -10,6 +10,7 @@ from src.vault_transit import (
     build_vault_key_map_payload,
     parse_vault_public_key,
     parse_vault_signature,
+    parse_vault_signature_with_version,
     read_vault_key_map,
     resolve_vault_key_name,
     write_vault_key_map_file,
@@ -30,6 +31,31 @@ def test_parse_vault_signature_accepts_vault_prefix():
     )
 
     assert actual == expected
+    assert parse_vault_signature_with_version("vault:v7:" + base64.b64encode(expected).decode("ascii")) == (7, expected)
+
+
+def test_vault_transit_versioned_sign_sends_raw_message_and_requires_version():
+    signer = Keypair()
+    message = b"PROPHET_RESOLVE_V2" + bytes(32)
+    signature = bytes(signer.sign_message(message))
+
+    class Response:
+        status_code = 200
+        content = b"{}"
+        text = "{}"
+        reason_phrase = "OK"
+        def json(self): return {"data": {"signature": "vault:v1:" + base64.b64encode(signature).decode("ascii")}}
+
+    class Http:
+        def __init__(self): self.body = None
+        def request(self, method, url, headers=None, json=None):
+            self.body = (method, url, json)
+            return Response()
+
+    http = Http()
+    client = VaultTransitClient(VaultTransitConfig("http://127.0.0.1:8200", "", "token", "transit", 1.0, "", False, "", ""), client=http)
+    assert client.sign_versioned("key-a", message, key_version=1) == (1, signature)
+    assert http.body[2] == {"input": base64.b64encode(message).decode("ascii"), "key_version": 1}
 
 
 def test_parse_vault_public_key_accepts_der_spki_base64():
