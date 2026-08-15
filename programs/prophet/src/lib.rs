@@ -8,6 +8,11 @@ pub mod state;
 mod utils;
 mod validation;
 
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
+#[cfg(test)]
+mod security_tests;
+
 pub use instructions::*;
 use state::{MarketOutcome, OrderSide};
 

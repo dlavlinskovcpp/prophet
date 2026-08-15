@@ -14,6 +14,9 @@ no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Host-only helpers used by the cargo-fuzz harnesses. This feature is never
+# enabled for an on-chain program build.
+fuzzing = []
 
 [dependencies]
 anchor-lang = { version = "=1.0.1", features = ["init-if-needed"] }

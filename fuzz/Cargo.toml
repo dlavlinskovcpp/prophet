@@ -1,0 +1,28 @@
+[package]
+name = "prophet-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+prophet = { path = "../programs/prophet", features = ["fuzzing"] }
+
+[[bin]]
+name = "arithmetic"
+path = "fuzz_targets/arithmetic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "settlement"
+path = "fuzz_targets/settlement.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
