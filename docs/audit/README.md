@@ -3,12 +3,14 @@
 This package is a review map, not a claim that an audit or public deployment
 has occurred. Review in this order:
 
-1. [Protocol surface](protocol_surface.md) and [protocol specification](../protocol.md): establish the frozen ABI and state commitments.
-2. [Architecture](../architecture.md), [sequence flows](../sequence_flows.md), and [trust boundaries](trust_boundaries.md): trace custody and resolution.
-3. [Resolver V2 specification](../resolver_v2_spec.md), [attestation pipeline](../resolver_v2_attestation_pipeline.md), and [multi-verifier model](../resolver_v2_multi_verifier.md): review off-chain decision inputs.
-4. [Threat model](../trust_model.md), [known risks](known_risks.md), and [regression matrix](security_regression_matrix.md): assess residual exposure and test coverage.
-5. [Security testing report](../security_testing_report.md), [compute report](../compute_report.md), and [Anchor migration report](../migration/anchor_1_0_compatibility_report.md): reproduce claims.
-6. [Testnet deployment](testnet_deployment.md), [key management](key_management.md), [observability](observability.md), [operations runbook](../ops_runbook.md), and [release checklist](release_checklist.md): review operational readiness.
+1. [Architecture](../architecture.md) and [sequence flows](../sequence_flows.md).
+2. [Protocol state machine and frozen ABI](protocol_surface.md) and [protocol specification](../protocol.md).
+3. [Custody/trust boundaries](trust_boundaries.md), then matching and accounting in [security tests](../security_testing_report.md).
+4. Settlement format and threshold-notary constraints in [attestation format](../attestation_format.md).
+5. Resolver V2 specification, pipeline, adapters, and multi-verifier model.
+6. Verifier trust model and signer policy/Vault operations.
+7. Key management, known risks, security regression evidence, and compute/migration reports.
+8. Testnet deployment model, observability, operations, rollback, and release checklist.
 
 ## Reproducibility
 
@@ -27,3 +29,13 @@ For local validator, Vault, attester, SDK, and operated-stack integration use
 the exact sequence in [the release runbook](../release_runbook.md). No private
 keys, tokens, production URLs, or production resolver definitions belong in
 this package.
+
+## RC1 release gates
+
+Read [feature freeze](feature_freeze.md), [RC1 metadata](release_candidate.md),
+[machine-readable ABI baseline](v1_rc1_abi_snapshot.json), [final regression
+evidence](final_security_regression.md), [public-devnet runbook](public_devnet_runbook.md),
+[auditor questions](questions_for_auditors.md), and [mainnet blockers](mainnet_blockers.md)
+before approving any deployment. The public-devnet configuration is a template
+that must be concretized outside Git with dedicated identities and live service
+evidence.
