@@ -418,7 +418,10 @@ fn state_machine_preserves_economic_invariants_for_thousands_of_seeds() {
         return;
     }
 
-    for offset in 0..SEQUENCE_COUNT {
+    let sequence_count = std::env::var("PROPHET_INVARIANT_SEQUENCE_COUNT")
+        .map(|value| value.parse::<u64>().expect("PROPHET_INVARIANT_SEQUENCE_COUNT must be a u64"))
+        .unwrap_or(SEQUENCE_COUNT);
+    for offset in 0..sequence_count {
         let seed = SEED_MIX.wrapping_add(offset.wrapping_mul(0x9e37_79b9_7f4a_7c15));
         std::panic::catch_unwind(|| run_sequence(seed)).unwrap_or_else(|failure| {
             panic!(

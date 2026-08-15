@@ -1,0 +1,17 @@
+{
+  "environment": "public-devnet",
+  "cluster_name": "devnet",
+  "anchor_cluster": "https://api.devnet.solana.com",
+  "rpc_url": "https://api.devnet.solana.com",
+  "cluster_genesis_hash": "RECORD_FROM_SOLANA_GENESIS_HASH_AT_DEPLOY_TIME",
+  "wallet_path": "EXTERNAL_SECRET_MANAGER_REFERENCE:PUBLIC_DEVNET_DEPLOY_AUTHORITY",
+  "program_keypair_path": "EXTERNAL_SECRET_MANAGER_REFERENCE:PUBLIC_DEVNET_PROGRAM_KEYPAIR",
+  "binary_path": "target/deploy/prophet.so",
+  "idl_path": "target/idl/prophet.json",
+  "expected_program_id": "RECORD_AFTER_DEDICATED_PUBLIC_DEVNET_DEPLOYMENT",
+  "identity_separation": {"developer_wallet_reuse": false, "ci_key_reuse": false, "localnet_key_reuse": false, "mainnet_key_reuse": false},
+  "service_endpoints": {"attester_base_url": "CONFIGURE_PUBLIC_DEVNET_ATTESTER_URL", "remote_signer_url": "CONFIGURE_PUBLIC_DEVNET_REMOTE_SIGNER_URL", "resolver_registry_url": "CONFIGURE_PUBLIC_DEVNET_RESOLVER_REGISTRY_URL", "matching_keeper_base_url": "CONFIGURE_PUBLIC_DEVNET_KEEPER_URL"},
+  "signer_policy": {"required_verifier_count": 2, "minimum_agreeing_verifiers": 2, "signers": "DEDICATED_PUBLIC_DEVNET_VAULT_TRANSIT_OR_EQUIVALENT"},
+  "monitoring": {"required": true, "rate_limits_required": true},
+  "deployment_artifacts": {"compose_manifest": "deploy/operated/devnet/docker-compose.yml", "stack_values_template": "deploy/operated/devnet/stack.env.example", "oracle_attester_env_template": "deploy/operated/devnet/oracle-attester.env.example", "remote_signer_env_template": "deploy/operated/devnet/remote-signer.env.example", "resolver_registry_env_template": "deploy/operated/devnet/resolver-registry.env.example", "matching_keeper_env_template": "deploy/operated/devnet/matching-keeper.env.example"}
+}

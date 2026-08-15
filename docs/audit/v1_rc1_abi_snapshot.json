@@ -1,0 +1,24 @@
+{
+  "snapshot_version": 1,
+  "release_candidate": "Prophet v1.0.0-rc1",
+  "git_commit": "f9041e327ba384ce0c09fd6ed83263642cd5ae4d",
+  "program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
+  "toolchain": {"anchor": "1.0.1", "agave": "3.1.10", "rust": "1.89.0", "node": "20.19.6"},
+  "semantic_abi_baseline": {
+    "path": "docs/migration/anchor_0_30_protocol_snapshot.json",
+    "sha256": "81b381c9fc8061abab92ce85b58443296e546eee8f83ae5e6e436c28551d4ab4",
+    "contains": ["instruction discriminators", "instruction arguments", "account ordering", "PDA seeds", "account discriminators", "field order", "allocated sizes", "events", "errors"]
+  },
+  "resolution_contracts": {
+    "settlement_domain": "PROPHET_RESOLVE_V2",
+    "resolver_v2_spec": "docs/resolver_v2_spec.md",
+    "resolver_v2_vectors": "docs/resolver_v2_test_vectors.md",
+    "signed_oracle_spec": "docs/resolver_v2_signed_oracle_adapter.md"
+  },
+  "generated_artifacts": {
+    "idl_path": "target/idl/prophet.json",
+    "idl_sha256": "9b81e7572be1044b83a72a75ce79cedd497302c23770ae44ec3e0bef12d6edad",
+    "binary_path": "target/deploy/prophet.so",
+    "binary_sha256": "6b0856068a82f998edd8e4276ae1fcbe54043362ce7b8a6a4aea80e115325053"
+  }
+}
