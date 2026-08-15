@@ -107,9 +107,22 @@ class ZkTlsClaims:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class ZkTlsExpectedBinding:
+    """Trusted context supplied to a proof backend; it is not evidence data."""
+    resolver_id: str
+    definition_hash: str
+    source_domain: str
+    request_definition_hash: str
+    cluster_genesis_hash: str
+    proof_version: str
+    acquired_at_ms: str
+    evidence_payload_hash: str
+
+
 class ZkTlsProofVerifier(Protocol):
     """Implementation-neutral proof verifier contract for independent verifiers."""
-    def verify(self, proof: bytes, response: bytes) -> ZkTlsClaims: ...
+    def verify(self, *, proof_bytes: bytes, response_bytes: bytes, expected_binding: ZkTlsExpectedBinding) -> ZkTlsClaims: ...
 
 
 class ZkTlsAdapter:
@@ -119,6 +132,27 @@ class ZkTlsAdapter:
         self.verifier_descriptor = dict(_descriptor(verifier_descriptor, "adapter"))
         self.proof_verifier = proof_verifier
         self.clock_ms = clock_ms
+
+    @classmethod
+    def from_runtime(cls, *, runtime_config: Any, resolver_definition: Mapping[str, Any], verifier_descriptor: Mapping[str, Any], clock_ms: Optional[Callable[[], int]] = None) -> "ZkTlsAdapter":
+        """Construct a zkTLS adapter only from explicit, immutable runtime trust."""
+        from .zktls_runtime_backend import make_zktls_proof_verifier
+        configured = getattr(runtime_config, "zktls", None)
+        if configured is None or "zktls" not in getattr(runtime_config, "allowed_adapters", ()):
+            raise PipelineRejected("runtime_zktls_not_enabled")
+        try:
+            resolver_v2.validate_resolver_definition(resolver_definition)
+            if resolver_definition["resolver_type"] != "zktls":
+                raise PipelineRejected("runtime_zktls_resolver_context_invalid")
+            source = resolver_definition["source"]
+            cls._validate_source(source)
+            if source["proof_version"] not in configured.allowed_proof_versions:
+                raise PipelineRejected("runtime_zktls_proof_version_not_allowed")
+            adapter_digest = resolver_definition["adapter"]["implementation_digest"]
+        except (KeyError, resolver_v2.ResolverV2Error) as exc:
+            raise PipelineRejected("runtime_zktls_resolver_context_invalid") from exc
+        return cls(adapter_digest=adapter_digest, verifier_descriptor=verifier_descriptor,
+                   proof_verifier=make_zktls_proof_verifier(runtime_config), clock_ms=clock_ms)
 
     @staticmethod
     def _validate_source(source: Mapping[str, Any]) -> None:
@@ -187,7 +221,16 @@ class ZkTlsAdapter:
                 raise PipelineRejected("unsupported_proof_version")
             if _uint(acquired_at, "acquired_at_ms") + _uint(source["max_evidence_age_ms"], "max_evidence_age_ms") < _uint(now, "now_ms"):
                 raise PipelineRejected("stale_evidence")
-            claims = self.proof_verifier.verify(bytes.fromhex(raw["proof_hex"]), bytes.fromhex(raw["response_hex"]))
+            expected_binding = ZkTlsExpectedBinding(
+                resolver_id=definition["resolver_id"], definition_hash=definition_hash,
+                source_domain=source["source_domain"], request_definition_hash=source["request_definition_hash"],
+                cluster_genesis_hash=source["cluster_genesis_hash"], proof_version=source["proof_version"],
+                acquired_at_ms=acquired_at, evidence_payload_hash=_hash(bytes.fromhex(str(evidence["payload_hex"]))),
+            )
+            try:
+                claims = self.proof_verifier.verify(proof_bytes=bytes.fromhex(raw["proof_hex"]), response_bytes=bytes.fromhex(raw["response_hex"]), expected_binding=expected_binding)
+            except Exception as exc:
+                raise PipelineRejected("proof_verifier_error") from exc
             if not claims.valid:
                 raise PipelineRejected("invalid_proof")
             if (claims.proof_version != raw["proof_version"] or claims.source_domain != raw["source_domain"]
@@ -309,6 +352,26 @@ class SignedOracleAdapter:
         self.verifier_descriptor = dict(_descriptor(verifier_descriptor, "adapter"))
         self.keyring, self.replay_guard = keyring, replay_guard or SequenceReplayGuard()
         self.clock_ms = clock_ms
+
+    @classmethod
+    def from_runtime(cls, *, runtime_config: Any, registry: Any, resolver_definition: Mapping[str, Any], verifier_descriptor: Mapping[str, Any], message_version: str, replay_guard: Optional[SequenceReplayGuard] = None, clock_ms: Optional[Callable[[], int]] = None) -> "SignedOracleAdapter":
+        """Production-only trust wiring; it never accepts raw binding data."""
+        from .signed_oracle_runtime_keys import RegistryBackedOracleKeyring
+        signed = getattr(runtime_config, "signed_oracle", None)
+        if getattr(runtime_config, "mode", None) != "production" or signed is None or "signed-oracle" not in getattr(runtime_config, "allowed_adapters", ()):
+            raise PipelineRejected("runtime_signed_oracle_not_enabled")
+        if not message_version or message_version != SIGNED_ORACLE_VERSION:
+            raise PipelineRejected("runtime_signed_oracle_version_invalid")
+        try:
+            resolver_v2.validate_resolver_definition(resolver_definition)
+            resolver_id = resolver_definition["resolver_id"]
+            adapter_digest = resolver_definition["adapter"]["implementation_digest"]
+        except (KeyError, resolver_v2.ResolverV2Error) as exc:
+            raise PipelineRejected("runtime_resolver_context_invalid") from exc
+        if registry is None or resolver_definition.get("resolver_type") != "signed_oracle" or not resolver_id or not signed.key_bindings or registry.fingerprint() != signed.registry_fingerprint:
+            raise PipelineRejected("runtime_signed_oracle_trust_invalid")
+        keyring = RegistryBackedOracleKeyring(registry, signed.key_bindings, resolver_id=resolver_id, message_version=message_version)
+        return cls(adapter_digest=adapter_digest, verifier_descriptor=verifier_descriptor, keyring=keyring, replay_guard=replay_guard, clock_ms=clock_ms)
 
     @staticmethod
     def _validate_source(source: Mapping[str, Any]) -> None:

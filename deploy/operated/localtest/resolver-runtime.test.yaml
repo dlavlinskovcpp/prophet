@@ -1,0 +1,14 @@
+schema_version: 1
+environment: localtest
+mode: test
+solana: {cluster: localnet, genesis_hash: "localtest-genesis", prophet_program_id: "localtest-program"}
+resolver_v2: {schema_version: 2}
+verifier: {implementation_id: "prophet.verifier.test", version: "2.0.0"}
+allowed_adapters: [zktls, pyth, chainlink]
+zktls:
+  provider_id: "deterministic-test-provider"
+  verifier_backend: "deterministic-test"
+  allowed_proof_versions: ["1"]
+limits: {request_max_bytes: 1048576, request_timeout_seconds: 10}
+freshness: {default_max_evidence_age_seconds: 300, default_max_verification_age_seconds: 60}
+internal_auth: {token_env: PROPHET_VERIFIER_INTERNAL_TOKEN}

@@ -23,8 +23,8 @@ class DeterministicProofVerifier:
     def __init__(self, valid=True):
         self.valid = valid
 
-    def verify(self, proof, response):
-        return ZkTlsClaims(self.valid, "1", "api.example", H(30), H(31), __import__("hashlib").sha256(response).hexdigest(), "bad proof")
+    def verify(self, *, proof_bytes, response_bytes, expected_binding):
+        return ZkTlsClaims(self.valid, "1", "api.example", H(30), H(31), __import__("hashlib").sha256(response_bytes).hexdigest(), "bad proof")
 
 
 def _adapter(adapter_id, digest):
@@ -133,6 +133,16 @@ def test_signed_oracle_valid_signature_and_pipeline_to_legacy_message():
     before = build_legacy_settlement_message(program_id="11111111111111111111111111111111", market="11111111111111111111111111111111", notary_config="11111111111111111111111111111111", resolver_hash=bundle["resolver_definition_hash"], open_ts=0, resolve_ts=1, notary_config_version=1, outcome="YES", proof_hash=H(50), public_inputs_hash=H(51))
     after = build_legacy_settlement_message(program_id="11111111111111111111111111111111", market="11111111111111111111111111111111", notary_config="11111111111111111111111111111111", resolver_hash=bundle["resolver_definition_hash"], open_ts=0, resolve_ts=1, notary_config_version=1, outcome="YES", proof_hash=H(50), public_inputs_hash=H(51))
     assert before == after
+
+
+def test_legacy_oracle_keyring_direct_construction_remains_supported():
+    definition = _oracle_definition()
+    keypair = Keypair()
+    keyring = OracleKeyring([OracleKeyEpoch("old", str(keypair.pubkey()), "1.0.0", "0", "1000")])
+    adapter = SignedOracleAdapter(adapter_digest=H(4), verifier_descriptor=_adapter("prophet.verifier.signed-oracle", H(5)), keyring=keyring, clock_ms=lambda: 100)
+    payload = _oracle_payload(definition)
+    evidence = normalize_evidence(adapter.acquire(definition, SignedOracleMaterial(payload, bytes(keypair.sign_message(signed_oracle_message(payload))), "old", "1.0.0", "100")), definition_hash=resolver_v2.resolver_definition_hash(definition).hex(), collector={"implementation": "test"}, transport={"kind": "signed"}, provenance={"signature_scheme": "ed25519"})
+    assert adapter.verify(definition, evidence, _trust()).status == "VERIFIED"
 
 
 @pytest.mark.parametrize("case", ["invalid_signature", "wrong_key", "stale", "wrong_market", "wrong_resolver", "wrong_cluster", "wrong_schema", "replay"])

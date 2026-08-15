@@ -172,17 +172,36 @@ def _public_key_from_key_metadata(metadata: Mapping[str, Any], *, version: str =
     raise ValueError("Vault key metadata does not include a parseable public key.")
 
 
-def parse_vault_signature(raw_value: str) -> bytes:
+def parse_vault_signature_with_version(raw_value: str) -> Tuple[int, bytes]:
     value = str(raw_value or "").strip()
     if not value:
         raise ValueError("Vault signature payload is empty.")
 
+    version: Optional[int] = None
+    if value.startswith("vault:v"):
+        parts = value.split(":", 2)
+        if len(parts) != 3:
+            raise ValueError("Vault signature payload has an invalid prefix.")
+        raw_version = parts[1][1:]
+        if not raw_version.isdigit() or int(raw_version) <= 0:
+            raise ValueError("Vault signature payload has an invalid key version.")
+        version = int(raw_version)
+        value = parts[2]
+
+    if version is None:
+        raise ValueError("Vault signature payload omits key version.")
+    return version, parse_vault_signature(value)
+
+
+def parse_vault_signature(raw_value: str) -> bytes:
+    value = str(raw_value or "").strip()
+    if not value:
+        raise ValueError("Vault signature payload is empty.")
     if value.startswith("vault:v"):
         parts = value.split(":", 2)
         if len(parts) != 3:
             raise ValueError("Vault signature payload has an invalid prefix.")
         value = parts[2]
-
     signature = base64.b64decode(value, validate=True)
     if len(signature) != 64:
         raise ValueError(f"Vault signature length invalid: {len(signature)}")
@@ -457,17 +476,30 @@ class VaultTransitClient:
         return parse_vault_public_key(entry)
 
     def sign(self, key_name: str, message: bytes) -> bytes:
+        _, signature = self.sign_versioned(key_name, message, key_version=None)
+        return signature
+
+    def sign_versioned(self, key_name: str, message: bytes, *, key_version: Optional[int]) -> Tuple[int, bytes]:
+        body: Dict[str, Any] = {
+            "input": base64.b64encode(message).decode("ascii"),
+        }
+        if key_version is not None:
+            body["key_version"] = key_version
         data = self._request(
             "POST",
             f"sign/{key_name}",
-            json_body={
-                "input": base64.b64encode(message).decode("ascii"),
-            },
+            json_body=body,
         )
         signature = data.get("signature")
         if not isinstance(signature, str):
             raise VaultTransitError(f"Vault transit sign response missing signature for {key_name}")
-        return parse_vault_signature(signature)
+        try:
+            version, parsed = parse_vault_signature_with_version(signature)
+        except ValueError as exc:
+            raise VaultTransitError(f"Vault transit sign response has invalid signature for {key_name}") from exc
+        if key_version is not None and version != key_version:
+            raise VaultTransitError(f"Vault transit sign response key version mismatch for {key_name}")
+        return version, parsed
 
 
 def bootstrap_vault_transit_keys(

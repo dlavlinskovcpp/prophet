@@ -1,0 +1,10 @@
+overlap_ms: 0
+records:
+  - oracle_identity: test-oracle
+    resolver_ids: [test-resolver]
+    public_key: "11111111111111111111111111111111"
+    key_epoch: test-epoch-1
+    activation_time_ms: "0"
+    retirement_time_ms: null
+    allowed_message_versions: ["2.0.0"]
+    status: active
