@@ -471,3 +471,7 @@ jobs:
       - name: Run attester tests (exclude e2e)
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
+
+      - name: Run deterministic agent E2E demo
+        working-directory: apps/oracle-attester
+        run: poetry run pytest -q tests/test_agent_e2e_demo.py
