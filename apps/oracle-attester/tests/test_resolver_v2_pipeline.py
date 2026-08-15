@@ -188,6 +188,19 @@ def test_policy_rejects_stale_tampered_and_wrong_verifier():
     assert SignerPolicyEngine(_policy(_bundle())).evaluate(tampered, now_ms=120).reason.startswith("invalid_bundle:")
 
 
+def test_policy_requires_two_independent_agreeing_verifiers():
+    single = _bundle()
+    definition, evidence, trust = single["resolver_definition"], single["evidence"][0], single["trust_model"]
+    verifier_b = {"schema": "prophet.adapter-descriptor.v2", "schema_version": "2.0.0", "adapter_id": "prophet.verifier.independent-b", "adapter_version": "2.0.0", "implementation_digest": H(30)}
+    report_b = VerificationReport("YES", "VERIFIED", "high", [{"check_id": "proof", "status": "PASS", "expected_commitment": H(4), "observed_commitment": H(4), "detail_hash": H(5)}], verifier_b, {"price": "42"}, "110", "100", "1000")
+    result_b = verification_result_from_report(definition_hash=single["resolver_definition_hash"], evidence=evidence, report=report_b)
+    context = BundleContext(single["market"], single["cluster_genesis_hash"], single["settlement_program_id"], single["notary_config"], single["notary_config_version"], single["resolution_nonce"], single["observed_at_ms"], single["valid_until_ms"], single["signer_policy"])
+    multi = build_resolution_bundle(definition=definition, evidence=[evidence], verification_results=[single["verification_results"][0], result_b], trust_model=trust, verifier=single["verifier"], outcome="YES", context=context)
+    policy = replace(_policy(single), allowed_verifier_ids=("prophet.verifier.independent", "prophet.verifier.independent-b"), required_verifier_count=2, required_verifier_ids=("prophet.verifier.independent", "prophet.verifier.independent-b"), minimum_agreeing_verifiers=2)
+    assert SignerPolicyEngine(policy).evaluate(multi, now_ms=120).allowed
+    assert SignerPolicyEngine(policy).evaluate(single, now_ms=120).reason == "required_verifier_set_incomplete"
+
+
 def test_signer_gate_is_idempotent_rejects_equivocation_and_hides_raw_evidence(tmp_path):
     bundle = _bundle()
     backend = RecordingVaultCompatibleBackend()
@@ -208,3 +221,19 @@ def test_signer_gate_is_idempotent_rejects_equivocation_and_hides_raw_evidence(t
     conflicting = _bundle("NO")
     with pytest.raises(PipelineRejected, match="equivocation_conflicting_outcome"):
         gate.authorize(conflicting, now_ms=120, expected_bundle_hash=None, settlement_message=_message(conflicting))
+
+
+def test_signer_equivocation_is_rejected_before_backend_signing(tmp_path):
+    from src.resolver_v2_multi_verifier import EquivocationMonitor
+
+    bundle = _bundle()
+    backend = RecordingVaultCompatibleBackend()
+    monitor = EquivocationMonitor(str(tmp_path / "monitor.jsonl"))
+    signer = Keypair().pubkey()
+    domain = ":".join((bundle["market"], bundle["cluster_genesis_hash"], bundle["notary_config"], bundle["notary_config_version"], bundle["resolution_nonce"]))
+    assert not monitor.observe_signer(str(signer), domain=domain, outcome="NO", bundle_hash=H(99), resolver=bundle["resolver_definition_hash"], market=bundle["market"], timestamp_ms="110")
+    gate = ThresholdSigningGate(backend, SignerPolicyEngine(_policy(bundle)), EquivocationStore(str(tmp_path / "store.jsonl")), JsonlAuditLogger(str(tmp_path / "audit.jsonl"), "test"), equivocation_monitor=monitor)
+    auth = gate.authorize(bundle, now_ms=120, expected_bundle_hash=None, settlement_message=_message(bundle))
+    with pytest.raises(PipelineRejected, match="signer_equivocation_detected"):
+        gate.sign(auth, [signer])
+    assert backend.calls == []
