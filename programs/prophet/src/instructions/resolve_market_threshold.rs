@@ -5,7 +5,8 @@ use crate::{
     utils::resolution_message_v2,
     validation::{count_valid_notary_signatures, validate_stored_notary_config},
 };
-use anchor_lang::{prelude::*, solana_program::sysvar::instructions::ID as INSTRUCTIONS_ID};
+use anchor_lang::prelude::*;
+use anchor_lang::solana_program::sysvar::SysvarId;
 
 #[derive(Accounts)]
 pub struct ResolveMarketThreshold<'info> {
@@ -21,8 +22,8 @@ pub struct ResolveMarketThreshold<'info> {
     )]
     pub notary_config: Box<Account<'info, NotaryConfig>>,
     /// CHECK: Checked via address constraint.
-    #[account(address = INSTRUCTIONS_ID)]
-    pub instructions_sysvar: AccountInfo<'info>,
+    #[account(address = Instructions::id())]
+    pub instructions_sysvar: UncheckedAccount<'info>,
 }
 
 pub(crate) fn resolve_market_threshold(

@@ -48,10 +48,10 @@ pub struct MatchOrders<'info> {
     pub position_no: Box<Account<'info, Position>>,
     /// CHECK: Address checked via constraint.
     #[account(mut, address = order_yes.owner)]
-    pub owner_yes: AccountInfo<'info>,
+    pub owner_yes: UncheckedAccount<'info>,
     /// CHECK: Address checked via constraint.
     #[account(mut, address = order_no.owner)]
-    pub owner_no: AccountInfo<'info>,
+    pub owner_no: UncheckedAccount<'info>,
     #[account(
         constraint = market_quote_vault.key() == market.quote_vault,
         constraint = market_quote_vault.mint == market.quote_mint,

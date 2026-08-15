@@ -1,0 +1,71 @@
+{
+  "snapshot_version": 1,
+  "source": {
+    "git_commit": "544181ee04cd40d1fdf7fbfb837b6b306b04ca2b",
+    "anchor_version": "0.30.1",
+    "program_source_sha256": "505e9796765f8e6d3b753da7b122380932d9dd2f20e543b2797b44606717838c",
+    "note": "Captured from the committed Anchor 0.30.1 Rust definitions before migration. Discriminators are sha256(namespace:name)[0..8]."
+  },
+  "program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
+  "instructions": [
+    {"name":"initialize_notary_config","discriminator":[90,96,217,71,147,149,102,163],"args":[["threshold","u8"],["notary_keys","vec<pubkey>"]],"accounts":["notary_config","admin","system_program"]},
+    {"name":"update_notary_config","discriminator":[214,6,53,203,139,154,52,180],"args":[["threshold","u8"],["notary_keys","vec<pubkey>"]],"accounts":["notary_config","admin"]},
+    {"name":"initialize_market_v2","discriminator":[142,105,160,176,44,37,178,160],"args":[["resolver_hash","[u8;32]"],["open_ts","i64"],["lock_ts","i64"],["resolve_ts","i64"],["min_order_qty_atoms","u64"],["min_escrow_atoms","u64"],["max_open_orders_per_user","u16"],["max_open_orders_total","u32"]],"accounts":["market","authority","oracle_authority","quote_mint","quote_vault","notary_config","system_program","token_program","associated_token_program"]},
+    {"name":"transfer_market_authority","discriminator":[178,89,112,182,253,69,166,127],"args":[["new_authority","pubkey"]],"accounts":["market","authority"]},
+    {"name":"lock_market","discriminator":[107,8,184,91,223,13,180,38],"args":[],"accounts":["market","authority"]},
+    {"name":"unlock_market","discriminator":[1,224,202,93,151,186,248,13],"args":[],"accounts":["market","authority"]},
+    {"name":"sync_market_status","discriminator":[243,204,1,180,251,144,127,212],"args":[],"accounts":["market"]},
+    {"name":"update_market_schedule","discriminator":[170,5,83,106,175,251,56,8],"args":[["new_lock_ts","i64"],["new_resolve_ts","i64"]],"accounts":["market","authority"]},
+    {"name":"set_market_fee_config","discriminator":[200,35,206,213,180,161,177,249],"args":[["fee_recipient","pubkey"],["protocol_fee_bps","u16"]],"accounts":["market","authority"]},
+    {"name":"place_order","discriminator":[51,194,155,175,109,130,96,106],"args":[["order_seq","u64"],["side","OrderSide"],["limit_p_yes_e8","u32"],["qty_atoms","u64"]],"accounts":["market","order","position","owner","owner_quote_ata","quote_vault","token_program","system_program"]},
+    {"name":"match_orders","discriminator":[17,1,201,93,7,51,251,134],"args":[["max_qty_atoms","u64"]],"accounts":["market","order_yes","order_no","position_yes","position_no","owner_yes","owner_no","market_quote_vault"]},
+    {"name":"cancel_order","discriminator":[95,129,237,240,8,49,223,132],"args":[],"accounts":["market","order","position","owner"]},
+    {"name":"claim_refunds","discriminator":[231,9,121,194,28,156,38,226],"args":[["amount_atoms","u64"]],"accounts":["market","position","owner","quote_vault","owner_quote_ata","token_program"]},
+    {"name":"withdraw_protocol_fees","discriminator":[11,68,165,98,18,208,134,73],"args":[["amount_atoms","u64"]],"accounts":["market","authority","quote_vault","fee_recipient_quote_ata","token_program"]},
+    {"name":"resolve_market_threshold","discriminator":[253,92,116,123,135,3,93,104],"args":[["outcome","MarketOutcome"],["proof_hash","[u8;32]"],["public_inputs_hash","[u8;32]"]],"accounts":["market","notary_config","instructions_sysvar"]},
+    {"name":"redeem","discriminator":[184,12,86,149,70,196,97,225],"args":[],"accounts":["market","position","owner","quote_vault","owner_quote_ata","token_program"]},
+    {"name":"emergency_resolve_invalid","discriminator":[27,224,234,31,248,206,115,233],"args":[["proof_hash","[u8;32]"],["public_inputs_hash","[u8;32]"]],"accounts":["market","authority"]}
+  ],
+  "accounts": [
+    {"name":"Market","discriminator":[219,190,213,55,0,227,198,154],"allocated_data_bytes":384,"allocated_account_bytes":392,"fields":[["authority","pubkey"],["oracle_authority","pubkey"],["quote_mint","pubkey"],["quote_vault","pubkey"],["fee_recipient","pubkey"],["notary_config","pubkey"],["resolver_hash","[u8;32]"],["proof_hash","[u8;32]"],["public_inputs_hash","[u8;32]"],["open_ts","i64"],["lock_ts","i64"],["resolve_ts","i64"],["resolved_ts","i64"],["min_order_qty_atoms","u64"],["min_escrow_atoms","u64"],["accrued_protocol_fees_atoms","u64"],["next_order_seq","u64"],["open_orders_total","u32"],["max_open_orders_total","u32"],["max_open_orders_per_user","u16"],["protocol_fee_bps","u16"],["_reserved0","[u8;6]"],["quote_decimals","u8"],["status","MarketStatus"],["outcome","MarketOutcome"],["bump","u8"],["invalid_payout_remainder","u8"]]},
+    {"name":"NotaryConfig","discriminator":[136,88,25,215,88,26,229,132],"allocated_data_bytes":1072,"allocated_account_bytes":1080,"fields":[["admin","pubkey"],["threshold","u8"],["notary_count","u8"],["bump","u8"],["_reserved0","[u8;5]"],["version","u64"],["notary_keys","[pubkey;32]"]]},
+    {"name":"Order","discriminator":[134,173,223,185,77,86,28,51],"allocated_data_bytes":128,"allocated_account_bytes":136,"fields":[["market","pubkey"],["owner","pubkey"],["side","OrderSide"],["seq","u64"],["limit_p_yes_e8","u32"],["qty_remaining_atoms","u64"],["escrow_remaining_atoms","u64"],["fee_remaining_atoms","u64"],["created_ts","i64"],["taker_cost_basis_atoms","u64"],["protocol_fee_paid_atoms","u64"]]},
+    {"name":"Position","discriminator":[170,188,143,228,122,64,247,208],"allocated_data_bytes":128,"allocated_account_bytes":136,"fields":[["market","pubkey"],["owner","pubkey"],["yes_shares_atoms","u64"],["no_shares_atoms","u64"],["pending_refunds_atoms","u64"],["open_orders","u16"],["redeemed","bool"]]}
+  ],
+  "enums": {
+    "MarketStatus":["Open","Locked","Resolved"],
+    "MarketOutcome":["Undecided","Yes","No","Invalid"],
+    "OrderSide":["BuyYes","BuyNo"]
+  },
+  "events": [
+    {"name":"OrderPlaced","discriminator":[96,130,204,234,169,219,216,227],"fields":["market","order","owner","side","seq","limit_p_yes_e8","qty_atoms","escrow_atoms","fee_reserve_atoms"]},
+    {"name":"OrdersMatched","discriminator":[178,8,229,95,192,161,128,196],"fields":["market","order_yes","order_no","maker_order_seq","taker_side","p_exec_e8","qty_atoms","cost_yes_atoms","cost_no_atoms","refund_yes_atoms","refund_no_atoms","fee_refund_yes_atoms","fee_refund_no_atoms","protocol_fee_yes_atoms","protocol_fee_no_atoms"]},
+    {"name":"OrderCancelled","discriminator":[108,56,128,68,168,113,168,239],"fields":["market","order","owner","qty_remaining_atoms","refund_atoms","fee_refund_atoms"]},
+    {"name":"RefundClaimed","discriminator":[136,64,242,99,4,244,208,130],"fields":["market","owner","amount_atoms"]},
+    {"name":"MarketResolved","discriminator":[89,67,230,95,143,106,199,202],"fields":["market","outcome","resolved_ts","proof_hash","public_inputs_hash"]},
+    {"name":"MarketStatusChanged","discriminator":[53,72,160,209,15,222,46,157],"fields":["market","authority","old_status","new_status","effective_ts"]},
+    {"name":"MarketScheduleUpdated","discriminator":[224,109,141,224,48,41,157,52],"fields":["market","authority","old_lock_ts","new_lock_ts","old_resolve_ts","new_resolve_ts"]},
+    {"name":"MarketAuthorityTransferred","discriminator":[156,254,217,151,102,5,15,193],"fields":["market","old_authority","new_authority"]},
+    {"name":"MarketFeeConfigUpdated","discriminator":[98,117,2,220,217,225,177,158],"fields":["market","authority","old_fee_recipient","new_fee_recipient","old_protocol_fee_bps","new_protocol_fee_bps"]},
+    {"name":"ProtocolFeesWithdrawn","discriminator":[202,213,134,216,108,14,84,99],"fields":["market","authority","fee_recipient","amount_atoms","remaining_accrued_atoms"]},
+    {"name":"Redeemed","discriminator":[14,29,183,71,31,165,107,38],"fields":["market","owner","outcome","payout_atoms","yes_burned_atoms","no_burned_atoms"]}
+  ],
+  "errors": {
+    "first_code":6000,
+    "ordered_names":["MarketNotOpen","MarketNotOpenYet","MarketLocked","InvalidOrderSeq","OrderQtyTooSmall","EscrowTooSmall","UserOpenOrdersLimit","GlobalOpenOrdersLimit","InvalidProbability","NoCross","InvalidSide","InvalidMarket","MathOverflow","SelfMatchNotAllowed","InsufficientEscrow","ZeroMatchQty","NoRefunds","InvalidStage","InvalidOutcome","MarketNotResolved","MarketNotResolvableYet","UnauthorizedOracle","InvalidTimeRange","MissingEd25519Ix","InvalidEd25519Program","InvalidEd25519Data","Ed25519IxIndexesNotSelf","SignatureMismatch","MessageMismatch","MessageSizeMismatch","SignatureVerificationFailed","NotaryConfigNotSet","NotaryConfigMismatch","InvalidNotarySet","InvalidNotaryThreshold","DuplicateNotaryKey","NotEnoughNotarySigs","DuplicateNotarySig","NotaryNotAllowed","UnauthorizedAdmin","UnauthorizedMarketAuthority","MarketHasOpenOrders","CannotUnlockAfterLockTs","MarketNotLocked","InvalidNewAuthority","InvalidProtocolFeeBps","FeeConfigFrozen","NoProtocolFees","InvalidFeeRecipient","MatchQtyTooSmallForRounding","InvalidMarketConfig"]
+  },
+  "pda_seeds": {
+    "market":["utf8:market","resolver_hash","open_ts_le_i64"],
+    "notary_config":["utf8:notary_config","admin_pubkey"],
+    "order":["utf8:order","market_pubkey","owner_pubkey","order_seq_le_u64"],
+    "position":["utf8:position","market_pubkey","owner_pubkey"]
+  },
+  "idl": {
+    "format":"Anchor 0.30 semantic IDL snapshot",
+    "instructions_ref":"$.instructions",
+    "accounts_ref":"$.accounts",
+    "types_ref":"$.enums",
+    "events_ref":"$.events",
+    "errors_ref":"$.errors"
+  }
+}

@@ -56,7 +56,7 @@ pub(crate) fn claim_refunds(ctx: Context<ClaimRefunds>, amount_atoms: u64) -> Re
     ];
     token::transfer(
         CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            Token::id(),
             Transfer {
                 from: ctx.accounts.quote_vault.to_account_info(),
                 to: ctx.accounts.owner_quote_ata.to_account_info(),

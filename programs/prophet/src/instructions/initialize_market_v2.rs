@@ -23,7 +23,7 @@ pub struct InitializeMarketV2<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     /// CHECK: Legacy field; unused for threshold resolution.
-    pub oracle_authority: AccountInfo<'info>,
+    pub oracle_authority: UncheckedAccount<'info>,
     pub quote_mint: Box<Account<'info, token::Mint>>,
     #[account(
         init,
