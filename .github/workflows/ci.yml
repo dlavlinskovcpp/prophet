@@ -40,19 +40,22 @@ jobs:
 
   anchor-ts:
     name: Anchor TS Integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
       ANCHOR_WALLET: /home/runner/.config/solana/id.json
       ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
-      ANCHOR_CLI_VERSION: 0.32.1
+      ANCHOR_VERSION: 0.30.1
+      SOLANA_VERSION: 1.18.26
+      NODE_VERSION: 20.19.6
+      YARN_VERSION: 1.22.22
       CI_ENV_DIR: /tmp/prophet-release-envs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.85.0
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
@@ -60,9 +63,15 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.6"
           cache: yarn
           cache-dependency-path: yarn.lock
+
+      - name: Activate pinned Yarn
+        run: |
+          corepack enable
+          corepack prepare "yarn@${YARN_VERSION}" --activate
+          test "$(yarn --version)" = "${YARN_VERSION}"
 
       - name: Install JS dependencies
         run: yarn install --frozen-lockfile --non-interactive
@@ -74,11 +83,13 @@ jobs:
 
       - name: Install Solana CLI
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
           solana-test-validator --version
+          test "$(solana --version | awk '{print $2}')" = "${SOLANA_VERSION}"
+          test "$(solana-test-validator --version | awk '{print $2}')" = "${SOLANA_VERSION}"
         
       - name: Verify SBF Toolchain
         run: |
@@ -87,24 +98,31 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
-            aarch64|arm64) TARGET="aarch64-unknown-linux-gnu" ;;
-            *)
-              echo "Unsupported runner architecture: $ARCH"
-              exit 1
-              ;;
-          esac
-
-          mkdir -p "$HOME/.local/bin"
-          URL="https://github.com/coral-xyz/anchor/releases/download/v${ANCHOR_CLI_VERSION}/anchor-${ANCHOR_CLI_VERSION}-${TARGET}"
-          echo "Downloading Anchor CLI from: $URL"
-          curl -fsSL "$URL" -o "$HOME/.local/bin/anchor"
-          chmod +x "$HOME/.local/bin/anchor"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
+          rustup toolchain install 1.79.0 --profile minimal
+          cargo +1.79.0 install \
+            --git https://github.com/coral-xyz/anchor \
+            --tag "v${ANCHOR_VERSION}" \
+            anchor-cli \
+            --locked \
+            --force
           anchor --version
+          test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
+
+      - name: Verify pinned toolchain
+        run: |
+          anchor --version
+          solana --version
+          solana-test-validator --version
+          rustc --version
+          node --version
+          yarn --version
+          test "$(rustc --version | awk '{print $2}')" = "1.85.0"
+          test "$(node --version)" = "v${NODE_VERSION}"
+
+      - name: Clean build artifacts
+        run: |
+          cargo clean
+          rm -rf target .anchor/test-ledger
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -144,6 +162,18 @@ jobs:
           fi
           anchor keys sync -p prophet
           anchor keys list
+
+      - name: Build Anchor program
+        run: |
+          LOCKFILE_BACKUP="${RUNNER_TEMP}/prophet-Cargo.lock"
+          cp Cargo.lock "${LOCKFILE_BACKUP}"
+          trap 'cp "${LOCKFILE_BACKUP}" Cargo.lock' EXIT
+
+          # Solana 1.18's bundled Cargo predates lockfile format 4. The formats
+          # are compatible for this lockfile; only the version marker differs.
+          sed -i 's/^version = 4$/version = 3/' Cargo.lock
+          test "$(sed -n '3p' Cargo.lock)" = "version = 3"
+          anchor build
 
       - name: Run Anchor Tests
         run: |
@@ -200,7 +230,7 @@ jobs:
             sleep 1
           done
 
-          if ! anchor test --skip-lint --skip-local-validator; then
+          if ! anchor test --skip-build --skip-lint --skip-local-validator; then
             echo "Anchor tests failed; validator log follows:"
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
