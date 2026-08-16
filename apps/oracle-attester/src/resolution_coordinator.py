@@ -8,6 +8,7 @@ from .resolution_coordinator_store import (
     CoordinatorRejected,
     ResolutionCoordinatorStore,
     ResolutionJob,
+    SettlementMessageContext,
 )
 from .verifier_service_client import VerifierClientError, VerifierServiceClient
 
@@ -44,6 +45,7 @@ class ResolutionCoordinator:
         evidence: Mapping[str, Any],
         trust_model: Mapping[str, Any],
         correlation_id: Optional[str] = None,
+        settlement_context: SettlementMessageContext | None = None,
     ) -> ResolutionJob:
         """Persist only missing verifier results; terminal jobs produce no network calls."""
         try:
@@ -54,6 +56,11 @@ class ResolutionCoordinator:
             )
         except CoordinatorRejected as exc:
             raise ResolutionCoordinatorPersistenceFailure("resolution_job_registration_failed") from exc
+        if settlement_context is not None:
+            try:
+                self.state.bind_settlement_context(job.job_id, settlement_context)
+            except CoordinatorRejected as exc:
+                raise ResolutionCoordinatorPersistenceFailure("settlement_context_binding_failed") from exc
         if job.state in {"AGREED", "CONFLICT"}:
             return job
 

@@ -56,7 +56,7 @@ def _job(store, definition, evidence):
 
 def test_database_initializes_and_records_schema_version(tmp_path):
     store, *_ = _fixture(tmp_path / "coordinator.sqlite")
-    assert store.schema_version() == 1
+    assert store.schema_version() == 2
     assert (tmp_path / "coordinator.sqlite").exists()
     store.close()
 
