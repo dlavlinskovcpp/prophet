@@ -5,6 +5,7 @@ import types
 from fastapi.testclient import TestClient
 
 from src.config import settings
+from src.proof_fetcher import LocalFileProofFetcher
 from src.types import ResolveResponse
 
 
@@ -12,6 +13,35 @@ class _DummyService:
     async def resolve_market(self, _req):
         return ResolveResponse(
             signature="sig-123",
+            proof_hash_hex="aa",
+            public_inputs_hash_hex="bb",
+            resolved_ts=1,
+        )
+
+
+class _CountingVerifier:
+    def __init__(self):
+        self.calls = 0
+
+    def verify(self, **_kwargs):
+        self.calls += 1
+        return object()
+
+
+class _ProofRefService:
+    def __init__(self, fetcher, verifier):
+        self.fetcher = fetcher
+        self.verifier = verifier
+
+    async def resolve_market(self, req):
+        fetched = self.fetcher.fetch(req.proof_ref or "")
+        self.verifier.verify(
+            resolver=None,
+            proof_bytes=fetched.proof_bytes,
+            public_inputs_bytes=fetched.public_inputs_bytes,
+        )
+        return ResolveResponse(
+            signature="should-not-resolve",
             proof_hash_hex="aa",
             public_inputs_hash_hex="bb",
             resolved_ts=1,
@@ -43,6 +73,7 @@ def _set_valid_runtime_defaults(monkeypatch):
     monkeypatch.setattr(settings, "REMOTE_SIGNER_REQUIRE_TLS", True)
     monkeypatch.setattr(settings, "MAX_REQUEST_BYTES", 1_000_000)
     monkeypatch.setattr(settings, "RATE_LIMIT_MAX_REQUESTS", 30)
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "http")
     monkeypatch.setattr(settings, "RATE_LIMIT_WINDOW_S", 60)
 
 
@@ -109,3 +140,37 @@ def test_metrics_endpoint_exposes_counters(monkeypatch):
     assert "prophet_attester_http_requests_total" in body
     assert 'path="/health"' in body
     assert "prophet_attester_resolve_total" in body
+
+
+def test_resolve_cannot_read_external_file_via_proof_ref(tmp_path, monkeypatch):
+    proof_store = tmp_path / "proof-store"
+    proof_store.mkdir()
+    (proof_store / "pi.bin").write_bytes(b"pi")
+    outside = tmp_path / "test-only-secret"
+    outside.write_bytes(b"TEST_ONLY_SECRET_BYTES")
+
+    verifier = _CountingVerifier()
+    service = _ProofRefService(LocalFileProofFetcher(proof_store), verifier)
+
+    _set_valid_runtime_defaults(monkeypatch)
+    monkeypatch.setattr(settings, "REQUIRE_API_AUTH", True)
+    monkeypatch.setattr(settings, "API_AUTH_TOKEN", "secret")
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    monkeypatch.setattr(settings, "METRICS_ENABLED", True)
+
+    main_mod = _load_main(monkeypatch, service)
+    client = TestClient(main_mod.app)
+    response = client.post(
+        "/resolve",
+        headers={"Authorization": "Bearer secret"},
+        json={
+            "market": "market-x",
+            "outcome": "YES",
+            "proof_ref": f"file:{outside}:pi.bin",
+        },
+    )
+
+    assert response.status_code == 409
+    assert verifier.calls == 0
+    assert str(outside) not in response.text
+    assert "TEST_ONLY_SECRET_BYTES" not in response.text

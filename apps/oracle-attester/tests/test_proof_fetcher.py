@@ -13,8 +13,8 @@ def test_local_file_fetcher(tmp_path):
     pi_file = tmp_path / "pi.bin"
     pi_file.write_bytes(b"pidata")
     
-    fetcher = LocalFileProofFetcher()
-    ref = f"file:{p_file}:{pi_file}"
+    fetcher = LocalFileProofFetcher(tmp_path)
+    ref = "file:proof.bin:pi.bin"
     
     res = fetcher.fetch(ref)
     
