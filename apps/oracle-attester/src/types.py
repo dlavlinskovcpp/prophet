@@ -14,7 +14,11 @@ class ResolveRequest(BaseModel):
     public_inputs_bytes_b64: Optional[str] = Field(default="", description="Base64 encoded public inputs bytes")
     proof_ref: Optional[str] = Field(
         default="",
-        description="Optional proof reference for proof fetcher (e.g. file:<proof_path>:<pi_path> or provider ref)",
+        description=(
+            "Optional proof reference. Local mode accepts "
+            "file:<proof-relative-path>:<public-inputs-relative-path> under PROOF_STORE_DIR; "
+            "HTTP mode accepts a provider reference."
+        ),
     )
 
 class ResolveResponse(BaseModel):

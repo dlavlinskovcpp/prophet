@@ -11,6 +11,7 @@ from solders.pubkey import Pubkey
 from src.attester import AttesterService
 from src.audit import JsonlAuditLogger
 from src.config import settings
+from src.proof_fetcher import LocalFileProofFetcher
 from src.resolver import compute_resolver_hash
 from src.resolver_registry import make_resolver_registry
 from src.types import OutcomeEnum, ResolveRequest
@@ -20,6 +21,15 @@ from src.zktls_verifier import ZkTlsVerifyResult
 class _FakeVerifier:
     def verify(self, *, resolver, proof_bytes: bytes, public_inputs_bytes: bytes) -> ZkTlsVerifyResult:
         return ZkTlsVerifyResult(ok=True, provider="mock", meta={"resolver_url": resolver.url})
+
+
+class _CountingVerifier:
+    def __init__(self):
+        self.calls = 0
+
+    def verify(self, *, resolver, proof_bytes: bytes, public_inputs_bytes: bytes):
+        self.calls += 1
+        return ZkTlsVerifyResult(ok=True, provider="mock")
 
 
 class _FakeRemoteSigner:
@@ -327,3 +337,61 @@ async def test_attester_resolves_threshold_market_invalid_outcome_via_remote_sig
     audit_lines = audit_log.read_text(encoding="utf-8").strip().splitlines()
     assert any('"event":"resolve_verified"' in line for line in audit_lines)
     assert any('"event":"resolve_submitted"' in line for line in audit_lines)
+
+
+@pytest.mark.asyncio
+async def test_proof_fetch_failure_happens_before_verifier_invocation(tmp_path, monkeypatch):
+    resolver_store = tmp_path / "resolver-store"
+    proof_store = tmp_path / "proof-store"
+    resolver_store.mkdir()
+    proof_store.mkdir()
+    audit_log = tmp_path / "audit" / "attester.jsonl"
+
+    monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(resolver_store))
+    monkeypatch.setattr(settings, "RESOLVER_REGISTRY_MODE", "directory")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(proof_store))
+    monkeypatch.setattr(settings, "ATTESTER_AUDIT_LOG_PATH", str(audit_log))
+    monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
+
+    outside = tmp_path / "test-only-secret"
+    outside.write_bytes(b"TEST_ONLY_SECRET_BYTES")
+    (proof_store / "pi.json").write_bytes(b'{"data":{"answer":42}}')
+
+    program_id = Pubkey.new_unique()
+    market = Pubkey.new_unique()
+    notary_config = Pubkey.new_unique()
+    payer = Keypair()
+    notary = Keypair()
+    fake_client = _FakeSolanaClient(
+        program_id=program_id,
+        market=market,
+        notary_config=notary_config,
+        resolver_hash=bytes(32),
+        open_ts=1_700_000_000,
+        resolve_ts=1_700_000_120,
+        version=7,
+        threshold=1,
+        notary_keys=[notary.pubkey()],
+        payer=payer,
+    )
+    verifier = _CountingVerifier()
+    svc = _make_service(
+        client=fake_client,
+        verifier=verifier,
+        remote_signer=_FakeRemoteSigner(),
+        audit_log_path=audit_log,
+    )
+    svc.fetcher = LocalFileProofFetcher(proof_store)
+
+    req = ResolveRequest(
+        market=str(market),
+        outcome=OutcomeEnum.YES,
+        proof_ref=f"file:{outside}:pi.json",
+    )
+
+    with pytest.raises(ValueError, match="Failed to fetch proof_ref"):
+        await svc.resolve_market(req)
+
+    assert verifier.calls == 0
+    assert fake_client.submitted_ixs == []
+    assert outside.read_bytes() == b"TEST_ONLY_SECRET_BYTES"

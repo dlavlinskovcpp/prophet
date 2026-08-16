@@ -24,6 +24,10 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 ## Attester / zkTLS
 - `REQUIRE_ZKTLS=1`; verify endpoint reachable and authenticated if required
 - attester API auth token configured; rate limits set appropriately
+- when `PROOF_FETCH_MODE=local`, `PROOF_STORE_DIR` is explicitly configured, already exists, resolves to a directory, and is not `/`
+- local `file:` proof refs contain only relative paths under `PROOF_STORE_DIR`; arbitrary absolute paths, traversal/empty components, and symlink escapes are rejected
+- local proof and public-input targets must be regular files; local reads are descriptor-bounded and do not follow symlink path components where the platform supports no-follow opens
+- local reads are bounded by `PROOF_MAX_BYTES` (default 2,000,000 bytes) and `PUBLIC_INPUTS_MAX_BYTES` (default 256,000 bytes), with both pre-read size checks and a hard post-read cap
 - proof store retention policy defined; audit log path writable and rotated
 
 ## Remote Signer

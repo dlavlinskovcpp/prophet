@@ -1,5 +1,6 @@
 import pytest
 from src.config import settings
+from src.proof_fetcher import LocalFileProofFetcher, ProofFetchConfigurationError, make_fetcher
 
 
 def test_validate_zktls_runtime_requires_url(monkeypatch):
@@ -60,6 +61,78 @@ def test_validate_resolver_registry_runtime_http_requires_url(monkeypatch):
 
     with pytest.raises(ValueError):
         settings.validate_resolver_registry_runtime()
+
+
+def test_validate_proof_fetch_runtime_requires_store_root_in_production(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", "")
+    monkeypatch.setattr(settings, "PROOF_MAX_BYTES", 2_000_000)
+    monkeypatch.setattr(settings, "PUBLIC_INPUTS_MAX_BYTES", 256_000)
+
+    with pytest.raises(ValueError, match="PROOF_STORE_DIR is required"):
+        settings.validate_proof_fetch_runtime()
+
+
+def test_validate_proof_fetch_runtime_rejects_unresolved_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(tmp_path / "missing"))
+
+    with pytest.raises(ValueError, match="must resolve"):
+        settings.validate_proof_fetch_runtime()
+
+
+def test_validate_proof_fetch_runtime_rejects_invalid_root(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", "\x00")
+
+    with pytest.raises(ValueError, match="must resolve"):
+        settings.validate_proof_fetch_runtime()
+
+
+def test_validate_proof_fetch_runtime_rejects_non_directory(tmp_path, monkeypatch):
+    root_file = tmp_path / "not-a-directory"
+    root_file.write_text("test", encoding="utf-8")
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(root_file))
+
+    with pytest.raises(ValueError, match="must be a directory"):
+        settings.validate_proof_fetch_runtime()
+
+
+def test_validate_proof_fetch_runtime_rejects_filesystem_root(monkeypatch):
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", "/")
+
+    with pytest.raises(ValueError, match="filesystem root"):
+        settings.validate_proof_fetch_runtime()
+
+
+def test_validate_proof_fetch_runtime_accepts_existing_directory(tmp_path, monkeypatch):
+    root = tmp_path / "proof-store"
+    root.mkdir()
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", str(root))
+    monkeypatch.setattr(settings, "PROOF_MAX_BYTES", 2_000_000)
+    monkeypatch.setattr(settings, "PUBLIC_INPUTS_MAX_BYTES", 256_000)
+
+    settings.validate_proof_fetch_runtime()
+    fetcher = make_fetcher()
+    assert isinstance(fetcher, LocalFileProofFetcher)
+    assert fetcher.root == root.resolve()
+
+
+def test_make_fetcher_cannot_instantiate_unrestricted_local_mode(monkeypatch):
+    monkeypatch.setattr(settings, "PROOF_FETCH_MODE", "local")
+    monkeypatch.setattr(settings, "PROOF_STORE_DIR", "")
+
+    with pytest.raises(ProofFetchConfigurationError):
+        make_fetcher()
 
 
 def test_validate_remote_signer_service_runtime_rejects_local_keypairs_in_production(monkeypatch):

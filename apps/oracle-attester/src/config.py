@@ -1,6 +1,7 @@
 #apps/oracle-attester/src/config.py
 import os
 import json
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
 from solders.keypair import Keypair
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     ORACLE_KEYPAIR_PATH: str = os.getenv("ORACLE_KEYPAIR_PATH", "./id.json")
     PROPHET_PROGRAM_ID: str = os.getenv("PROPHET_PROGRAM_ID", "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A")
     RELAYER_KEYPAIR_PATH: str = os.getenv("RELAYER_KEYPAIR_PATH", "")
-    PROOF_STORE_DIR: str = os.getenv("PROOF_STORE_DIR", "./proof_store")
+    PROOF_STORE_DIR: str = os.getenv("PROOF_STORE_DIR", "")
     RESOLVER_STORE_DIR: str = os.getenv("RESOLVER_STORE_DIR", "./resolver_store")
     RESOLVER_REGISTRY_MODE: str = os.getenv("RESOLVER_REGISTRY_MODE", "directory")
     RESOLVER_REGISTRY_URL: str = os.getenv("RESOLVER_REGISTRY_URL", "")
@@ -66,6 +67,8 @@ class Settings(BaseSettings):
     PROOF_FETCH_MODE: str = os.getenv("PROOF_FETCH_MODE", "local")  # "local" or "http"
     PROOF_FETCH_URL: str = os.getenv("PROOF_FETCH_URL", "")
     PROOF_FETCH_API_KEY: str = os.getenv("PROOF_FETCH_API_KEY", "")
+    PROOF_MAX_BYTES: int = _env_int("PROOF_MAX_BYTES", 2_000_000)
+    PUBLIC_INPUTS_MAX_BYTES: int = _env_int("PUBLIC_INPUTS_MAX_BYTES", 256_000)
 
     # Notary signer mode
     NOTARY_SIGNER_MODE: str = os.getenv("NOTARY_SIGNER_MODE", "remote")  # "remote" or "local"
@@ -324,6 +327,44 @@ class Settings(BaseSettings):
         if self.RESOLVER_REGISTRY_MAX_REQUEST_BYTES <= 0:
             raise ValueError("RESOLVER_REGISTRY_MAX_REQUEST_BYTES must be > 0.")
 
+    def validate_proof_fetch_runtime(self) -> None:
+        mode = (self.PROOF_FETCH_MODE or "").strip().lower()
+        if mode not in {"local", "http"}:
+            raise ValueError(
+                f"Unsupported PROOF_FETCH_MODE '{self.PROOF_FETCH_MODE}'. Supported: local, http."
+            )
+        if self.PROOF_MAX_BYTES <= 0:
+            raise ValueError("PROOF_MAX_BYTES must be > 0.")
+        if self.PUBLIC_INPUTS_MAX_BYTES <= 0:
+            raise ValueError("PUBLIC_INPUTS_MAX_BYTES must be > 0.")
+
+        if mode != "local":
+            return
+
+        raw_root = (self.PROOF_STORE_DIR or "").strip()
+        if not raw_root:
+            raise ValueError(
+                "PROOF_STORE_DIR is required when PROOF_FETCH_MODE=local."
+            )
+
+        try:
+            resolved_root = Path(raw_root).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            raise ValueError(
+                "PROOF_STORE_DIR must resolve to an existing directory when "
+                "PROOF_FETCH_MODE=local."
+            ) from None
+
+        if not resolved_root.is_dir():
+            raise ValueError(
+                "PROOF_STORE_DIR must be a directory when PROOF_FETCH_MODE=local."
+            )
+        if resolved_root == Path(resolved_root.anchor):
+            raise ValueError(
+                "PROOF_STORE_DIR may not be the filesystem root when "
+                "PROOF_FETCH_MODE=local."
+            )
+
     def validate_api_runtime(self) -> None:
         if self.REQUIRE_API_AUTH and not self.API_AUTH_TOKEN:
             raise ValueError("API_AUTH_TOKEN is required when REQUIRE_API_AUTH=1.")
@@ -338,6 +379,7 @@ class Settings(BaseSettings):
         self.validate_zktls_runtime()
         self.validate_signer_runtime()
         self.validate_resolver_registry_runtime()
+        self.validate_proof_fetch_runtime()
         self.validate_api_runtime()
 
     @property
