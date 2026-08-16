@@ -365,8 +365,9 @@ def test_coordinator_v1_schema_migrates_without_retroactively_binding_terminal_h
     store, job, *_ = _state(path, terminal="AGREED", bind_context=False)
     store.close()
     db = sqlite3.connect(path)
+    db.execute("DROP TABLE resolution_job_solana_bindings")
     db.execute("DROP TABLE resolution_job_settlement_contexts")
-    db.execute("DELETE FROM schema_migrations WHERE version = 2")
+    db.execute("DELETE FROM schema_migrations WHERE version IN (2, 3)")
     db.execute("PRAGMA user_version = 1")
     db.commit(); db.close()
 
@@ -376,7 +377,7 @@ def test_coordinator_v1_schema_migrates_without_retroactively_binding_terminal_h
     reopened = ResolutionCoordinatorStore(
         path, verifier_a=VerifierBinding("A", a["verifier"]), verifier_b=VerifierBinding("B", b["verifier"])
     )
-    assert reopened.schema_version() == 2
+    assert reopened.schema_version() == 3
     assert reopened.get_job(job.job_id).state == AGREED
     with pytest.raises(CoordinatorRejected, match="settlement_context_binding_too_late"):
         reopened.bind_settlement_context(job.job_id, _context())

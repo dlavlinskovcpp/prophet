@@ -16,6 +16,7 @@ from threading import Lock
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from solders.hash import Hash
 from solders.pubkey import Pubkey
 
 from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
@@ -27,7 +28,7 @@ except ModuleNotFoundError:
     from .resolver_v2_pipeline import resolver_v2
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 PENDING = "PENDING"
 A_RECORDED = "A_RECORDED"
 B_RECORDED = "B_RECORDED"
@@ -96,6 +97,33 @@ class SettlementMessageContext:
             raise CoordinatorRejected("settlement_timestamp_out_of_range")
         if not 0 <= self.notary_config_version < (1 << 64):
             raise CoordinatorRejected("settlement_notary_config_version_invalid")
+
+
+@dataclass(frozen=True)
+class SettlementRuntimeBinding:
+    """Immutable Solana runtime identity associated with one settlement job.
+
+    This is operational replay protection only. It is deliberately not appended
+    to PROPHET_RESOLVE_V2 and therefore does not change the protocol wire format.
+    """
+
+    cluster: str
+    genesis_hash: str
+    program_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.cluster, str) or not self.cluster.strip():
+            raise CoordinatorRejected("settlement_runtime_cluster_invalid")
+        try:
+            if str(Hash.from_string(self.genesis_hash)) != self.genesis_hash:
+                raise ValueError
+        except Exception as exc:
+            raise CoordinatorRejected("settlement_runtime_genesis_hash_invalid") from exc
+        try:
+            if str(Pubkey.from_string(self.program_id)) != self.program_id:
+                raise ValueError
+        except Exception as exc:
+            raise CoordinatorRejected("settlement_runtime_program_id_invalid") from exc
 
 
 @dataclass(frozen=True)
@@ -218,9 +246,19 @@ class ResolutionCoordinatorStore:
                             created_at_ms TEXT NOT NULL
                         )"""
                     )
+                    self._db.execute(
+                        """CREATE TABLE resolution_job_solana_bindings (
+                            job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
+                            cluster TEXT NOT NULL,
+                            genesis_hash TEXT NOT NULL,
+                            program_id TEXT NOT NULL,
+                            created_at_ms TEXT NOT NULL
+                        )"""
+                    )
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (1, timestamp))
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
-                    self._db.execute("PRAGMA user_version = 2")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
+                    self._db.execute("PRAGMA user_version = 3")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
@@ -243,8 +281,38 @@ class ResolutionCoordinatorStore:
                             created_at_ms TEXT NOT NULL
                         )"""
                     )
+                    self._db.execute(
+                        """CREATE TABLE resolution_job_solana_bindings (
+                            job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
+                            cluster TEXT NOT NULL,
+                            genesis_hash TEXT NOT NULL,
+                            program_id TEXT NOT NULL,
+                            created_at_ms TEXT NOT NULL
+                        )"""
+                    )
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
-                    self._db.execute("PRAGMA user_version = 2")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
+                    self._db.execute("PRAGMA user_version = 3")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
+                return
+            if current == 2:
+                timestamp = _now_ms()
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    self._db.execute(
+                        """CREATE TABLE resolution_job_solana_bindings (
+                            job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
+                            cluster TEXT NOT NULL,
+                            genesis_hash TEXT NOT NULL,
+                            program_id TEXT NOT NULL,
+                            created_at_ms TEXT NOT NULL
+                        )"""
+                    )
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
+                    self._db.execute("PRAGMA user_version = 3")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
@@ -320,6 +388,11 @@ class ResolutionCoordinatorStore:
                     return existing
                 if job["state"] != PENDING or job["verifier_a_result_json"] is not None or job["verifier_b_result_json"] is not None:
                     raise CoordinatorRejected("settlement_context_binding_too_late")
+                runtime = self._db.execute(
+                    "SELECT * FROM resolution_job_solana_bindings WHERE job_id = ?", (job_id,)
+                ).fetchone()
+                if runtime is not None and runtime["program_id"] != context.program_id:
+                    raise CoordinatorRejected("settlement_runtime_program_mismatch")
                 self._db.execute(
                     """INSERT INTO resolution_job_settlement_contexts(
                         job_id, program_id, notary_config, open_ts, resolve_ts,
@@ -350,6 +423,67 @@ class ResolutionCoordinatorStore:
             open_ts=int(row["open_ts"]), resolve_ts=int(row["resolve_ts"]),
             notary_config_version=int(row["notary_config_version"]),
             proof_hash=row["proof_hash"], public_inputs_hash=row["public_inputs_hash"],
+        )
+
+    def bind_settlement_runtime(
+        self, job_id: str, binding: SettlementRuntimeBinding
+    ) -> SettlementRuntimeBinding:
+        """Durably bind cluster/genesis/program before verifier progress.
+
+        The binding is audit/runtime identity only and never changes canonical
+        settlement bytes. Exact rebinding is idempotent; mutation is rejected.
+        """
+        if not isinstance(binding, SettlementRuntimeBinding):
+            raise CoordinatorRejected("settlement_runtime_binding_invalid")
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self._db.execute("SELECT * FROM resolution_jobs WHERE job_id = ?", (job_id,)).fetchone()
+                if job is None:
+                    raise CoordinatorRejected("resolution_job_not_found")
+                row = self._db.execute(
+                    "SELECT * FROM resolution_job_solana_bindings WHERE job_id = ?", (job_id,)
+                ).fetchone()
+                if row is not None:
+                    existing = self._row_to_settlement_runtime(row)
+                    if existing != binding:
+                        raise CoordinatorRejected("settlement_runtime_binding_immutable")
+                    self._db.execute("COMMIT")
+                    return existing
+                if job["state"] != PENDING or job["verifier_a_result_json"] is not None or job["verifier_b_result_json"] is not None:
+                    raise CoordinatorRejected("settlement_runtime_binding_too_late")
+                context = self._db.execute(
+                    "SELECT * FROM resolution_job_settlement_contexts WHERE job_id = ?", (job_id,)
+                ).fetchone()
+                if context is not None and context["program_id"] != binding.program_id:
+                    raise CoordinatorRejected("settlement_runtime_program_mismatch")
+                self._db.execute(
+                    """INSERT INTO resolution_job_solana_bindings(
+                        job_id, cluster, genesis_hash, program_id, created_at_ms
+                    ) VALUES (?, ?, ?, ?, ?)""",
+                    (job_id, binding.cluster, binding.genesis_hash, binding.program_id, _now_ms()),
+                )
+                self._db.execute("COMMIT")
+                return binding
+            except Exception:
+                if self._db.in_transaction:
+                    self._db.execute("ROLLBACK")
+                raise
+
+    def get_settlement_runtime(self, job_id: str) -> SettlementRuntimeBinding:
+        if self._db.execute("SELECT 1 FROM resolution_jobs WHERE job_id = ?", (job_id,)).fetchone() is None:
+            raise CoordinatorRejected("resolution_job_not_found")
+        row = self._db.execute(
+            "SELECT * FROM resolution_job_solana_bindings WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        if row is None:
+            raise CoordinatorRejected("settlement_runtime_binding_not_found")
+        return self._row_to_settlement_runtime(row)
+
+    @staticmethod
+    def _row_to_settlement_runtime(row: sqlite3.Row) -> SettlementRuntimeBinding:
+        return SettlementRuntimeBinding(
+            cluster=row["cluster"], genesis_hash=row["genesis_hash"], program_id=row["program_id"]
         )
 
     def record_result(self, *, job_id: str, slot: str, result: Mapping[str, Any]) -> ResolutionJob:

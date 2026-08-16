@@ -238,6 +238,26 @@ class SigningJournal:
     def get_for_coordinator_job(self, coordinator_job_id: str) -> SigningJournalIntent:
         return self.get(self.get_coordinator_link(coordinator_job_id).signing_scope_id)
 
+    def validate_completed_intent(self, signing_scope_id: str) -> SigningJournalIntent:
+        """Return one cryptographically revalidated durable 2/2 intent read-only.
+
+        This deliberately performs no state transition. It reuses the journal's
+        existing slot binding, digest, key-version, and Ed25519 validation logic.
+        """
+        row = self._db.execute(
+            "SELECT * FROM signing_intents WHERE signing_scope_id = ?", (signing_scope_id,)
+        ).fetchone()
+        if row is None:
+            raise SigningJournalStateError("signing_intent_not_found")
+        if row["state"] != BOTH_SIGNED:
+            raise SigningJournalStateError("completed_2of2_signing_intent_required")
+        signed_a, signed_b = self._signature(row, "A"), self._signature(row, "B")
+        if signed_a is None or signed_b is None:
+            raise SigningJournalStateError("completed_2of2_signature_bundle_missing")
+        self._validate_signature_for_slot(row, "A", signed_a)
+        self._validate_signature_for_slot(row, "B", signed_b)
+        return self._row(row)
+
     def inspect_recovery(self, signing_scope_id: str) -> SigningRecoveryStatus:
         """Classify one durable record without changing state or calling Vault."""
         return self._recovery_status(self.get(signing_scope_id))

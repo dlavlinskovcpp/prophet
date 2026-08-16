@@ -58,6 +58,34 @@ class AgreedSettlementSigningResult:
     signature_bundle: ThresholdSignatureBundle
 
 
+def canonical_message_for_agreed_job(
+    coordinator_state: ResolutionCoordinatorStore, job: ResolutionJob
+) -> bytes:
+    """Derive the existing canonical settlement bytes from durable job state."""
+    try:
+        context = coordinator_state.get_settlement_context(job.job_id)
+    except CoordinatorRejected as exc:
+        if str(exc) == "settlement_context_not_found":
+            raise CoordinatorSigningBindingError("durable_settlement_context_missing") from exc
+        raise CoordinatorSigningBindingError("durable_settlement_context_invalid") from exc
+    try:
+        market_pubkey = str(Pubkey.from_bytes(bytes.fromhex(job.market)))
+        return build_legacy_settlement_message(
+            program_id=context.program_id,
+            market=market_pubkey,
+            notary_config=context.notary_config,
+            resolver_hash=job.resolver_definition_hash,
+            open_ts=context.open_ts,
+            resolve_ts=context.resolve_ts,
+            notary_config_version=context.notary_config_version,
+            outcome=job.outcome,
+            proof_hash=context.proof_hash,
+            public_inputs_hash=context.public_inputs_hash,
+        )
+    except (PipelineRejected, ValueError, OverflowError) as exc:
+        raise CoordinatorSigningBindingError("canonical_settlement_construction_rejected") from exc
+
+
 class AgreedSettlementSigner:
     """Sign exactly the settlement implied by one durable AGREED coordinator job."""
 
@@ -171,25 +199,4 @@ class AgreedSettlementSigner:
             raise CoordinatorSigningBindingError("agreed_state_binding_inconsistent")
 
     def _canonical_message(self, job: ResolutionJob) -> bytes:
-        try:
-            context = self._coordinator_state.get_settlement_context(job.job_id)
-        except CoordinatorRejected as exc:
-            if str(exc) == "settlement_context_not_found":
-                raise CoordinatorSigningBindingError("durable_settlement_context_missing") from exc
-            raise CoordinatorSigningBindingError("durable_settlement_context_invalid") from exc
-        try:
-            market_pubkey = str(Pubkey.from_bytes(bytes.fromhex(job.market)))
-            return build_legacy_settlement_message(
-                program_id=context.program_id,
-                market=market_pubkey,
-                notary_config=context.notary_config,
-                resolver_hash=job.resolver_definition_hash,
-                open_ts=context.open_ts,
-                resolve_ts=context.resolve_ts,
-                notary_config_version=context.notary_config_version,
-                outcome=job.outcome,
-                proof_hash=context.proof_hash,
-                public_inputs_hash=context.public_inputs_hash,
-            )
-        except (PipelineRejected, ValueError, OverflowError) as exc:
-            raise CoordinatorSigningBindingError("canonical_settlement_construction_rejected") from exc
+        return canonical_message_for_agreed_job(self._coordinator_state, job)

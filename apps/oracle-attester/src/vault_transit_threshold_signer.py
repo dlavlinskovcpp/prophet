@@ -129,23 +129,91 @@ class ThresholdResolutionSigner:
                 if str(exc) != "signing_intent_not_found": raise
         self._validate_bundle_with_clients(bundle, canonical_message, self._signer_a, self._signer_b)
 
-    def _validate_bundle_with_clients(self, bundle: ThresholdSignatureBundle, canonical_message: bytes, signer_a: VaultTransitSignerClient, signer_b: VaultTransitSignerClient) -> None:
-        message = self._require_message(canonical_message)
-        identity_a, identity_b = validate_signer_pair(signer_a, signer_b)
+    @classmethod
+    def _validate_bundle_with_bindings(
+        cls,
+        bundle: ThresholdSignatureBundle,
+        canonical_message: bytes,
+        *,
+        signer_a_id: str,
+        signer_a_public_key: str,
+        signer_a_key_version: int,
+        signer_b_id: str,
+        signer_b_public_key: str,
+        signer_b_key_version: int,
+    ) -> None:
+        message = cls._require_message(canonical_message)
         if not isinstance(bundle, ThresholdSignatureBundle):
             raise ThresholdSignerMalformedBundle("threshold_bundle_malformed")
         digest = hashlib.sha256(message).hexdigest()
         if bundle.canonical_message_digest != digest:
             raise ThresholdSignerMessageMismatch("threshold_bundle_message_digest_mismatch")
-        self._validate_signature(
-            VaultTransitSignature(bundle.signer_a_id, bundle.signer_a_key_version, bundle.signer_a_public_key, bundle.signer_a_signature, digest),
-            signer_id=identity_a.signer_id, public_key=identity_a.public_key,
-            key_version=identity_a.vault_key_version, message=message,
+        cls._validate_signature(
+            VaultTransitSignature(
+                bundle.signer_a_id, bundle.signer_a_key_version, bundle.signer_a_public_key,
+                bundle.signer_a_signature, digest
+            ),
+            signer_id=signer_a_id, public_key=signer_a_public_key,
+            key_version=signer_a_key_version, message=message,
         )
-        self._validate_signature(
-            VaultTransitSignature(bundle.signer_b_id, bundle.signer_b_key_version, bundle.signer_b_public_key, bundle.signer_b_signature, digest),
-            signer_id=identity_b.signer_id, public_key=identity_b.public_key,
-            key_version=identity_b.vault_key_version, message=message,
+        cls._validate_signature(
+            VaultTransitSignature(
+                bundle.signer_b_id, bundle.signer_b_key_version, bundle.signer_b_public_key,
+                bundle.signer_b_signature, digest
+            ),
+            signer_id=signer_b_id, public_key=signer_b_public_key,
+            key_version=signer_b_key_version, message=message,
+        )
+
+    def _validate_bundle_with_clients(self, bundle: ThresholdSignatureBundle, canonical_message: bytes, signer_a: VaultTransitSignerClient, signer_b: VaultTransitSignerClient) -> None:
+        identity_a, identity_b = validate_signer_pair(signer_a, signer_b)
+        self._validate_bundle_with_bindings(
+            bundle, canonical_message,
+            signer_a_id=identity_a.signer_id, signer_a_public_key=identity_a.public_key,
+            signer_a_key_version=identity_a.vault_key_version,
+            signer_b_id=identity_b.signer_id, signer_b_public_key=identity_b.public_key,
+            signer_b_key_version=identity_b.vault_key_version,
+        )
+
+    def validate_durable_bundle_offline(
+        self, bundle: ThresholdSignatureBundle, canonical_message: bytes
+    ) -> None:
+        """Validate one durable completed bundle with zero Vault/network calls.
+
+        The signing journal supplies the immutable A/B slots. Configured key epochs
+        prove that each persisted signer/version/public-key tuple is an allowed
+        historical pin. Ed25519 verification is local. No Vault metadata lookup or
+        signing method is invoked.
+        """
+        if self._journal is None:
+            raise ThresholdResolutionSignerError("durable_signing_journal_required_for_validation")
+        message = self._require_message(canonical_message)
+        try:
+            intent = self._journal.get(settlement_signing_scope(message))
+            signer_a = self._signer_a.for_pinned_epoch(
+                signer_id=intent.signer_a.signer_id, public_key=intent.signer_a.public_key,
+                key_version=intent.signer_a.key_version,
+            )
+            signer_b = self._signer_b.for_pinned_epoch(
+                signer_id=intent.signer_b.signer_id, public_key=intent.signer_b.public_key,
+                key_version=intent.signer_b.key_version,
+            )
+        except SigningJournalStateError as exc:
+            raise ThresholdSignerMalformedBundle("durable_signing_intent_missing") from exc
+        if (
+            signer_a.signer.signer_id == signer_b.signer.signer_id
+            or signer_a.signer.key_name == signer_b.signer.key_name
+            or signer_a.signer.expected_public_key == signer_b.signer.expected_public_key
+        ):
+            raise ThresholdSignerIdentityMismatch("threshold_signer_identities_not_distinct")
+        self._validate_bundle_with_bindings(
+            bundle, message,
+            signer_a_id=signer_a.signer.signer_id,
+            signer_a_public_key=signer_a.signer.expected_public_key,
+            signer_a_key_version=signer_a.signer.expected_key_version,
+            signer_b_id=signer_b.signer.signer_id,
+            signer_b_public_key=signer_b.signer.expected_public_key,
+            signer_b_key_version=signer_b.signer.expected_key_version,
         )
 
     def prepare_2_of_2(

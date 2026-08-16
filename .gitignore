@@ -37,3 +37,4 @@ releases/*
 !releases/.gitkeep
 security-reviews/*
 !security-reviews/.gitkeep
+clean_venv/
