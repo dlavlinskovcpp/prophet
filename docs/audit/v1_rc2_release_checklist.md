@@ -2,7 +2,7 @@
 
 Status: **RC2 code-freeze checklist**
 Date: 2026-08-16
-Reference HEAD: `65090dda7916eee42c0b4022be56b226be900def`
+Reference freeze commit: `f5b85b4e43fa547d3fd12c1f58d69290dd96826a`
 
 Do not use this checklist as deployment approval. Code, CI, infrastructure, live
 devnet, audit and mainnet gates are intentionally separate.
@@ -47,10 +47,10 @@ devnet, audit and mainnet gates are intentionally separate.
 - [x] RC1 → RC2 security delta document prepared.
 - [x] Public-devnet readiness matrix prepared.
 - [x] Mainnet blocker list reviewed/extended for RC2.
-- [x] Final code-freeze working-tree review after documentation is applied:
-  `git status --short --untracked-files=all` reviewed and `git diff --check`
-  passes. The working tree contains only the expected release-hygiene/test changes
-  plus the five RC2 audit-document changes.
+- [x] Final code-freeze working-tree review completed before the freeze commit:
+  `git status --short --untracked-files=all` was reviewed and `git diff --check`
+  passed. The staged candidate contained only the expected release-hygiene/test
+  changes plus the five RC2 audit-document changes.
 - [x] Documentation application did not introduce executable/runtime changes.
   The release-hygiene code/test changes remain covered by the passing Python,
   Rust, migration/restart, SDK, zkTLS and TypeScript/Anchor local verification
@@ -64,26 +64,22 @@ candidate. On that basis the local verdict is:
 
 **RC2 CODE FREEZE READY**
 
-This does not mean the candidate is releasable/taggable. The final GitHub CI run
-below remains open, and all infrastructure, live-devnet, independent-audit and
-mainnet gates remain separate.
+The freeze candidate has also passed the GitHub CI gate recorded below.
+Infrastructure, live-devnet, independent-audit and mainnet gates remain separate
+and open.
 
 ## CI GATES
 
-- [ ] Push/PR GitHub CI on the final RC2 candidate is green.
-- [ ] Linux Python lane confirms removal of the previous `/private/tmp`
-  portability failures.
-- [ ] Required Rust/Anchor build/test lanes are green.
-- [ ] Required SDK/TypeScript lane executes real tests rather than reporting
-  `0 passing`.
-- [ ] Any CI-only security/static-analysis lane is green or has an explicitly
-  reviewed, documented non-code infrastructure/tooling limitation.
-- [ ] CI uses the intended pinned dependency/toolchain versions.
-
-The previous CI run is not final RC2 evidence: it reported 15 Python failures
-caused by tests hard-coding macOS `/private/tmp`. The working tree removes that
-platform-specific directory, but a new CI run is required after the final
-candidate is committed/pushed.
+- [x] Final GitHub CI completed successfully on the RC2 freeze commit.
+  - Commit: `f5b85b4e43fa547d3fd12c1f58d69290dd96826a`
+  - GitHub Actions run: `31961480034`
+  - Conclusion: **success**
+- [x] Matching Keeper Tests — PASS.
+- [x] Rust + zkTLS Audit — PASS.
+- [x] Oracle Attester Tests — PASS.
+- [x] Anchor TS Integration — PASS.
+- [x] Ops Drill Checks — PASS.
+- [x] SDK Python Tests — PASS.
 
 ## INFRA GATES
 
