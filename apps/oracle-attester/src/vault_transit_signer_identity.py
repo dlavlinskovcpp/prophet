@@ -100,6 +100,7 @@ class VaultTransitSignerClient:
         self.signing = signing
         self.signer = signer
         self._config_fingerprint = config_fingerprint
+        self._vault_token = vault_token
         self._owns_transport = transport is None
         if signing.backend == "deterministic-test":
             if transport is None:
@@ -150,8 +151,7 @@ class VaultTransitSignerClient:
         if epoch not in self.signer.key_epochs:
             raise VaultSignerRotationError("signer_epoch_not_in_configured_policy")
         pinned = replace(self.signer, expected_public_key=epoch.public_key, expected_key_version=epoch.key_version)
-        return VaultTransitSignerClient(signing=self.signing, signer=pinned, config_fingerprint=self._config_fingerprint, vault_token="bound-runtime-token", transport=self._transport)
-
+        return VaultTransitSignerClient(signing=self.signing, signer=pinned, config_fingerprint=self._config_fingerprint, vault_token=self._vault_token, transport=self._transport)
     def for_pinned_epoch(self, *, signer_id: str, public_key: str, key_version: int) -> "VaultTransitSignerClient":
         if signer_id != self.signer.signer_id:
             raise VaultSignerRotationError("signing_intent_signer_identity_mismatch")

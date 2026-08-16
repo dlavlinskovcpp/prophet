@@ -50,7 +50,7 @@ def test_runtime_factory_constructs_exact_existing_adapter_families():
 
 def test_runtime_factory_constructs_signed_oracle_with_registry_backed_keyring():
     adapters, _ = _helpers(); definition = adapters["_oracle_definition"]()
-    with tempfile.TemporaryDirectory(prefix="prophet-factory-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-factory-") as root:
         path = Path(root) / "registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         config = parse_runtime_config(_raw(["signed-oracle"], mode="production", signed_oracle={"registry_path": str(path), "key_bindings": [{"key_id": "old", "key_set_version": "1.0.0", "oracle_identity": "oracle"}]}))
         adapter = _factory(config, signed_registry=load_trusted_oracle_key_registry(path)).create(definition)
@@ -73,7 +73,7 @@ def test_runtime_factory_rejects_missing_zktls_and_signed_oracle_dependencies():
     adapters, _ = _helpers(); zktls_definition, oracle_definition = adapters["_zktls_definition"](), adapters["_oracle_definition"]()
     missing_backend = replace(_zktls_runtime(), zktls=None)
     with pytest.raises(PipelineRejected): _factory(missing_backend).create(zktls_definition)
-    with tempfile.TemporaryDirectory(prefix="prophet-factory-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-factory-") as root:
         path = Path(root) / "registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{oracle_definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         config = parse_runtime_config(_raw(["signed-oracle"], mode="production", signed_oracle={"registry_path": str(path), "key_bindings": [{"key_id": "old", "key_set_version": "1.0.0", "oracle_identity": "oracle"}]}))
         with pytest.raises(PipelineRejected): _factory(config).create(oracle_definition)

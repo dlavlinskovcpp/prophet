@@ -84,7 +84,7 @@ def test_signed_oracle_canonical_message_golden_vector_and_hash():
 
 
 def test_signed_oracle_runtime_metadata_is_out_of_band_from_message_bytes():
-    with tempfile.TemporaryDirectory(prefix="prophet-canonical-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-canonical-") as root:
         registry_a_path, registry_b_path = Path(root) / "registry-a.yaml", Path(root) / "registry-b.yaml"
         registry_a_path.write_text(_registry_text("oracle-a")); registry_b_path.write_text(_registry_text("oracle-b", "oracle-a"))
         config_a, config_b = parse_runtime_config(_runtime_raw(registry_a_path, "oracle-a")), parse_runtime_config(_runtime_raw(registry_b_path, "oracle-b"))
@@ -100,7 +100,7 @@ def test_signed_oracle_runtime_metadata_is_out_of_band_from_message_bytes():
 def test_signed_oracle_frozen_signature_verifies_through_runtime_and_legacy_paths():
     keypair = Keypair.from_seed(_SEED); message = signed_oracle_message(_FROZEN_PAYLOAD); signature = bytes(keypair.sign_message(message))
     assert str(keypair.pubkey()) == _PUBLIC_KEY and message.hex() == _FROZEN_MESSAGE_HEX and signature.hex() == _FROZEN_SIGNATURE_HEX
-    with tempfile.TemporaryDirectory(prefix="prophet-canonical-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-canonical-") as root:
         registry_path = Path(root) / "registry.yaml"; registry_path.write_text(_registry_text("oracle"))
         runtime = SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(_runtime_raw(registry_path, "oracle")), registry=load_trusted_oracle_key_registry(registry_path), resolver_definition=_definition(), verifier_descriptor=_adapter_descriptor(), message_version=SIGNED_ORACLE_VERSION, clock_ms=lambda: 100)
         evidence = _signed_evidence(message, signature)

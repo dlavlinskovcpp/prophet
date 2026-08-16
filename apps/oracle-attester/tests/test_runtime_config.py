@@ -40,7 +40,7 @@ def test_production_runtime_signed_oracle_smoke():
     adapter_tests = Path(__file__).with_name("test_resolver_v2_adapters.py")
     namespace={}; exec(adapter_tests.read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5)); keypair=Keypair()
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         registry_path=Path(root)/"registry.yaml"; registry_path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "{keypair.pubkey()}"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(registry_path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         config=parse_runtime_config(raw); registry=load_trusted_oracle_key_registry(registry_path)
@@ -57,7 +57,7 @@ def test_production_runtime_signed_oracle_key_set_mismatch_smoke():
     from prophet_sdk import resolver_v2
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); keypair=Keypair(); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "{keypair.pubkey()}"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.1","oracle_identity":"oracle"}]}
         adapter=SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(raw),registry=load_trusted_oracle_key_registry(path),resolver_definition=definition,verifier_descriptor=descriptor,message_version="2.0.0",clock_ms=lambda:100)
@@ -71,7 +71,7 @@ def test_production_runtime_constructor_rejects_signed_oracle_adapter_disabled()
     from src.resolver_v2_pipeline import PipelineRejected
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["pyth"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         config=parse_runtime_config(raw)
@@ -82,7 +82,7 @@ def test_production_runtime_constructor_rejects_missing_signed_oracle_registry()
     from src.resolver_v2_pipeline import PipelineRejected
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         with pytest.raises(PipelineRejected): SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(raw),registry=None,resolver_definition=definition,verifier_descriptor=descriptor,message_version="2.0.0")
@@ -95,7 +95,7 @@ def test_production_runtime_constructor_rejects_missing_signed_oracle_bindings()
     from src.signed_oracle_runtime_keys import load_trusted_oracle_key_registry
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         validated=parse_runtime_config(raw); assert validated.signed_oracle is not None
@@ -108,7 +108,7 @@ def test_production_runtime_constructor_rejects_missing_resolver_context():
     from src.signed_oracle_runtime_keys import load_trusted_oracle_key_registry
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         with pytest.raises(PipelineRejected): SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(raw),registry=load_trusted_oracle_key_registry(path),resolver_definition=None,verifier_descriptor=descriptor,message_version="2.0.0")
@@ -119,7 +119,7 @@ def test_production_runtime_constructor_rejects_missing_message_version():
     from src.signed_oracle_runtime_keys import load_trusted_oracle_key_registry
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         with pytest.raises(PipelineRejected): SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(raw),registry=load_trusted_oracle_key_registry(path),resolver_definition=definition,verifier_descriptor=descriptor,message_version=None)
@@ -130,7 +130,7 @@ def test_production_runtime_constructor_rejects_unsupported_message_version():
     from src.signed_oracle_runtime_keys import load_trusted_oracle_key_registry
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5))
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         with pytest.raises(PipelineRejected): SignedOracleAdapter.from_runtime(runtime_config=parse_runtime_config(raw),registry=load_trusted_oracle_key_registry(path),resolver_definition=definition,verifier_descriptor=descriptor,message_version="9.9.9")
@@ -138,7 +138,7 @@ def test_production_runtime_constructor_rejects_unsupported_message_version():
 def test_production_runtime_constructor_rejects_fixture_signed_oracle_trust():
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"]()
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"fixture-registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "11111111111111111111111111111111"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         with pytest.raises(RuntimeConfigError): parse_runtime_config(raw)
@@ -150,7 +150,7 @@ def test_production_runtime_constructor_has_no_legacy_keyring_fallback():
     from prophet_sdk import resolver_v2
     namespace={}; exec(Path(__file__).with_name("test_resolver_v2_adapters.py").read_text(), namespace)
     definition=namespace["_oracle_definition"](); descriptor=namespace["_adapter"]("prophet.verifier.signed-oracle", namespace["H"](5)); keypair=Keypair()
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path=Path(root)/"registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "{keypair.pubkey()}"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         raw=base(); raw["allowed_adapters"]=["signed-oracle"]; raw["signed_oracle"]={"registry_path":str(path),"key_bindings":[{"key_id":"old","key_set_version":"1.0.0","oracle_identity":"oracle"}]}
         registry=load_trusted_oracle_key_registry(path)

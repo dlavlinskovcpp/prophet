@@ -48,7 +48,7 @@ def test_runtime_verify_zktls_uses_configured_backend():
 
 def test_runtime_verify_signed_oracle_uses_registry_backed_keyring():
     adapters, _ = _helpers(); definition, _, evidence, keypair = adapters["_oracle_evidence"]()
-    with tempfile.TemporaryDirectory(prefix="prophet-runtime-", dir="/private/tmp") as root:
+    with tempfile.TemporaryDirectory(prefix="prophet-runtime-") as root:
         path = Path(root) / "registry.yaml"; path.write_text(f'overlap_ms: 0\nrecords:\n- oracle_identity: oracle\n  resolver_ids: [{definition["resolver_id"]}]\n  public_key: "{keypair.pubkey()}"\n  key_epoch: epoch\n  activation_time_ms: "0"\n  retirement_time_ms: "1000"\n  allowed_message_versions: ["2.0.0"]\n  status: active\n')
         config = parse_runtime_config(_raw(["signed-oracle"], mode="production", signed_oracle={"registry_path": str(path), "key_bindings": [{"key_id": "old", "key_set_version": "1.0.0", "oracle_identity": "oracle"}]}))
         runtime = _runtime(config, signed_registry=load_trusted_oracle_key_registry(path))
