@@ -75,7 +75,7 @@ class SettlementRpcConfig:
     timeout_seconds: int; commitment: str
 @dataclass(frozen=True)
 class SettlementExecutionRuntimeConfig:
-    rpc_url_env: str; expected_cluster: str; expected_genesis_hash: str; fee_payer: SettlementFeePayerConfig; rpc: SettlementRpcConfig
+    rpc_url_env: str; expected_cluster: str; expected_genesis_hash: str; fee_payer: SettlementFeePayerConfig; rpc: SettlementRpcConfig; journal_path: str|None = None
 @dataclass(frozen=True)
 class SignedOracleRuntimeConfig: registry_path: str; registry_fingerprint: str; key_bindings: tuple[object, ...]
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ class ResolverRuntimeConfig:
         payload = {"environment":self.environment,"solana":{"cluster":self.solana.cluster,"genesis_hash":self.solana.genesis_hash,"prophet_program_id":self.solana.prophet_program_id},"resolver_v2":{"schema_version":str(self.resolver_v2_schema_version)},"verifier":{"implementation_id":self.verifier.implementation_id,"version":self.verifier.version},"allowed_adapters":list(self.allowed_adapters),"limits":{"request_max_bytes":str(self.limits.request_max_bytes),"request_timeout_seconds":str(self.limits.request_timeout_seconds)},"freshness":{"default_max_evidence_age_seconds":str(self.freshness.default_max_evidence_age_seconds),"default_max_verification_age_seconds":str(self.freshness.default_max_verification_age_seconds)},"mode":self.mode,"signed_oracle_registry_fingerprint":"" if self.signed_oracle is None else self.signed_oracle.registry_fingerprint,"signed_oracle_bindings":[] if self.signed_oracle is None else [{"key_id":b.key_id,"key_set_version":b.key_set_version,"oracle_identity":b.oracle_identity} for b in self.signed_oracle.key_bindings],"zktls":None if self.zktls is None else {"provider_id":self.zktls.provider_id,"verifier_backend":self.zktls.verifier_backend,"allowed_proof_versions":list(self.zktls.allowed_proof_versions)},"coordinator":None if self.coordinator is None else {"verifier_a":client(self.coordinator.verifier_a),"verifier_b":client(self.coordinator.verifier_b),"sqlite_path":self.coordinator.sqlite_path,"internal_auth":{"token_env":self.coordinator.internal_auth.token_env},"request_timeout_seconds":str(self.coordinator.request_timeout_seconds)},"signing":None if self.signing is None else {"vault":{"address":self.signing.address,"auth":{"token_env":self.signing.token_env},"transit_mount":self.signing.transit_mount,"request_timeout_seconds":str(self.signing.request_timeout_seconds),"backend":self.signing.backend},"journal_path":self.signing.journal_path or "","signers":{"a":signer(self.signing.signer_a),"b":signer(self.signing.signer_b)}}}
         if self.settlement_execution is not None:
             execution = self.settlement_execution
-            payload["settlement_execution"] = {"rpc_url_env":execution.rpc_url_env,"expected_cluster":execution.expected_cluster,"expected_genesis_hash":execution.expected_genesis_hash,"fee_payer":{"keypair_path_env":execution.fee_payer.keypair_path_env},"rpc":{"timeout_seconds":str(execution.rpc.timeout_seconds),"commitment":execution.rpc.commitment}}
+            payload["settlement_execution"] = {"rpc_url_env":execution.rpc_url_env,"expected_cluster":execution.expected_cluster,"expected_genesis_hash":execution.expected_genesis_hash,"fee_payer":{"keypair_path_env":execution.fee_payer.keypair_path_env},"rpc":{"timeout_seconds":str(execution.rpc.timeout_seconds),"commitment":execution.rpc.commitment},"journal_path":execution.journal_path or ""}
         return hashlib.sha256(b"PROPHET_RESOLVER_RUNTIME_CONFIG_V1\0" + resolver_v2.canonical_json_bytes(payload)).hexdigest()
 
 def _coordinator_client(value: Any, name: str) -> CoordinatorVerifierServiceConfig:
@@ -119,11 +119,10 @@ def parse_settlement_execution_config(
     *,
     solana: SolanaRuntimeConfig,
 ) -> SettlementExecutionRuntimeConfig:
-    row = _obj(
-        value,
-        {"rpc_url_env", "expected_cluster", "expected_genesis_hash", "fee_payer", "rpc"},
-        "settlement_execution",
-    )
+    required = {"rpc_url_env", "expected_cluster", "expected_genesis_hash", "fee_payer", "rpc"}
+    if not isinstance(value, dict) or not required.issubset(value) or set(value) - required - {"journal_path"}:
+        raise RuntimeConfigError("settlement_execution has unknown or missing fields")
+    row = value
     expected_cluster = _text(row["expected_cluster"], "settlement_execution.expected_cluster")
     expected_genesis_hash = _text(
         row["expected_genesis_hash"], "settlement_execution.expected_genesis_hash"
@@ -153,6 +152,11 @@ def parse_settlement_execution_config(
         rpc=SettlementRpcConfig(
             _positive(rpc["timeout_seconds"], "settlement_execution.rpc.timeout_seconds"),
             commitment,
+        ),
+        journal_path=(
+            None
+            if "journal_path" not in row
+            else _text(row["journal_path"], "settlement_execution.journal_path")
         ),
     )
 

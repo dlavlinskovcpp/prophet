@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from solana.rpc.api import Client
+from solana.rpc.types import TxOpts
 from solders.hash import Hash
+from solders.signature import Signature
 from solders.transaction import VersionedTransaction
 
 
@@ -34,11 +36,20 @@ class RpcSimulationResult:
     replacement_last_valid_block_height: int | None
 
 
-class SolanaSettlementRpcClient:
-    """Only getGenesisHash/getLatestBlockhash/simulateTransaction are exposed.
+@dataclass(frozen=True)
+class RpcSignatureStatus:
+    found: bool
+    slot: int | None
+    confirmation_status: str | None
+    transaction_error: str | None
 
-    The wrapped solana-py client is deliberately private.  Submission methods are
-    not surfaced by this application boundary.
+
+class SolanaSettlementRpcClient:
+    """Narrow settlement RPC surface through simulation and Phase 6D3.
+
+    The generic solana-py client remains private.  Phase 6D3 exposes only exact
+    raw-transaction submission plus one-signature status reconciliation; callers
+    cannot issue arbitrary JSON-RPC through this application boundary.
     """
 
     is_test_transport = False
@@ -154,6 +165,77 @@ class SolanaSettlementRpcClient:
             replacement_last_valid_block_height=replacement_height,
         )
 
+
+    def submit_exact_transaction(self, serialized_transaction: bytes) -> str:
+        """Submit one already-signed exact candidate without local confirmation.
+
+        Phase 6D2 already simulated these exact bytes, so submission explicitly
+        skips RPC preflight to avoid a second divergent validation path.  Node-side
+        transaction retries are disabled and confirmation is owned by Phase 6D3.
+        """
+        if not isinstance(serialized_transaction, bytes) or not serialized_transaction:
+            raise SettlementRpcResponseError("submission_transaction_invalid")
+        try:
+            transaction = VersionedTransaction.from_bytes(serialized_transaction)
+            if bytes(transaction) != serialized_transaction:
+                raise ValueError
+            signatures = tuple(transaction.signatures)
+            if len(signatures) != 1 or not isinstance(signatures[0], Signature):
+                raise ValueError
+            if tuple(transaction.verify_with_results()) != (True,):
+                raise ValueError
+            transaction.verify_and_hash_message()
+        except Exception as exc:
+            raise SettlementRpcResponseError("submission_transaction_invalid") from exc
+        try:
+            response = self._client.send_raw_transaction(
+                serialized_transaction,
+                opts=TxOpts(
+                    skip_confirmation=True,
+                    skip_preflight=True,
+                    preflight_commitment=self._commitment,
+                    max_retries=0,
+                ),
+            )
+        except Exception:
+            # Once sendRawTransaction is invoked, transport failure is ambiguous:
+            # the RPC may have received and forwarded the bytes before disconnecting.
+            raise SettlementRpcTransportError("submit_transaction_transport_failure") from None
+        return self._canonical_signature(
+            getattr(response, "value", None), "submit_transaction_response_invalid"
+        )
+
+    def get_signature_status(self, transaction_signature: str) -> RpcSignatureStatus:
+        signature = self._parse_signature(
+            transaction_signature, "signature_status_signature_invalid"
+        )
+        try:
+            response = self._client.get_signature_statuses(
+                [signature], search_transaction_history=True
+            )
+        except Exception:
+            raise SettlementRpcTransportError("signature_status_transport_failure") from None
+        value = getattr(response, "value", None)
+        if not isinstance(value, (list, tuple)) or len(value) != 1:
+            raise SettlementRpcResponseError("signature_status_response_invalid")
+        item = value[0]
+        if item is None:
+            return RpcSignatureStatus(False, None, None, None)
+
+        slot = getattr(item, "slot", None)
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+            raise SettlementRpcResponseError("signature_status_slot_invalid")
+        confirmation = self._canonical_confirmation_status(
+            getattr(item, "confirmation_status", None)
+        )
+        raw_error = getattr(item, "err", None)
+        transaction_error = None
+        if raw_error is not None:
+            transaction_error = str(raw_error)
+            if not transaction_error:
+                raise SettlementRpcResponseError("signature_status_error_invalid")
+        return RpcSignatureStatus(True, slot, confirmation, transaction_error)
+
     @staticmethod
     def _canonical_hash(value: object, error: str) -> str:
         try:
@@ -163,4 +245,34 @@ class SolanaSettlementRpcClient:
                 raise ValueError
         except Exception as exc:
             raise SettlementRpcResponseError(error) from exc
+        return text
+    @staticmethod
+    def _parse_signature(value: object, error: str) -> Signature:
+        try:
+            text = str(value)
+            parsed = Signature.from_string(text)
+            if str(parsed) != text:
+                raise ValueError
+        except Exception as exc:
+            raise SettlementRpcResponseError(error) from exc
+        return parsed
+
+    @classmethod
+    def _canonical_signature(cls, value: object, error: str) -> str:
+        return str(cls._parse_signature(value, error))
+
+    @staticmethod
+    def _canonical_confirmation_status(value: object) -> str:
+        if value is None:
+            raise SettlementRpcResponseError("signature_status_confirmation_invalid")
+        raw = getattr(value, "value", value)
+        text = str(raw).lower()
+        if text.endswith(".processed"):
+            text = "processed"
+        elif text.endswith(".confirmed"):
+            text = "confirmed"
+        elif text.endswith(".finalized"):
+            text = "finalized"
+        if text not in {"processed", "confirmed", "finalized"}:
+            raise SettlementRpcResponseError("signature_status_confirmation_invalid")
         return text

@@ -166,6 +166,19 @@ class SettlementSimulationService:
         self._environment = environment
         self._mode = mode
 
+    @property
+    def rpc_transport(self):
+        """Exact RPC object used for simulation; Phase 6D3 reuses this identity."""
+        return self._rpc
+
+    @property
+    def execution_config(self) -> SettlementExecutionRuntimeConfig:
+        return self._execution_config
+
+    @property
+    def solana_runtime(self) -> SolanaRuntimeConfig:
+        return self._solana_runtime
+
     @classmethod
     def from_runtime_config(
         cls,
