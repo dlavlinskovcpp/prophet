@@ -22,7 +22,14 @@ from .vault_transit_signer_identity import (
     select_signer_epoch,
     validate_signer_pair,
 )
-from .signing_journal import JournalSignerBinding, SigningJournal, SigningJournalStateError, settlement_signing_scope
+from .signing_journal import (
+    JournalSignerBinding,
+    SigningJournal,
+    SigningJournalBindingError,
+    SigningJournalIntent,
+    SigningJournalStateError,
+    settlement_signing_scope,
+)
 
 
 class ThresholdResolutionSignerError(RuntimeError): pass
@@ -74,6 +81,10 @@ class ThresholdResolutionSigner:
     @property
     def signer_b(self) -> VaultTransitSignerClient:
         return self._signer_b
+
+    @property
+    def journal(self) -> SigningJournal | None:
+        return self._journal
 
     @staticmethod
     def _require_message(message: bytes) -> bytes:
@@ -137,30 +148,81 @@ class ThresholdResolutionSigner:
             key_version=identity_b.vault_key_version, message=message,
         )
 
-    def sign_2_of_2(self, canonical_message: bytes, *, intent_created_at_ms: int | None = None) -> ThresholdSignatureBundle:
+    def prepare_2_of_2(
+        self, canonical_message: bytes, *, coordinator_job_id: str | None = None, intent_created_at_ms: int | None = None,
+    ) -> SigningJournalIntent:
+        """Create/load and commit the pinned durable intent without calling Vault."""
+        if self._journal is None:
+            raise ThresholdResolutionSignerError("durable_signing_journal_required_for_prepare")
+        message = self._require_message(canonical_message)
+        try:
+            existing = self._journal.get(settlement_signing_scope(message))
+            signer_a = self._signer_a.for_pinned_epoch(
+                signer_id=existing.signer_a.signer_id, public_key=existing.signer_a.public_key, key_version=existing.signer_a.key_version
+            )
+            signer_b = self._signer_b.for_pinned_epoch(
+                signer_id=existing.signer_b.signer_id, public_key=existing.signer_b.public_key, key_version=existing.signer_b.key_version
+            )
+            created_at_ms = None
+        except SigningJournalStateError as exc:
+            if str(exc) != "signing_intent_not_found":
+                raise
+            created_at_ms = int(time.time() * 1000) if intent_created_at_ms is None else intent_created_at_ms
+            signer_a = self._signer_a.for_epoch(select_signer_epoch(self._signer_a.signer, created_at_ms))
+            signer_b = self._signer_b.for_epoch(select_signer_epoch(self._signer_b.signer, created_at_ms))
+        identity_a, identity_b = validate_signer_pair(signer_a, signer_b)
+        try:
+            return self._journal.reserve_intent(
+                message,
+                signer_a=JournalSignerBinding(identity_a.signer_id, identity_a.public_key, identity_a.vault_key_version),
+                signer_b=JournalSignerBinding(identity_b.signer_id, identity_b.public_key, identity_b.vault_key_version),
+                created_at_ms=created_at_ms,
+                coordinator_job_id=coordinator_job_id,
+            )
+        except SigningJournalBindingError as exc:
+            # Another caller may have won creation exactly across a key-epoch
+            # boundary after our initial read. The durable intent is authoritative:
+            # rehydrate its pinned epochs rather than reselecting active/latest.
+            if str(exc) != "signing_scope_signer_binding_mismatch":
+                raise
+            existing = self._journal.get(settlement_signing_scope(message))
+            persisted_a = self._signer_a.for_pinned_epoch(
+                signer_id=existing.signer_a.signer_id, public_key=existing.signer_a.public_key, key_version=existing.signer_a.key_version
+            )
+            persisted_b = self._signer_b.for_pinned_epoch(
+                signer_id=existing.signer_b.signer_id, public_key=existing.signer_b.public_key, key_version=existing.signer_b.key_version
+            )
+            persisted_identity_a, persisted_identity_b = validate_signer_pair(persisted_a, persisted_b)
+            return self._journal.reserve_intent(
+                message,
+                signer_a=JournalSignerBinding(
+                    persisted_identity_a.signer_id, persisted_identity_a.public_key, persisted_identity_a.vault_key_version
+                ),
+                signer_b=JournalSignerBinding(
+                    persisted_identity_b.signer_id, persisted_identity_b.public_key, persisted_identity_b.vault_key_version
+                ),
+                coordinator_job_id=coordinator_job_id,
+            )
+
+    def sign_2_of_2(
+        self, canonical_message: bytes, *, intent_created_at_ms: int | None = None, coordinator_job_id: str | None = None,
+    ) -> ThresholdSignatureBundle:
         """Sign once sequentially (A then B); no retries and no partial success."""
         message = self._require_message(canonical_message)
         signer_a, signer_b = self._signer_a, self._signer_b
         signing_scope_id = None
         persisted_a = persisted_b = None
         if self._journal is not None:
-            try:
-                existing = self._journal.get(settlement_signing_scope(message))
-                signer_a = self._signer_a.for_pinned_epoch(signer_id=existing.signer_a.signer_id, public_key=existing.signer_a.public_key, key_version=existing.signer_a.key_version)
-                signer_b = self._signer_b.for_pinned_epoch(signer_id=existing.signer_b.signer_id, public_key=existing.signer_b.public_key, key_version=existing.signer_b.key_version)
-                created_at_ms = None
-            except SigningJournalStateError as exc:
-                if str(exc) != "signing_intent_not_found": raise
-                created_at_ms = int(time.time() * 1000) if intent_created_at_ms is None else intent_created_at_ms
-                signer_a = self._signer_a.for_epoch(select_signer_epoch(self._signer_a.signer, created_at_ms))
-                signer_b = self._signer_b.for_epoch(select_signer_epoch(self._signer_b.signer, created_at_ms))
-            identity_a, identity_b = validate_signer_pair(signer_a, signer_b)
-            intent = self._journal.reserve_intent(
-                message,
-                signer_a=JournalSignerBinding(identity_a.signer_id, identity_a.public_key, identity_a.vault_key_version),
-                signer_b=JournalSignerBinding(identity_b.signer_id, identity_b.public_key, identity_b.vault_key_version),
-                created_at_ms=created_at_ms,
+            intent = self.prepare_2_of_2(
+                message, coordinator_job_id=coordinator_job_id, intent_created_at_ms=intent_created_at_ms
             )
+            signer_a = self._signer_a.for_pinned_epoch(
+                signer_id=intent.signer_a.signer_id, public_key=intent.signer_a.public_key, key_version=intent.signer_a.key_version
+            )
+            signer_b = self._signer_b.for_pinned_epoch(
+                signer_id=intent.signer_b.signer_id, public_key=intent.signer_b.public_key, key_version=intent.signer_b.key_version
+            )
+            identity_a, identity_b = validate_signer_pair(signer_a, signer_b)
             signing_scope_id = intent.signing_scope_id
             persisted_a = self._journal.begin_signer(signing_scope_id, "A")
         else:

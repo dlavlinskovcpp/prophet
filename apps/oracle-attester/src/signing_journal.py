@@ -14,7 +14,7 @@ from solders.signature import Signature
 from .vault_transit_signer_identity import VaultTransitSignature
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INTENT_RECORDED = "INTENT_RECORDED"
 A_SIGNING = "A_SIGNING"
 A_SIGNED = "A_SIGNED"
@@ -52,6 +52,14 @@ class SigningJournalIntent:
     signer_b_result: VaultTransitSignature | None
     created_at_ms: str
     updated_at_ms: str
+
+
+@dataclass(frozen=True)
+class CoordinatorSigningLink:
+    coordinator_job_id: str
+    signing_scope_id: str
+    canonical_message_digest: str
+    created_at_ms: str
 
 
 @dataclass(frozen=True)
@@ -110,27 +118,51 @@ class SigningJournal:
             version = int(self._db.execute("PRAGMA user_version").fetchone()[0])
             if version > SCHEMA_VERSION:
                 raise SigningJournalStateError("unsupported_signing_journal_schema")
-            if version:
+            if version == 0:
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    self._db.execute("""CREATE TABLE signing_intents (
+                        signing_scope_id TEXT PRIMARY KEY,
+                        canonical_message_digest TEXT NOT NULL,
+                        canonical_message BLOB NOT NULL,
+                        signer_a_id TEXT NOT NULL, signer_a_public_key TEXT NOT NULL, signer_a_key_version INTEGER NOT NULL,
+                        signer_b_id TEXT NOT NULL, signer_b_public_key TEXT NOT NULL, signer_b_key_version INTEGER NOT NULL,
+                        state TEXT NOT NULL CHECK(state IN ('INTENT_RECORDED','A_SIGNING','A_SIGNED','B_SIGNING','BOTH_SIGNED')),
+                        signer_a_signature BLOB, signer_a_signature_digest TEXT,
+                        signer_b_signature BLOB, signer_b_signature_digest TEXT,
+                        created_at_ms TEXT NOT NULL, updated_at_ms TEXT NOT NULL
+                    )""")
+                    self._db.execute("CREATE UNIQUE INDEX signing_intents_scope_digest ON signing_intents(signing_scope_id, canonical_message_digest)")
+                    self._db.execute("""CREATE TABLE coordinator_signing_links (
+                        coordinator_job_id TEXT PRIMARY KEY,
+                        signing_scope_id TEXT NOT NULL,
+                        canonical_message_digest TEXT NOT NULL,
+                        created_at_ms TEXT NOT NULL,
+                        FOREIGN KEY(signing_scope_id) REFERENCES signing_intents(signing_scope_id)
+                    )""")
+                    self._db.execute("CREATE INDEX coordinator_signing_links_scope ON coordinator_signing_links(signing_scope_id)")
+                    self._db.execute("PRAGMA user_version = 2")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
                 return
-            self._db.execute("BEGIN IMMEDIATE")
-            try:
-                self._db.execute("""CREATE TABLE signing_intents (
-                    signing_scope_id TEXT PRIMARY KEY,
-                    canonical_message_digest TEXT NOT NULL,
-                    canonical_message BLOB NOT NULL,
-                    signer_a_id TEXT NOT NULL, signer_a_public_key TEXT NOT NULL, signer_a_key_version INTEGER NOT NULL,
-                    signer_b_id TEXT NOT NULL, signer_b_public_key TEXT NOT NULL, signer_b_key_version INTEGER NOT NULL,
-                    state TEXT NOT NULL CHECK(state IN ('INTENT_RECORDED','A_SIGNING','A_SIGNED','B_SIGNING','BOTH_SIGNED')),
-                    signer_a_signature BLOB, signer_a_signature_digest TEXT,
-                    signer_b_signature BLOB, signer_b_signature_digest TEXT,
-                    created_at_ms TEXT NOT NULL, updated_at_ms TEXT NOT NULL
-                )""")
-                self._db.execute("CREATE UNIQUE INDEX signing_intents_scope_digest ON signing_intents(signing_scope_id, canonical_message_digest)")
-                self._db.execute("PRAGMA user_version = 1")
-                self._db.execute("COMMIT")
-            except Exception:
-                self._db.execute("ROLLBACK")
-                raise
+            if version == 1:
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    self._db.execute("""CREATE TABLE coordinator_signing_links (
+                        coordinator_job_id TEXT PRIMARY KEY,
+                        signing_scope_id TEXT NOT NULL,
+                        canonical_message_digest TEXT NOT NULL,
+                        created_at_ms TEXT NOT NULL,
+                        FOREIGN KEY(signing_scope_id) REFERENCES signing_intents(signing_scope_id)
+                    )""")
+                    self._db.execute("CREATE INDEX coordinator_signing_links_scope ON coordinator_signing_links(signing_scope_id)")
+                    self._db.execute("PRAGMA user_version = 2")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
 
     @staticmethod
     def _binding(value: JournalSignerBinding) -> JournalSignerBinding:
@@ -150,9 +182,14 @@ class SigningJournal:
             raise SigningJournalBindingError("journal_signers_must_be_distinct")
         return signer_a, signer_b
 
-    def reserve_intent(self, canonical_message: bytes, *, signer_a: JournalSignerBinding, signer_b: JournalSignerBinding, created_at_ms: int | None = None) -> SigningJournalIntent:
+    def reserve_intent(
+        self, canonical_message: bytes, *, signer_a: JournalSignerBinding, signer_b: JournalSignerBinding,
+        created_at_ms: int | None = None, coordinator_job_id: str | None = None,
+    ) -> SigningJournalIntent:
         signer_a, signer_b = self._validate_bindings(signer_a, signer_b)
         scope, digest = settlement_signing_scope(canonical_message), hashlib.sha256(canonical_message).hexdigest()
+        if coordinator_job_id is not None and (not isinstance(coordinator_job_id, str) or not coordinator_job_id):
+            raise SigningJournalBindingError("coordinator_job_id_invalid")
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
             try:
@@ -171,6 +208,15 @@ class SigningJournal:
                     ))
                 else:
                     self._assert_intent_binding(row, canonical_message, signer_a, signer_b)
+                if coordinator_job_id is not None:
+                    link = self._db.execute("SELECT * FROM coordinator_signing_links WHERE coordinator_job_id = ?", (coordinator_job_id,)).fetchone()
+                    if link is None:
+                        self._db.execute(
+                            "INSERT INTO coordinator_signing_links(coordinator_job_id, signing_scope_id, canonical_message_digest, created_at_ms) VALUES (?, ?, ?, ?)",
+                            (coordinator_job_id, scope, digest, _now_ms()),
+                        )
+                    elif link["signing_scope_id"] != scope or link["canonical_message_digest"] != digest:
+                        raise SigningJournalBindingError("coordinator_job_signing_binding_mismatch")
                 updated = self._db.execute("SELECT * FROM signing_intents WHERE signing_scope_id = ?", (scope,)).fetchone()
                 self._db.execute("COMMIT")
                 return self._row(updated)
@@ -182,6 +228,15 @@ class SigningJournal:
         row = self._db.execute("SELECT * FROM signing_intents WHERE signing_scope_id = ?", (signing_scope_id,)).fetchone()
         if row is None: raise SigningJournalStateError("signing_intent_not_found")
         return self._row(row)
+
+    def get_coordinator_link(self, coordinator_job_id: str) -> CoordinatorSigningLink:
+        row = self._db.execute("SELECT * FROM coordinator_signing_links WHERE coordinator_job_id = ?", (coordinator_job_id,)).fetchone()
+        if row is None:
+            raise SigningJournalStateError("coordinator_signing_link_not_found")
+        return CoordinatorSigningLink(row["coordinator_job_id"], row["signing_scope_id"], row["canonical_message_digest"], row["created_at_ms"])
+
+    def get_for_coordinator_job(self, coordinator_job_id: str) -> SigningJournalIntent:
+        return self.get(self.get_coordinator_link(coordinator_job_id).signing_scope_id)
 
     def inspect_recovery(self, signing_scope_id: str) -> SigningRecoveryStatus:
         """Classify one durable record without changing state or calling Vault."""

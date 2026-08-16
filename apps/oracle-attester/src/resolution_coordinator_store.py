@@ -16,6 +16,8 @@ from threading import Lock
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from solders.pubkey import Pubkey
+
 from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
 from .resolver_v2_pipeline import PipelineRejected
 
@@ -25,7 +27,7 @@ except ModuleNotFoundError:
     from .resolver_v2_pipeline import resolver_v2
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PENDING = "PENDING"
 A_RECORDED = "A_RECORDED"
 B_RECORDED = "B_RECORDED"
@@ -53,6 +55,47 @@ class VerifierBinding:
         except resolver_v2.ResolverV2Error as exc:
             raise CoordinatorRejected("invalid_verifier_binding") from exc
         object.__setattr__(self, "descriptor", MappingProxyType(dict(canonical)))
+
+
+@dataclass(frozen=True)
+class SettlementMessageContext:
+    """Immutable non-result inputs required by the existing PROPHET_RESOLVE_V2 builder.
+
+    Market, resolver hash, and outcome are deliberately absent: they are read from
+    the authoritative durable coordinator job at signing time.
+    """
+
+    program_id: str
+    notary_config: str
+    open_ts: int
+    resolve_ts: int
+    notary_config_version: int
+    proof_hash: str
+    public_inputs_hash: str
+
+    def __post_init__(self) -> None:
+        for name in ("program_id", "notary_config"):
+            value = getattr(self, name)
+            try:
+                if not isinstance(value, str) or not value or str(Pubkey.from_string(value)) != value:
+                    raise ValueError
+            except Exception as exc:
+                raise CoordinatorRejected(f"settlement_{name}_invalid") from exc
+        for name in ("proof_hash", "public_inputs_hash"):
+            value = getattr(self, name)
+            try:
+                if not isinstance(value, str) or len(value) != 64 or bytes.fromhex(value).hex() != value:
+                    raise ValueError
+            except ValueError as exc:
+                raise CoordinatorRejected(f"settlement_{name}_invalid") from exc
+        for name in ("open_ts", "resolve_ts", "notary_config_version"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise CoordinatorRejected(f"settlement_{name}_invalid")
+        if not -(1 << 63) <= self.open_ts < (1 << 63) or not -(1 << 63) <= self.resolve_ts < (1 << 63):
+            raise CoordinatorRejected("settlement_timestamp_out_of_range")
+        if not 0 <= self.notary_config_version < (1 << 64):
+            raise CoordinatorRejected("settlement_notary_config_version_invalid")
 
 
 @dataclass(frozen=True)
@@ -162,8 +205,46 @@ class ResolutionCoordinatorStore:
                             PRIMARY KEY(job_id, slot, submitted_result_hash)
                         )"""
                     )
-                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (SCHEMA_VERSION, timestamp))
-                    self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                    self._db.execute(
+                        """CREATE TABLE resolution_job_settlement_contexts (
+                            job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
+                            program_id TEXT NOT NULL,
+                            notary_config TEXT NOT NULL,
+                            open_ts INTEGER NOT NULL,
+                            resolve_ts INTEGER NOT NULL,
+                            notary_config_version TEXT NOT NULL,
+                            proof_hash TEXT NOT NULL,
+                            public_inputs_hash TEXT NOT NULL,
+                            created_at_ms TEXT NOT NULL
+                        )"""
+                    )
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (1, timestamp))
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
+                    self._db.execute("PRAGMA user_version = 2")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
+                return
+            if current == 1:
+                timestamp = _now_ms()
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    self._db.execute(
+                        """CREATE TABLE resolution_job_settlement_contexts (
+                            job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
+                            program_id TEXT NOT NULL,
+                            notary_config TEXT NOT NULL,
+                            open_ts INTEGER NOT NULL,
+                            resolve_ts INTEGER NOT NULL,
+                            notary_config_version TEXT NOT NULL,
+                            proof_hash TEXT NOT NULL,
+                            public_inputs_hash TEXT NOT NULL,
+                            created_at_ms TEXT NOT NULL
+                        )"""
+                    )
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
+                    self._db.execute("PRAGMA user_version = 2")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
@@ -215,6 +296,61 @@ class ResolutionCoordinatorStore:
         if row is None:
             raise CoordinatorRejected("resolution_job_not_found")
         return self._row_to_job(row)
+
+    def bind_settlement_context(self, job_id: str, context: SettlementMessageContext) -> SettlementMessageContext:
+        """Bind exact non-result settlement inputs before verifier progress begins.
+
+        Existing exact bindings are idempotent. A missing binding may not be
+        introduced after any verifier result has been persisted.
+        """
+        if not isinstance(context, SettlementMessageContext):
+            raise CoordinatorRejected("settlement_context_invalid")
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                job = self._db.execute("SELECT * FROM resolution_jobs WHERE job_id = ?", (job_id,)).fetchone()
+                if job is None:
+                    raise CoordinatorRejected("resolution_job_not_found")
+                row = self._db.execute("SELECT * FROM resolution_job_settlement_contexts WHERE job_id = ?", (job_id,)).fetchone()
+                if row is not None:
+                    existing = self._row_to_settlement_context(row)
+                    if existing != context:
+                        raise CoordinatorRejected("settlement_context_immutable")
+                    self._db.execute("COMMIT")
+                    return existing
+                if job["state"] != PENDING or job["verifier_a_result_json"] is not None or job["verifier_b_result_json"] is not None:
+                    raise CoordinatorRejected("settlement_context_binding_too_late")
+                self._db.execute(
+                    """INSERT INTO resolution_job_settlement_contexts(
+                        job_id, program_id, notary_config, open_ts, resolve_ts,
+                        notary_config_version, proof_hash, public_inputs_hash, created_at_ms
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (job_id, context.program_id, context.notary_config, context.open_ts, context.resolve_ts,
+                     str(context.notary_config_version), context.proof_hash, context.public_inputs_hash, _now_ms()),
+                )
+                self._db.execute("COMMIT")
+                return context
+            except Exception:
+                if self._db.in_transaction:
+                    self._db.execute("ROLLBACK")
+                raise
+
+    def get_settlement_context(self, job_id: str) -> SettlementMessageContext:
+        if self._db.execute("SELECT 1 FROM resolution_jobs WHERE job_id = ?", (job_id,)).fetchone() is None:
+            raise CoordinatorRejected("resolution_job_not_found")
+        row = self._db.execute("SELECT * FROM resolution_job_settlement_contexts WHERE job_id = ?", (job_id,)).fetchone()
+        if row is None:
+            raise CoordinatorRejected("settlement_context_not_found")
+        return self._row_to_settlement_context(row)
+
+    @staticmethod
+    def _row_to_settlement_context(row: sqlite3.Row) -> SettlementMessageContext:
+        return SettlementMessageContext(
+            program_id=row["program_id"], notary_config=row["notary_config"],
+            open_ts=int(row["open_ts"]), resolve_ts=int(row["resolve_ts"]),
+            notary_config_version=int(row["notary_config_version"]),
+            proof_hash=row["proof_hash"], public_inputs_hash=row["public_inputs_hash"],
+        )
 
     def record_result(self, *, job_id: str, slot: str, result: Mapping[str, Any]) -> ResolutionJob:
         binding = self._binding(slot)
