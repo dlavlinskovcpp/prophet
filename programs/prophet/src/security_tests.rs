@@ -419,7 +419,11 @@ fn state_machine_preserves_economic_invariants_for_thousands_of_seeds() {
     }
 
     let sequence_count = std::env::var("PROPHET_INVARIANT_SEQUENCE_COUNT")
-        .map(|value| value.parse::<u64>().expect("PROPHET_INVARIANT_SEQUENCE_COUNT must be a u64"))
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .expect("PROPHET_INVARIANT_SEQUENCE_COUNT must be a u64")
+        })
         .unwrap_or(SEQUENCE_COUNT);
     for offset in 0..sequence_count {
         let seed = SEED_MIX.wrapping_add(offset.wrapping_mul(0x9e37_79b9_7f4a_7c15));
@@ -590,8 +594,6 @@ fn property_overflow_boundaries_fail_closed_without_wrapping() {
     for price in [0, 1, PROBABILITY_SCALE - 1, PROBABILITY_SCALE] {
         let yes = required_escrow_atoms(OrderSide::BuyYes, u64::MAX, price).unwrap();
         let no = required_escrow_atoms(OrderSide::BuyNo, u64::MAX, price).unwrap();
-        assert!(yes <= u64::MAX);
-        assert!(no <= u64::MAX);
         assert!(protocol_fee_ceil(yes, MAX_PROTOCOL_FEE_BPS).is_ok());
         assert!(protocol_fee_ceil(no, MAX_PROTOCOL_FEE_BPS).is_ok());
     }
