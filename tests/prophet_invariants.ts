@@ -139,12 +139,30 @@ describe("prophet-invariants", () => {
     throw new Error("Timeout waiting for valid chain time");
   };
 
-  const waitUntilChainTimeGE = async (target: number, timeoutMs = 20000) => {
+  const clockPacer = Keypair.generate().publicKey;
+
+  const ensureClockPacerFunded = async () => {
+    if ((await provider.connection.getBalance(clockPacer)) >= 1_000_000) return;
+    const sig = await provider.connection.requestAirdrop(clockPacer, 2_000_000);
+    await provider.connection.confirmTransaction(sig, "confirmed");
+  };
+
+  const waitUntilChainTimeGE = async (target: number, timeoutMs = 45000) => {
+    await ensureClockPacerFunded();
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const current = await getChainTime();
       if (current !== null && current >= target) return;
-      await new Promise((r) => setTimeout(r, 500));
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: clockPacer,
+            lamports: 1,
+          })
+        )
+      );
+      await new Promise((r) => setTimeout(r, 250));
     }
     throw new Error(`Timeout waiting for chain time >= ${target}`);
   };
