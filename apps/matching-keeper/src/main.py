@@ -5,9 +5,11 @@ import uvicorn
 from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 
-from .config import settings
+from .config import Settings
 from .service import MatchingKeeperService
 
+
+settings = Settings()
 
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),

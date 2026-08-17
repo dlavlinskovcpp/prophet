@@ -142,11 +142,50 @@ class MatchingEngine:
         buy_yes.sort(key=lambda item: (-item[1].limit_p_yes_e8, item[1].seq, bytes(item[0])))
         buy_no.sort(key=lambda item: (item[1].limit_p_yes_e8, item[1].seq, bytes(item[0])))
 
-        order_yes_pubkey, order_yes = buy_yes[0]
-        order_no_pubkey, order_no = buy_no[0]
+        top_yes_pubkey, top_yes = buy_yes[0]
+        top_no_pubkey, top_no = buy_no[0]
 
-        if order_yes.limit_p_yes_e8 < order_no.limit_p_yes_e8:
+        if top_yes.limit_p_yes_e8 < top_no.limit_p_yes_e8:
             return None
+
+        selected = None
+        if top_yes.owner != top_no.owner:
+            selected = (top_yes_pubkey, top_yes, top_no_pubkey, top_no)
+        else:
+            # Let the shared top owner be O. For any valid later pair (Yi, Nj):
+            # if Yi.owner != O then (Yi, N0) is also distinct-owner and at least
+            # as crossed because N0 has no worse NO price; otherwise Nj.owner != O
+            # and (Y0, Nj) is distinct-owner and at least as crossed because Y0
+            # has no worse YES price. So a best valid pair always exists on one
+            # of these two top-of-book frontiers; no Cartesian scan is required.
+            yes_frontier_open = True
+            no_frontier_open = True
+            for depth in range(1, max(len(buy_yes), len(buy_no))):
+                if no_frontier_open and depth < len(buy_no):
+                    order_no_pubkey, order_no = buy_no[depth]
+                    if order_no.owner != top_yes.owner:
+                        no_frontier_open = False
+                        if top_yes.limit_p_yes_e8 >= order_no.limit_p_yes_e8:
+                            selected = (top_yes_pubkey, top_yes, order_no_pubkey, order_no)
+                            break
+
+                if yes_frontier_open and depth < len(buy_yes):
+                    order_yes_pubkey, order_yes = buy_yes[depth]
+                    if order_yes.owner != top_no.owner:
+                        yes_frontier_open = False
+                        if order_yes.limit_p_yes_e8 >= top_no.limit_p_yes_e8:
+                            selected = (order_yes_pubkey, order_yes, top_no_pubkey, top_no)
+                            break
+
+                if not yes_frontier_open and not no_frontier_open:
+                    break
+
+        if selected is None:
+            return None
+
+        order_yes_pubkey, order_yes, order_no_pubkey, order_no = selected
+        if order_yes.owner == order_no.owner:
+            raise AssertionError("matching engine selected a self-match")
 
         qty_atoms = min(max_qty_atoms, int(order_yes.qty_remaining_atoms), int(order_no.qty_remaining_atoms))
         if qty_atoms <= 0:

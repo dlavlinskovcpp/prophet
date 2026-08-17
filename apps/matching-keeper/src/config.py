@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from solders.pubkey import Pubkey
 
@@ -37,7 +38,7 @@ def _derive_ws_url(rpc_url: str) -> str:
 class Settings(BaseSettings):
     RPC_URL: str = os.getenv("RPC_URL", "http://127.0.0.1:8899")
     WS_URL: str = os.getenv("WS_URL", "")
-    PROPHET_PROGRAM_ID: str = os.getenv("PROPHET_PROGRAM_ID", "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A")
+    PROPHET_PROGRAM_ID: str
     PAYER_KEYPAIR_PATH: str = os.getenv("PAYER_KEYPAIR_PATH", "./id.json")
     MARKET_DISCOVERY_MODE: str = os.getenv("MARKET_DISCOVERY_MODE", "explicit")
     MARKETS: str = os.getenv("MARKETS", "")
@@ -59,6 +60,20 @@ class Settings(BaseSettings):
         else None
     )
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    @field_validator("PROPHET_PROGRAM_ID")
+    @classmethod
+    def _validate_program_id(cls, value: str) -> str:
+        program_id = str(value or "").strip()
+        if not program_id:
+            raise ValueError("PROPHET_PROGRAM_ID is required.")
+        try:
+            parsed = Pubkey.from_string(program_id)
+        except Exception as exc:
+            raise ValueError("PROPHET_PROGRAM_ID must be a valid Solana pubkey.") from exc
+        if str(parsed) != program_id:
+            raise ValueError("PROPHET_PROGRAM_ID must be canonical base58.")
+        return program_id
 
     @property
     def tracked_markets(self) -> List[Pubkey]:
@@ -102,6 +117,3 @@ class Settings(BaseSettings):
 
     def ensure_runtime_dirs(self) -> None:
         Path(self.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-
-
-settings = Settings()

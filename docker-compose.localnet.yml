@@ -97,7 +97,7 @@ services:
     environment:
       RPC_URL: http://validator:8899
       WS_URL: ws://validator:8900
-      PROPHET_PROGRAM_ID: ${PROPHET_PROGRAM_ID:-913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A}
+      PROPHET_PROGRAM_ID: ${PROPHET_PROGRAM_ID:?PROPHET_PROGRAM_ID must be set explicitly}
       PAYER_KEYPAIR_PATH: /app/apps/matching-keeper/id.json
       MARKET_DISCOVERY_MODE: program_scan
       REQUIRE_NOTARY_CONFIG: "1"

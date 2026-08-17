@@ -5,10 +5,9 @@ target
 node_modules
 test-ledger
 .env*
+!apps/matching-keeper/.env.example
 *.json
 !docs/migration/anchor_0_30_protocol_snapshot.json
-!id.json
-!oracle-keypair.json
 !package.json
 !tsconfig.json
 !deploy/environments/*.json
