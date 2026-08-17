@@ -1,5 +1,5 @@
-# Public-devnet single-host foundation. All admin services remain private to
-# Docker; place a TLS-authenticated reverse proxy in front of selected APIs only.
+# Production-shaped secure settlement topology.
+# Generic remote signer and direct oracle-attester settlement are intentionally absent.
 services:
   vault:
     image: hashicorp/vault:1.17.6
@@ -11,49 +11,73 @@ services:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/vault-audit:/vault/audit
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/vault.hcl:/vault/config/vault.hcl:ro
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/tls:/vault/tls:ro
-    networks: [private]
     restart: unless-stopped
 
   resolver-registry:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
     command: uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
-    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/resolver-registry.env]
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/resolver-registry.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver-store:/app/resolver_store
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
-    networks: [private]
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver_store:/app/resolver_store
     restart: unless-stopped
 
-  remote-signer:
+  verifier-a:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
-    command: uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
-    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/remote-signer.env]
+    command: uvicorn src.verifier_a_main:app --host 0.0.0.0 --port 8301
+    environment:
+      PROPHET_VERIFIER_RUNTIME_CONFIG: /app/runtime/verifier-a.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/verifier-a.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/signer_allowlist.txt:/app/signer_allowlist.txt:ro
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/remote-signer:/app/remote-signer-secrets:ro
-    networks: [private]
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/verifier-a.yaml:/app/runtime/verifier-a.yaml:ro
     restart: unless-stopped
 
-  oracle-attester:
+  verifier-b:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
-    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/oracle-attester.env]
+    command: uvicorn src.verifier_b_main:app --host 0.0.0.0 --port 8302
+    environment:
+      PROPHET_VERIFIER_RUNTIME_CONFIG: /app/runtime/verifier-b.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/verifier-b.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/proof-store:/app/proof_store
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/audit:/app/audit
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/oracle-keypair.json:/app/oracle-keypair.json:ro
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/relayer-keypair.json:/app/relayer-keypair.json:ro
-    networks: [private]
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/verifier-b.yaml:/app/runtime/verifier-b.yaml:ro
+    restart: unless-stopped
+
+  coordinator:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.coordinator_main:app --host 0.0.0.0 --port 8400
+    environment:
+      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/coordinator.env"
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/state:/var/lib/prophet/public-devnet
+    depends_on: [verifier-a, verifier-b]
+    restart: unless-stopped
+
+  secure-settlement:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.secure_settlement_main:app --host 0.0.0.0 --port 8500
+    environment:
+      PROPHET_SETTLEMENT_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/secure-settlement.env"
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/state:/var/lib/prophet/public-devnet
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/settlement-fee-payer.json:/run/secrets/settlement-fee-payer.json:ro
+    depends_on: [coordinator]
     restart: unless-stopped
 
   matching-keeper:
     build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }
-    env_file: [${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/matching-keeper.env]
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/matching-keeper.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/keeper:/app/apps/matching-keeper/state
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-id.json:/app/keeper-id.json:ro
-    networks: [private]
     restart: unless-stopped
 
   prometheus:
@@ -63,7 +87,6 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/prometheus:/prometheus
-    networks: [private]
     restart: unless-stopped
 
   alertmanager:
@@ -72,7 +95,6 @@ services:
     volumes:
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/alertmanager.yml:/run/secrets/alertmanager.yml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/alertmanager:/alertmanager
-    networks: [private]
     restart: unless-stopped
 
   grafana:
@@ -82,9 +104,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD__FILE: ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/grafana-admin-password
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/grafana:/var/lib/grafana
-    networks: [private]
     restart: unless-stopped
 
 networks:
-  private:
+  default:
     internal: true

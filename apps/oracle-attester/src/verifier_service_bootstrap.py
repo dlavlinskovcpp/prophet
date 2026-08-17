@@ -4,7 +4,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .independent_zktls_runtime_factory import DeterministicTestIndependentProofChecker, IndependentZkTlsRuntimeFactory
+from .independent_zktls_runtime_factory import (
+    BoundHttpIndependentProofChecker,
+    DeterministicTestIndependentProofChecker,
+    INDEPENDENT_BOUND_HTTP_BACKEND,
+    IndependentZkTlsRuntimeFactory,
+)
 from .resolver_verifier_runtime import ResolverVerifierRuntime
 from .runtime_adapter_factory import RuntimeAdapterFactory
 from .runtime_config import load_runtime_config
@@ -32,6 +37,15 @@ def _token(config) -> str:
 
 
 def _build_a(config):
+    if config.zktls is not None:
+        if config.zktls.verifier_backend == INDEPENDENT_BOUND_HTTP_BACKEND:
+            raise ValueError("verifier A cannot use verifier B independent backend")
+        if config.mode == "production":
+            if config.zktls.verifier_backend != "bound-http":
+                raise ValueError("verifier A production zkTLS backend must be bound-http")
+            # Resolve the backend now so /ready cannot succeed with missing URL/token.
+            from .zktls_runtime_backend import make_zktls_proof_verifier
+            make_zktls_proof_verifier(config)
     descriptor = _descriptor(VERIFIER_A_ID, 70)
     signed_registry = None if config.signed_oracle is None else load_trusted_oracle_key_registry(config.signed_oracle.registry_path)
     factory = RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={kind: descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, signed_oracle_registry=signed_registry)
@@ -39,10 +53,20 @@ def _build_a(config):
 
 
 def _build_b(config):
-    if set(config.allowed_adapters) != {"zktls"} or config.mode != "test" or config.zktls.verifier_backend != "deterministic-test":
+    if set(config.allowed_adapters) != {"zktls"} or config.zktls is None:
+        raise ValueError("independent verifier backend is not configured")
+    if config.mode == "test" and config.zktls.verifier_backend == "deterministic-test":
+        checker = DeterministicTestIndependentProofChecker()
+    elif config.mode == "production" and config.zktls.verifier_backend == INDEPENDENT_BOUND_HTTP_BACKEND:
+        checker = BoundHttpIndependentProofChecker.from_environment(
+            timeout_seconds=float(config.limits.request_timeout_seconds)
+        )
+    else:
         raise ValueError("independent verifier backend is not configured")
     descriptor = _descriptor(VERIFIER_B_ID, 71)
-    factory = IndependentZkTlsRuntimeFactory(runtime_config=config, verifier_descriptor=descriptor, checker=DeterministicTestIndependentProofChecker())
+    factory = IndependentZkTlsRuntimeFactory(
+        runtime_config=config, verifier_descriptor=descriptor, checker=checker
+    )
     return ResolverVerifierRuntime(config, factory, descriptor)
 
 

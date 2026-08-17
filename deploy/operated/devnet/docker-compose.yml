@@ -1,84 +1,68 @@
-# Copy the *.env.example files in this directory to *.env and replace all
-# example secrets before bringing up the stack.
-#
-# Runtime state defaults to /var/lib/prophet/devnet.
-# Secret material defaults to /etc/prophet/devnet.
-
+# Production-shaped secure settlement topology.
+# Generic remote signer and direct oracle-attester settlement are intentionally absent.
 services:
   resolver-registry:
-    build:
-      context: ../../..
-      dockerfile: apps/oracle-attester/Dockerfile
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
     command: uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
     env_file:
-      - ./resolver-registry.env
-    ports:
-      - "127.0.0.1:8200:8200"
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/resolver-registry.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/resolver_store:/app/resolver_store
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/audit:/app/audit
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/health', timeout=3).read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
-  remote-signer:
-    build:
-      context: ../../..
-      dockerfile: apps/oracle-attester/Dockerfile
-    command: uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+  verifier-a:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.verifier_a_main:app --host 0.0.0.0 --port 8301
+    environment:
+      PROPHET_VERIFIER_RUNTIME_CONFIG: /app/runtime/verifier-a.yaml
     env_file:
-      - ./remote-signer.env
-    ports:
-      - "127.0.0.1:8100:8100"
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/verifier-a.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/audit:/app/audit
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/signer_allowlist.txt:/app/signer_allowlist.txt:ro
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/remote-signer:/app/remote-signer-secrets:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/verifier-a.yaml:/app/runtime/verifier-a.yaml:ro
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3).read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
-  oracle-attester:
-    build:
-      context: ../../..
-      dockerfile: apps/oracle-attester/Dockerfile
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+  verifier-b:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.verifier_b_main:app --host 0.0.0.0 --port 8302
+    environment:
+      PROPHET_VERIFIER_RUNTIME_CONFIG: /app/runtime/verifier-b.yaml
     env_file:
-      - ./oracle-attester.env
-    ports:
-      - "127.0.0.1:8000:8000"
-    depends_on:
-      - resolver-registry
-      - remote-signer
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/verifier-b.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/proof_store:/app/proof_store
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/audit:/app/audit
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/oracle-keypair.json:/app/oracle-keypair.json:ro
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/relayer-keypair.json:/app/relayer-keypair.json:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/verifier-b.yaml:/app/runtime/verifier-b.yaml:ro
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+
+  coordinator:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.coordinator_main:app --host 0.0.0.0 --port 8400
+    environment:
+      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/coordinator.env"
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/state:/var/lib/prophet/devnet
+    depends_on: [verifier-a, verifier-b]
+    restart: unless-stopped
+
+  secure-settlement:
+    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
+    command: uvicorn src.secure_settlement_main:app --host 0.0.0.0 --port 8500
+    environment:
+      PROPHET_SETTLEMENT_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+    env_file:
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/secure-settlement.env"
+    volumes:
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/state:/var/lib/prophet/devnet
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/settlement-fee-payer.json:/run/secrets/settlement-fee-payer.json:ro
+    depends_on: [coordinator]
+    restart: unless-stopped
 
   matching-keeper:
-    build:
-      context: ../../..
-      dockerfile: apps/matching-keeper/Dockerfile
+    build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }
     env_file:
-      - ./matching-keeper.env
-    ports:
-      - "127.0.0.1:8010:8010"
+      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/matching-keeper.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/keeper-id.json:/app/keeper-id.json:ro

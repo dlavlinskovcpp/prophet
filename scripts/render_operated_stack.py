@@ -13,35 +13,44 @@ ROOT = Path(__file__).resolve().parent.parent
 OPERATED_DIR = ROOT / "deploy" / "operated"
 ENVIRONMENTS_DIR = ROOT / "deploy" / "environments"
 SERVICES = (
-    "oracle-attester",
-    "remote-signer",
     "resolver-registry",
     "matching-keeper",
 )
 COMMON_REQUIRED_VALUES = (
-    "ATTESTER_BASE_URL",
-    "REMOTE_SIGNER_PUBLIC_URL",
+    "VERIFIER_A_BASE_URL",
+    "VERIFIER_B_BASE_URL",
+    "COORDINATOR_BASE_URL",
+    "SECURE_SETTLEMENT_BASE_URL",
     "RESOLVER_REGISTRY_PUBLIC_URL",
     "MATCHING_KEEPER_BASE_URL",
-    "RECLAIM_VERIFY_URL",
+    "VERIFIER_A_IDENTITY",
+    "VERIFIER_B_IDENTITY",
+    "VERIFIER_A_AUTH_REF",
+    "VERIFIER_B_AUTH_REF",
+    "VERIFIER_A_PROOF_BACKEND_URL",
+    "VERIFIER_B_PROOF_BACKEND_URL",
+    "COORDINATOR_SQLITE_PATH",
+    "SIGNING_JOURNAL_PATH",
+    "SUBMISSION_JOURNAL_PATH",
+    "SIGNER_A_IDENTITY",
+    "SIGNER_B_IDENTITY",
+    "SIGNER_A_VAULT_KEY",
+    "SIGNER_B_VAULT_KEY",
+    "SIGNER_A_AUTH_REF",
+    "SIGNER_B_AUTH_REF",
 )
-AWS_KMS_REQUIRED_VALUES = (
-    "REMOTE_SIGNER_AWS_KMS_REGION",
-    "REMOTE_SIGNER_AWS_KMS_KEY_IDS",
-)
-COMMAND_REQUIRED_VALUES = (
+SECRET_VALUE_KEYS = ("RESOLVER_REGISTRY_SERVICE_API_KEY",)
+LEGACY_SETTLEMENT_KEYS = (
+    "ATTESTER_BASE_URL",
+    "REMOTE_SIGNER_PUBLIC_URL",
+    "REMOTE_SIGNER_INTERNAL_URL",
+    "REMOTE_SIGNER_API_KEY",
+    "REMOTE_SIGNER_BACKEND",
     "REMOTE_SIGNER_COMMAND",
     "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS",
+    "REMOTE_SIGNER_AWS_KMS_KEY_IDS",
+    "NOTARY_SIGNER_MODE",
 )
-VAULT_COMMAND_REQUIRED_VALUES = (
-    "VAULT_ADDR",
-)
-SECRET_VALUE_KEYS = (
-    "REMOTE_SIGNER_API_KEY",
-    "RESOLVER_REGISTRY_SERVICE_API_KEY",
-    "API_AUTH_TOKEN",
-)
-SUPPORTED_REMOTE_SIGNER_BACKENDS = {"aws_kms", "command"}
 
 
 class RenderError(RuntimeError):
@@ -94,10 +103,6 @@ def _derive_ws_url(rpc_url: str) -> str:
     return rpc_url
 
 
-def _is_https(url: str) -> str:
-    return "1" if url.startswith("https://") else "0"
-
-
 def _merge_values(base: Dict[str, str], overrides: Iterable[str]) -> Dict[str, str]:
     merged = dict(base)
     for item in overrides:
@@ -111,6 +116,18 @@ def _merge_values(base: Dict[str, str], overrides: Iterable[str]) -> Dict[str, s
     return merged
 
 
+def _persistent_absolute(value: str) -> bool:
+    return bool(value and value != ":memory:" and Path(value).is_absolute())
+
+
+def _require_https(values: Dict[str, str], keys: Iterable[str]) -> None:
+    insecure = [key for key in keys if not values.get(key, "").startswith("https://")]
+    if insecure:
+        raise RenderError(
+            "Production-shaped secure topology requires https for: " + ", ".join(sorted(insecure))
+        )
+
+
 def _final_values(
     *,
     env_name: str,
@@ -118,31 +135,58 @@ def _final_values(
     loaded: Dict[str, str],
     generate_secrets: bool,
 ) -> Dict[str, str]:
+    endpoints = env_config.get("service_endpoints", {})
+    secure = env_config.get("secure_settlement", {})
+    if not isinstance(endpoints, dict) or not isinstance(secure, dict):
+        raise RenderError("Environment config is missing secure settlement topology metadata.")
+    verifier_a = secure.get("verifier_a", {})
+    verifier_b = secure.get("verifier_b", {})
+    signer_a = secure.get("signer_a", {})
+    signer_b = secure.get("signer_b", {})
+    if not all(isinstance(value, dict) for value in (verifier_a, verifier_b, signer_a, signer_b)):
+        raise RenderError("Environment secure settlement identity metadata is malformed.")
+
+    legacy = sorted(key for key in LEGACY_SETTLEMENT_KEYS if key in loaded)
+    if legacy:
+        raise RenderError(
+            "Legacy direct-attester/generic-signer settlement values are forbidden: "
+            + ", ".join(legacy)
+        )
+
+    runtime_root = str(loaded.get("PROPHET_RUNTIME_ROOT", f"/var/lib/prophet/{env_name}"))
     defaults = {
         "RPC_URL": str(env_config["rpc_url"]),
         "WS_URL": _derive_ws_url(str(loaded.get("RPC_URL", env_config["rpc_url"]))),
         "PROPHET_PROGRAM_ID": str(loaded.get("PROPHET_PROGRAM_ID", env_config["expected_program_id"])),
-        "PROPHET_RUNTIME_ROOT": f"/var/lib/prophet/{env_name}",
+        "PROPHET_RUNTIME_ROOT": runtime_root,
         "PROPHET_SECRET_ROOT": f"/etc/prophet/{env_name}",
-        "REMOTE_SIGNER_INTERNAL_URL": "http://remote-signer:8100/sign",
         "RESOLVER_REGISTRY_INTERNAL_URL": "http://resolver-registry:8200/resolvers",
-        "REMOTE_SIGNER_BACKEND": "command",
-        "REMOTE_SIGNER_COMMAND": "python /app/scripts/vault_transit_signer.py",
-        "REMOTE_SIGNER_COMMAND_TIMEOUT_S": "5",
-        "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": "",
-        "VAULT_ADDR": "",
-        "VAULT_NAMESPACE": "",
-        "VAULT_TOKEN_FILE": "/app/remote-signer-secrets/vault-token",
-        "VAULT_CACERT": "/app/remote-signer-secrets/vault-ca.pem",
-        "VAULT_SKIP_VERIFY": "0",
-        "VAULT_TRANSIT_MOUNT": "transit",
-        "VAULT_TRANSIT_KEY_NAME": "",
-        "VAULT_TRANSIT_KEY_MAP_PATH": "/app/remote-signer-secrets/vault-transit-key-map.json",
-        "VAULT_TRANSIT_TIMEOUT_S": "5",
-        "REMOTE_SIGNER_AWS_KMS_REGION": "",
-        "REMOTE_SIGNER_AWS_KMS_KEY_IDS": "",
-        "RECLAIM_API_KEY": "",
-        "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL": "",
+        "VERIFIER_A_BASE_URL": str(endpoints.get("verifier_a_base_url", "")),
+        "VERIFIER_B_BASE_URL": str(endpoints.get("verifier_b_base_url", "")),
+        "COORDINATOR_BASE_URL": str(endpoints.get("coordinator_base_url", "")),
+        "SECURE_SETTLEMENT_BASE_URL": str(endpoints.get("secure_settlement_base_url", "")),
+        "RESOLVER_REGISTRY_PUBLIC_URL": str(endpoints.get("resolver_registry_url", "")),
+        "MATCHING_KEEPER_BASE_URL": str(endpoints.get("matching_keeper_base_url", "")),
+        "RESOLUTION_MODE": str(secure.get("resolution_mode", "secure-coordinator")),
+        "DIRECT_ATTESTER_SETTLEMENT_ENABLED": "1" if secure.get("direct_attester_settlement_enabled") is True else "0",
+        "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED": "1" if secure.get("generic_remote_signer_settlement_enabled") is True else "0",
+        "STRICT_SIGNER_COUNT": str(secure.get("required_signer_count", 2)),
+        "COORDINATOR_SQLITE_PATH": str(secure.get("coordinator_sqlite_path", f"{runtime_root}/coordinator.sqlite")),
+        "SIGNING_JOURNAL_PATH": str(secure.get("signing_journal_path", f"{runtime_root}/signing-journal.sqlite")),
+        "SUBMISSION_JOURNAL_PATH": str(secure.get("submission_journal_path", f"{runtime_root}/submission-journal.sqlite")),
+        "VERIFIER_A_IDENTITY": str(verifier_a.get("identity", "")),
+        "VERIFIER_B_IDENTITY": str(verifier_b.get("identity", "")),
+        "VERIFIER_A_AUTH_REF": str(verifier_a.get("auth_ref", "")),
+        "VERIFIER_B_AUTH_REF": str(verifier_b.get("auth_ref", "")),
+        "VERIFIER_A_PROOF_BACKEND_URL": "",
+        "VERIFIER_B_PROOF_BACKEND_URL": "",
+        "SIGNER_A_IDENTITY": str(signer_a.get("identity", "")),
+        "SIGNER_B_IDENTITY": str(signer_b.get("identity", "")),
+        "SIGNER_A_VAULT_KEY": str(signer_a.get("vault_key_ref", "")),
+        "SIGNER_B_VAULT_KEY": str(signer_b.get("vault_key_ref", "")),
+        "SIGNER_A_AUTH_REF": str(signer_a.get("auth_ref", "")),
+        "SIGNER_B_AUTH_REF": str(signer_b.get("auth_ref", "")),
+        "RESOLVER_REGISTRY_SERVICE_API_KEY": "",
         "MARKET_DISCOVERY_MODE": "program_scan",
         "MARKETS": "",
         "COMPUTE_UNIT_LIMIT": "",
@@ -155,34 +199,58 @@ def _final_values(
     if not values.get("WS_URL"):
         values["WS_URL"] = _derive_ws_url(values["RPC_URL"])
 
-    backend = str(values.get("REMOTE_SIGNER_BACKEND", "aws_kms")).strip().lower()
-    if backend not in SUPPORTED_REMOTE_SIGNER_BACKENDS:
-        raise RenderError(
-            "REMOTE_SIGNER_BACKEND must be one of: aws_kms, command."
-        )
-    values["REMOTE_SIGNER_BACKEND"] = backend
-
-    if generate_secrets:
-        for key in SECRET_VALUE_KEYS:
-            if not values.get(key):
-                values[key] = secrets.token_urlsafe(32)
+    if generate_secrets and not values.get("RESOLVER_REGISTRY_SERVICE_API_KEY"):
+        values["RESOLVER_REGISTRY_SERVICE_API_KEY"] = secrets.token_urlsafe(32)
 
     missing = [key for key in COMMON_REQUIRED_VALUES if not values.get(key)]
-    if backend == "aws_kms":
-        missing.extend(key for key in AWS_KMS_REQUIRED_VALUES if not values.get(key))
-    if backend == "command":
-        missing.extend(key for key in COMMAND_REQUIRED_VALUES if not values.get(key))
-        if "vault_transit_signer.py" in str(values.get("REMOTE_SIGNER_COMMAND", "")):
-            missing.extend(
-                key for key in VAULT_COMMAND_REQUIRED_VALUES if not values.get(key)
-            )
     missing.extend(key for key in SECRET_VALUE_KEYS if not values.get(key))
     if missing:
-        joined = ", ".join(sorted(set(missing)))
         raise RenderError(
-            f"Missing required operated stack values for {env_name}: {joined}. "
-            "Fill stack.env or pass --generate-secrets for auth tokens."
+            f"Missing required secure operated-stack values for {env_name}: "
+            + ", ".join(sorted(set(missing)))
         )
+
+    if values.get("RESOLUTION_MODE") != "secure-coordinator":
+        raise RenderError("RESOLUTION_MODE must be secure-coordinator.")
+    if values.get("DIRECT_ATTESTER_SETTLEMENT_ENABLED") != "0":
+        raise RenderError("Direct attester settlement must be disabled.")
+    if values.get("GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED") != "0":
+        raise RenderError("Generic remote signer settlement must be disabled.")
+    if values.get("STRICT_SIGNER_COUNT") != "2":
+        raise RenderError("Secure settlement requires strict 2/2 signing.")
+
+    for key in ("COORDINATOR_SQLITE_PATH", "SIGNING_JOURNAL_PATH", "SUBMISSION_JOURNAL_PATH"):
+        if not _persistent_absolute(values[key]):
+            raise RenderError(f"{key} must be a persistent absolute path.")
+
+    if values["VERIFIER_A_BASE_URL"].rstrip("/") == values["VERIFIER_B_BASE_URL"].rstrip("/"):
+        raise RenderError("Verifier A/B service URLs must be distinct.")
+    if values["VERIFIER_A_IDENTITY"] == values["VERIFIER_B_IDENTITY"]:
+        raise RenderError("Verifier A/B identities must be distinct.")
+    if values["VERIFIER_A_AUTH_REF"] == values["VERIFIER_B_AUTH_REF"]:
+        raise RenderError("Verifier A/B auth references must be distinct.")
+    if values["VERIFIER_A_PROOF_BACKEND_URL"].rstrip("/") == values["VERIFIER_B_PROOF_BACKEND_URL"].rstrip("/"):
+        raise RenderError("Verifier A/B proof backend URLs must be distinct.")
+    if values["SIGNER_A_IDENTITY"] == values["SIGNER_B_IDENTITY"]:
+        raise RenderError("Signer A/B identities must be distinct.")
+    if values["SIGNER_A_VAULT_KEY"] == values["SIGNER_B_VAULT_KEY"]:
+        raise RenderError("Signer A/B Vault key references must be distinct.")
+    if values["SIGNER_A_AUTH_REF"] == values["SIGNER_B_AUTH_REF"]:
+        raise RenderError("Signer A/B auth references must be distinct.")
+
+    _require_https(
+        values,
+        (
+            "VERIFIER_A_BASE_URL",
+            "VERIFIER_B_BASE_URL",
+            "COORDINATOR_BASE_URL",
+            "SECURE_SETTLEMENT_BASE_URL",
+            "RESOLVER_REGISTRY_PUBLIC_URL",
+            "MATCHING_KEEPER_BASE_URL",
+            "VERIFIER_A_PROOF_BACKEND_URL",
+            "VERIFIER_B_PROOF_BACKEND_URL",
+        ),
+    )
     return values
 
 
@@ -220,54 +288,49 @@ def _write_compose_env(output_path: Path, values: Dict[str, str]) -> None:
 
 
 def _sync_environment_json(env_path: Path, env_config: Dict[str, object], values: Dict[str, str]) -> None:
-    service_endpoints = dict(env_config.get("service_endpoints", {}))
-    service_endpoints.update(
-        {
-            "attester_base_url": values["ATTESTER_BASE_URL"],
-            "remote_signer_url": values["REMOTE_SIGNER_PUBLIC_URL"],
-            "resolver_registry_url": values["RESOLVER_REGISTRY_PUBLIC_URL"],
-            "matching_keeper_base_url": values["MATCHING_KEEPER_BASE_URL"],
-        }
-    )
-    env_config["service_endpoints"] = service_endpoints
+    env_config["service_endpoints"] = {
+        "verifier_a_base_url": values["VERIFIER_A_BASE_URL"],
+        "verifier_b_base_url": values["VERIFIER_B_BASE_URL"],
+        "coordinator_base_url": values["COORDINATOR_BASE_URL"],
+        "secure_settlement_base_url": values["SECURE_SETTLEMENT_BASE_URL"],
+        "resolver_registry_url": values["RESOLVER_REGISTRY_PUBLIC_URL"],
+        "matching_keeper_base_url": values["MATCHING_KEEPER_BASE_URL"],
+    }
+    env_config["secure_settlement"] = {
+        "resolution_mode": values["RESOLUTION_MODE"],
+        "direct_attester_settlement_enabled": False,
+        "generic_remote_signer_settlement_enabled": False,
+        "coordinator_sqlite_path": values["COORDINATOR_SQLITE_PATH"],
+        "signing_journal_path": values["SIGNING_JOURNAL_PATH"],
+        "submission_journal_path": values["SUBMISSION_JOURNAL_PATH"],
+        "required_signer_count": 2,
+        "verifier_a": {
+            "identity": values["VERIFIER_A_IDENTITY"],
+            "backend_ref": values["VERIFIER_A_PROOF_BACKEND_URL"],
+            "auth_ref": values["VERIFIER_A_AUTH_REF"],
+        },
+        "verifier_b": {
+            "identity": values["VERIFIER_B_IDENTITY"],
+            "backend_ref": values["VERIFIER_B_PROOF_BACKEND_URL"],
+            "auth_ref": values["VERIFIER_B_AUTH_REF"],
+        },
+        "signer_a": {
+            "identity": values["SIGNER_A_IDENTITY"],
+            "vault_key_ref": values["SIGNER_A_VAULT_KEY"],
+            "auth_ref": values["SIGNER_A_AUTH_REF"],
+        },
+        "signer_b": {
+            "identity": values["SIGNER_B_IDENTITY"],
+            "vault_key_ref": values["SIGNER_B_VAULT_KEY"],
+            "auth_ref": values["SIGNER_B_AUTH_REF"],
+        },
+    }
     env_config["expected_program_id"] = values["PROPHET_PROGRAM_ID"]
     env_path.write_text(json.dumps(env_config, indent=2) + "\n", encoding="utf-8")
 
 
 def _service_replacements(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
     return {
-        "oracle-attester": {
-            "RPC_URL": values["RPC_URL"],
-            "PROPHET_PROGRAM_ID": values["PROPHET_PROGRAM_ID"],
-            "RECLAIM_VERIFY_URL": values["RECLAIM_VERIFY_URL"],
-            "RECLAIM_API_KEY": values["RECLAIM_API_KEY"],
-            "REMOTE_SIGNER_URL": values["REMOTE_SIGNER_INTERNAL_URL"],
-            "REMOTE_SIGNER_API_KEY": values["REMOTE_SIGNER_API_KEY"],
-            "REMOTE_SIGNER_REQUIRE_TLS": _is_https(values["REMOTE_SIGNER_INTERNAL_URL"]),
-            "RESOLVER_REGISTRY_URL": values["RESOLVER_REGISTRY_INTERNAL_URL"],
-            "RESOLVER_REGISTRY_API_KEY": values["RESOLVER_REGISTRY_SERVICE_API_KEY"],
-            "RESOLVER_REGISTRY_REQUIRE_TLS": _is_https(values["RESOLVER_REGISTRY_INTERNAL_URL"]),
-            "API_AUTH_TOKEN": values["API_AUTH_TOKEN"],
-        },
-        "remote-signer": {
-            "REMOTE_SIGNER_BACKEND": values["REMOTE_SIGNER_BACKEND"],
-            "REMOTE_SIGNER_API_KEY": values["REMOTE_SIGNER_API_KEY"],
-            "REMOTE_SIGNER_COMMAND": values["REMOTE_SIGNER_COMMAND"],
-            "REMOTE_SIGNER_COMMAND_TIMEOUT_S": values["REMOTE_SIGNER_COMMAND_TIMEOUT_S"],
-            "REMOTE_SIGNER_COMMAND_PUBLIC_KEYS": values["REMOTE_SIGNER_COMMAND_PUBLIC_KEYS"],
-            "VAULT_ADDR": values["VAULT_ADDR"],
-            "VAULT_NAMESPACE": values["VAULT_NAMESPACE"],
-            "VAULT_TOKEN_FILE": values["VAULT_TOKEN_FILE"],
-            "VAULT_CACERT": values["VAULT_CACERT"],
-            "VAULT_SKIP_VERIFY": values["VAULT_SKIP_VERIFY"],
-            "VAULT_TRANSIT_MOUNT": values["VAULT_TRANSIT_MOUNT"],
-            "VAULT_TRANSIT_KEY_NAME": values["VAULT_TRANSIT_KEY_NAME"],
-            "VAULT_TRANSIT_KEY_MAP_PATH": values["VAULT_TRANSIT_KEY_MAP_PATH"],
-            "VAULT_TRANSIT_TIMEOUT_S": values["VAULT_TRANSIT_TIMEOUT_S"],
-            "REMOTE_SIGNER_AWS_KMS_REGION": values["REMOTE_SIGNER_AWS_KMS_REGION"],
-            "REMOTE_SIGNER_AWS_KMS_KEY_IDS": values["REMOTE_SIGNER_AWS_KMS_KEY_IDS"],
-            "REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL": values["REMOTE_SIGNER_AWS_KMS_ENDPOINT_URL"],
-        },
         "resolver-registry": {
             "RESOLVER_REGISTRY_SERVICE_API_KEY": values["RESOLVER_REGISTRY_SERVICE_API_KEY"],
         },
@@ -285,7 +348,7 @@ def _service_replacements(values: Dict[str, str]) -> Dict[str, Dict[str, str]]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render operated Prophet deploy env files from one values file.")
+    parser = argparse.ArgumentParser(description="Render secure operated Prophet deploy metadata/env files from one values file.")
     parser.add_argument("--environment", required=True, help="Environment name under deploy/operated and deploy/environments.")
     parser.add_argument(
         "--values-file",
@@ -300,19 +363,19 @@ def main() -> int:
     parser.add_argument(
         "--skip-sync-env-json",
         action="store_true",
-        help="Do not rewrite deploy/environments/<environment>.json with rendered service endpoints.",
+        help="Do not rewrite deploy/environments/<environment>.json with rendered secure service endpoints.",
     )
     parser.add_argument(
         "--generate-secrets",
         action="store_true",
-        help="Generate missing API tokens for REMOTE_SIGNER_API_KEY, RESOLVER_REGISTRY_SERVICE_API_KEY, and API_AUTH_TOKEN.",
+        help="Generate a missing resolver-registry service API token only. Settlement/Vault credentials remain external.",
     )
     parser.add_argument(
         "--set",
         dest="sets",
         action="append",
         default=[],
-        help="Override a values entry inline, e.g. --set ATTESTER_BASE_URL=https://attester.example.",
+        help="Override a values entry inline, e.g. --set VERIFIER_A_BASE_URL=https://verifier-a.example.",
     )
     args = parser.parse_args()
 

@@ -20,7 +20,13 @@ from .resolution_coordinator import (
     ResolutionCoordinatorPersistenceFailure,
     ResolutionCoordinatorVerifierFailure,
 )
-from .resolution_coordinator_store import CoordinatorRejected, ResolutionJob
+from .resolution_coordinator_store import (
+    CoordinatorRejected,
+    ResolutionJob,
+    SettlementMessageContext,
+    SettlementRuntimeBinding,
+)
+from .runtime_config import SolanaRuntimeConfig
 
 try:
     from prophet_sdk import resolver_v2
@@ -95,8 +101,23 @@ def _job_payload(job: ResolutionJob) -> dict[str, Any]:
     }
 
 
-def _validate_request(payload: Any) -> tuple[str, Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
-    if not isinstance(payload, dict) or set(payload) != {"market", "resolver_definition", "evidence", "trust_model"}:
+def _validate_request(
+    payload: Any,
+    *,
+    solana_runtime: SolanaRuntimeConfig | None = None,
+    require_settlement_context: bool = False,
+) -> tuple[
+    str,
+    Mapping[str, Any],
+    Mapping[str, Any],
+    Mapping[str, Any],
+    SettlementMessageContext | None,
+    SettlementRuntimeBinding | None,
+]:
+    required = {"market", "resolver_definition", "evidence", "trust_model"}
+    if require_settlement_context:
+        required.add("settlement_context")
+    if not isinstance(payload, dict) or set(payload) != required:
         raise ValueError("invalid_request_shape")
     market, definition, evidence, trust = payload["market"], payload["resolver_definition"], payload["evidence"], payload["trust_model"]
     if not isinstance(market, str) or len(market) != 64 or bytes.fromhex(market).hex() != market:
@@ -107,7 +128,38 @@ def _validate_request(payload: Any) -> tuple[str, Mapping[str, Any], Mapping[str
     definition_hash = resolver_v2.resolver_definition_hash(definition).hex()
     if evidence["definition_hash"] != definition_hash or definition["trust_model"] != trust:
         raise ValueError("canonical_request_binding_mismatch")
-    return market, definition, evidence, trust
+
+    context = None
+    runtime_binding = None
+    if require_settlement_context:
+        if not isinstance(solana_runtime, SolanaRuntimeConfig):
+            raise ValueError("trusted_solana_runtime_required")
+        row = payload["settlement_context"]
+        keys = {
+            "notary_config",
+            "open_ts",
+            "resolve_ts",
+            "notary_config_version",
+            "proof_hash",
+            "public_inputs_hash",
+        }
+        if not isinstance(row, dict) or set(row) != keys:
+            raise ValueError("settlement_context_shape_invalid")
+        context = SettlementMessageContext(
+            program_id=solana_runtime.prophet_program_id,
+            notary_config=row["notary_config"],
+            open_ts=row["open_ts"],
+            resolve_ts=row["resolve_ts"],
+            notary_config_version=row["notary_config_version"],
+            proof_hash=row["proof_hash"],
+            public_inputs_hash=row["public_inputs_hash"],
+        )
+        runtime_binding = SettlementRuntimeBinding(
+            cluster=solana_runtime.cluster,
+            genesis_hash=solana_runtime.genesis_hash,
+            program_id=solana_runtime.prophet_program_id,
+        )
+    return market, definition, evidence, trust, context, runtime_binding
 
 
 def create_coordinator_service(
@@ -119,6 +171,8 @@ def create_coordinator_service(
     request_timeout_seconds: int,
     startup_error: Optional[str] = None,
     close_resources: bool = False,
+    solana_runtime: SolanaRuntimeConfig | None = None,
+    require_settlement_context: bool = False,
 ) -> FastAPI:
     """Create the HTTP layer; request handlers delegate only to coordinator APIs."""
     @asynccontextmanager
@@ -135,9 +189,13 @@ def create_coordinator_service(
     app = FastAPI(title="Prophet Resolution Coordinator", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     metrics = CoordinatorServiceMetrics()
     ready = coordinator is not None and state is not None and bool(auth_token) and startup_error is None
+    if require_settlement_context and not isinstance(solana_runtime, SolanaRuntimeConfig):
+        ready = False
     app.state.coordinator, app.state.state, app.state.ready = coordinator, state, ready
     app.state.metrics = metrics
     app.state.request_max_bytes, app.state.request_timeout_seconds = request_max_bytes, request_timeout_seconds
+    app.state.solana_runtime = solana_runtime
+    app.state.require_settlement_context = require_settlement_context
     if coordinator is not None:
         logger.info(json.dumps({"event": "coordinator_service_startup", "ready": ready}, sort_keys=True))
 
@@ -195,8 +253,12 @@ def create_coordinator_service(
                 status, category = 400, "malformed"
                 return JSONResponse(status_code=status, content={"error": "invalid_json", "request_id": request_id})
             try:
-                market, definition, evidence, trust = _validate_request(parsed)
-            except (ValueError, TypeError, resolver_v2.ResolverV2Error):
+                market, definition, evidence, trust, settlement_context, settlement_runtime = _validate_request(
+                    parsed,
+                    solana_runtime=app.state.solana_runtime,
+                    require_settlement_context=app.state.require_settlement_context,
+                )
+            except (ValueError, TypeError, resolver_v2.ResolverV2Error, CoordinatorRejected):
                 status, category = 422, "invalid_request"
                 return JSONResponse(status_code=status, content={"error": "invalid_canonical_request", "request_id": request_id})
             try:
@@ -208,6 +270,8 @@ def create_coordinator_service(
                         evidence=evidence,
                         trust_model=trust,
                         correlation_id=request_id,
+                        settlement_context=settlement_context,
+                        settlement_runtime=settlement_runtime,
                     ),
                     timeout=app.state.request_timeout_seconds,
                 )

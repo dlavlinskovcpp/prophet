@@ -189,6 +189,7 @@ def health_check():
         "zktls_mode": settings.ZKTLS_MODE,
         "require_zktls": settings.REQUIRE_ZKTLS,
         "app_env": settings.APP_ENV,
+        "resolution_mode": settings.RESOLUTION_MODE,
     }
     service_health = getattr(service, "health", None)
     if callable(service_health):
@@ -205,6 +206,9 @@ def metrics_endpoint():
 
 @app.post("/resolve", response_model=ResolveResponse)
 async def resolve_market_endpoint(req: ResolveRequest):
+    if (settings.RESOLUTION_MODE or "").strip().lower() == "secure-coordinator":
+        metrics.inc("prophet_attester_resolve_total", labels={"result": "secure_cutover_disabled"})
+        raise HTTPException(status_code=403, detail="direct_attester_settlement_disabled")
     logger.info(f"Request: Resolve {req.market} -> {req.outcome}")
     try:
         resp = await service.resolve_market(req)

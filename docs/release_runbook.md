@@ -44,6 +44,10 @@ Before any non-localnet release:
 
 A pure `plan` or `bundle` operation must not require the deployment wallet, program keypair, fee payer, or a resolved secret-manager credential to exist.
 
+For non-localnet releases, release validation now treats the secure settlement topology as mandatory release metadata. The environment must name distinct verifier A/B endpoints and identities, a durable coordinator database, durable SigningJournal and submission-journal paths, strict 2/2 signer identities, and `resolution_mode=secure-coordinator`. Direct attester settlement and the generic remote signer settlement path must both be disabled.
+
+`scripts/render_operated_stack.py` follows the same boundary for production-shaped devnet/mainnet configuration. It renders only resolver-registry and matching-keeper env files; verifier A/B, coordinator, secure-settlement, their internal bearer tokens, and the two Vault signer credentials are provisioned separately through the operator secret/configuration boundary. The renderer rejects legacy `ATTESTER_BASE_URL` / `REMOTE_SIGNER_*` settlement values rather than silently reintroducing them into release metadata.
+
 ## Commands
 
 Plan a release:

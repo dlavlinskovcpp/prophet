@@ -40,11 +40,12 @@ Each process needs its own configuration with its expected identity:
 | A | `prophet.verifier.runtime.a` |
 | B | `prophet.verifier.runtime.b` |
 
-Verifier B currently starts only with the existing independent deterministic
-zkTLS test backend: `mode: test`, `allowed_adapters: [zktls]`, and
-`zktls.verifier_backend: deterministic-test`. A production B configuration
-therefore fails closed until an approved independent production backend is
-implemented. Verifier A uses the normal existing runtime adapter factory.
+Verifier B keeps the existing independent deterministic backend for tests and
+adds a production-only `independent-bound-http` proof checker. Verifier A uses
+the primary `bound-http` proof checker through the normal runtime adapter
+factory. The two production implementations have separate HTTP/parsing code,
+and deployment preflight requires different service identities, auth references,
+and proof-backend URLs. Neither implementation has a fallback to the other.
 
 ## Endpoints
 

@@ -8,6 +8,10 @@ from .coordinator_service import create_coordinator_service
 from .resolution_coordinator import ResolutionCoordinator
 from .resolution_coordinator_store import ResolutionCoordinatorStore, VerifierBinding
 from .runtime_config import load_runtime_config
+from .secure_settlement_runtime import (
+    SecureSettlementRuntimeError,
+    load_secure_settlement_runtime,
+)
 from .verifier_service_client import VerifierServiceClient
 
 
@@ -31,7 +35,22 @@ def _descriptor(config):
 def build_coordinator_service():
     resources = []
     try:
-        config = load_runtime_config(_runtime_path())
+        runtime_path = _runtime_path()
+        require_settlement_context = False
+        try:
+            secure = load_secure_settlement_runtime(
+                runtime_path,
+                enable_mainnet=os.getenv("PROPHET_ENABLE_MAINNET_SETTLEMENT", "") == "1",
+            )
+        except SecureSettlementRuntimeError:
+            # Preserve the existing local/test coordinator contract. Production
+            # must never fall back to the legacy runtime-only topology.
+            config = load_runtime_config(runtime_path)
+            if config.mode == "production":
+                raise ValueError("production coordinator requires secure settlement runtime")
+        else:
+            config = secure.runtime
+            require_settlement_context = True
         if config.coordinator is None:
             raise ValueError("coordinator configuration is required")
         token = os.getenv(config.coordinator.internal_auth.token_env, "")
@@ -54,6 +73,8 @@ def build_coordinator_service():
             request_max_bytes=config.limits.request_max_bytes,
             request_timeout_seconds=config.coordinator.request_timeout_seconds,
             close_resources=True,
+            solana_runtime=config.solana if require_settlement_context else None,
+            require_settlement_context=require_settlement_context,
         )
     except Exception:
         for resource in reversed(resources):

@@ -173,6 +173,7 @@ class AttesterService:
             settings.ATTESTER_AUDIT_LOG_PATH,
             "oracle-attester",
         )
+        self.resolution_mode = (settings.RESOLUTION_MODE or "").strip().lower()
         self.notary_signer_mode = (settings.NOTARY_SIGNER_MODE or "remote").strip().lower()
         self.remote_notary_signer = (
             RemoteNotarySigner(
@@ -180,12 +181,14 @@ class AttesterService:
                 api_key=settings.REMOTE_SIGNER_API_KEY,
                 timeout_s=settings.REMOTE_SIGNER_TIMEOUT_S,
             )
-            if self.notary_signer_mode == "remote"
+            if self.resolution_mode != "secure-coordinator"
+            and self.notary_signer_mode == "remote"
             else None
         )
 
     def health(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
+            "resolution_mode": self.resolution_mode,
             "notary_signer_mode": self.notary_signer_mode,
             "resolver_registry": self.resolver_registry.health(),
             "proof_store_dir": settings.PROOF_STORE_DIR,
@@ -235,6 +238,8 @@ class AttesterService:
         )
 
     async def resolve_market(self, req: ResolveRequest) -> ResolveResponse:
+        if self.resolution_mode == "secure-coordinator":
+            raise PermissionError("direct_attester_settlement_disabled")
         market_str = str(req.market)
         market_pubkey = Pubkey.from_string(market_str)
         state: Optional[Dict[str, Any]] = None

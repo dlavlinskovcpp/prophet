@@ -150,6 +150,7 @@ def _make_service(*, client, verifier, remote_signer, audit_log_path: Path) -> A
     svc.fetcher = object()
     svc.resolver_registry = make_resolver_registry()
     svc.audit_log = JsonlAuditLogger(str(audit_log_path), "oracle-attester")
+    svc.resolution_mode = "legacy-test"
     svc.notary_signer_mode = "remote"
     svc.remote_notary_signer = remote_signer
     return svc

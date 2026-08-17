@@ -63,7 +63,11 @@ def _load_main(monkeypatch, dummy_service):
 
 
 def _set_valid_runtime_defaults(monkeypatch):
-    monkeypatch.setattr(settings, "APP_ENV", "production")
+    # Existing /resolve tests intentionally exercise the retained non-production
+    # compatibility surface. Production secure-coordinator mode disables it.
+    monkeypatch.setattr(settings, "APP_ENV", "test")
+    monkeypatch.setattr(settings, "RESOLUTION_MODE", "legacy-test")
+    monkeypatch.setattr(settings, "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED", True)
     monkeypatch.setattr(settings, "ZKTLS_MODE", "reclaim_http")
     monkeypatch.setattr(settings, "REQUIRE_ZKTLS", True)
     monkeypatch.setattr(settings, "RECLAIM_VERIFY_URL", "https://verify.example")
@@ -174,3 +178,31 @@ def test_resolve_cannot_read_external_file_via_proof_ref(tmp_path, monkeypatch):
     assert verifier.calls == 0
     assert str(outside) not in response.text
     assert "TEST_ONLY_SECRET_BYTES" not in response.text
+
+
+def test_production_secure_mode_disables_direct_attester_resolve_before_service(monkeypatch):
+    class CountingService(_DummyService):
+        def __init__(self):
+            self.calls = 0
+
+        async def resolve_market(self, req):
+            self.calls += 1
+            return await super().resolve_market(req)
+
+    service = CountingService()
+    _set_valid_runtime_defaults(monkeypatch)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "RESOLUTION_MODE", "secure-coordinator")
+    monkeypatch.setattr(settings, "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED", False)
+    monkeypatch.setattr(settings, "REQUIRE_API_AUTH", False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    monkeypatch.setattr(settings, "METRICS_ENABLED", True)
+
+    main_mod = _load_main(monkeypatch, service)
+    response = TestClient(main_mod.app).post(
+        "/resolve", json={"market": "market-x", "outcome": "YES"}
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "direct_attester_settlement_disabled"
+    assert service.calls == 0
