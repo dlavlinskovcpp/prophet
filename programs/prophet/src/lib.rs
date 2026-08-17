@@ -1,3 +1,6 @@
+#![allow(unexpected_cfgs)]
+#![allow(clippy::diverging_sub_expression)]
+
 use anchor_lang::prelude::*;
 
 pub mod errors;
@@ -16,7 +19,7 @@ mod security_tests;
 pub use instructions::*;
 use state::{MarketOutcome, OrderSide};
 
-declare_id!("913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A");
+declare_id!("3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE");
 
 // Stable Anchor entrypoints. Business logic lives in one file per instruction
 // under `instructions/`; these wrappers intentionally preserve the deployed API.

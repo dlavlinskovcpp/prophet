@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 const RESOLUTION_DOMAIN_V2: &[u8] = b"PROPHET_RESOLVE_V2";
 pub(crate) const RESOLUTION_MESSAGE_V2_LEN: usize = 235;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn resolution_message_v2(
     program_id: &Pubkey,
     market_key: &Pubkey,

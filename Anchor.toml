@@ -7,7 +7,7 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-prophet = "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A"
+prophet = "3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE"
 
 [provider]
 cluster = "Localnet"

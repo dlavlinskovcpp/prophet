@@ -43,6 +43,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::manual_div_ceil)]
     fn u64_decomposition_matches_u128_reference_for_protocol_ratios() {
         for denominator in [1_u64, 10_000, 100_000_000] {
             for amount in [
