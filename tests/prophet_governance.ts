@@ -1,7 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import { BN, Program } from "@anchor-lang/core";
 import { Prophet } from "../target/types/prophet";
-import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -87,12 +87,34 @@ describe("prophet-governance", () => {
     throw new Error("Timeout waiting for valid chain time");
   };
 
-  const waitUntilChainTimeGE = async (target: number, timeoutMs = 20000) => {
+  const clockPacer = Keypair.generate().publicKey;
+
+  const ensureClockPacerFunded = async () => {
+    if ((await provider.connection.getBalance(clockPacer)) >= 1_000_000) return;
+    const sig = await provider.connection.requestAirdrop(clockPacer, 2_000_000);
+    await provider.connection.confirmTransaction(sig, "confirmed");
+  };
+
+  const waitUntilChainTimeGE = async (target: number, timeoutMs = 45000) => {
+    await ensureClockPacerFunded();
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const current = await getChainTime();
       if (current !== null && current >= target) return;
-      await new Promise((r) => setTimeout(r, 500));
+      // Anchor's local validator can stop producing fresh timestamped banks
+      // while a test performs only read RPC calls. Commit a harmless transfer
+      // to an already-funded test-only account so Clock::get() and getBlockTime()
+      // continue to advance without creating a rent-violating account.
+      await provider.sendAndConfirm(
+        new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: clockPacer,
+            lamports: 1,
+          })
+        )
+      );
+      await new Promise((r) => setTimeout(r, 250));
     }
     throw new Error(`Timeout waiting for chain time >= ${target}`);
   };
@@ -110,7 +132,7 @@ describe("prophet-governance", () => {
     }
   };
 
-  it("supports transfer authority, lock/unlock, schedule update, and permissionless status sync", async () => {
+  it("enforces the lock horizon while preserving pre-trading schedule updates and permissionless sync", async () => {
     const newAuthority = Keypair.generate();
     const outsider = Keypair.generate();
     const trader = Keypair.generate();
@@ -131,8 +153,8 @@ describe("prophet-governance", () => {
     const now = await getSafeChainNow();
     const resolverHash = Buffer.alloc(32, 0xd1);
     const openTs = new BN(now - 5);
-    const lockTs = new BN(now + 20);
-    const resolveTs = new BN(now + 30);
+    const lockTs = new BN(now + 60);
+    const resolveTs = new BN(now + 90);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(admin, [admin.publicKey]);
@@ -195,14 +217,37 @@ describe("prophet-governance", () => {
     }
     assert.equal(threw, true, "old authority should lose control after transfer");
 
+    threw = false;
+    try {
+      await (program.methods as any)
+        .lockMarket()
+        .accounts({ market, authority: newAuthority.publicKey })
+        .signers([newAuthority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "authority must not shorten the trading horizon with an early lock");
+
+    const scheduleNow = await getSafeChainNow();
+    const newLockTs = new BN(scheduleNow + 10);
+    const newResolveTs = new BN(scheduleNow + 20);
     await (program.methods as any)
-      .lockMarket()
+      .updateMarketSchedule(newLockTs, newResolveTs)
       .accounts({ market, authority: newAuthority.publicKey })
       .signers([newAuthority])
       .rpc();
 
     marketAcc = await program.account.market.fetch(market);
-    assert.equal(marketAcc.status.locked !== undefined, true);
+    assert.equal(marketAcc.status.open !== undefined, true);
+    assert.equal(marketAcc.lockTs.toNumber(), newLockTs.toNumber());
+    assert.equal(marketAcc.resolveTs.toNumber(), newResolveTs.toNumber());
+
+    await waitUntilChainTimeGE(newLockTs.toNumber());
+    await (program.methods as any).syncMarketStatus().accounts({ market }).rpc();
+
+    marketAcc = await program.account.market.fetch(market);
+    assert.equal(marketAcc.status.locked !== undefined, true, "sync should materialize locked status");
 
     const order = deriveOrder(market, trader.publicKey, new BN(0));
     const position = derivePosition(market, trader.publicKey);
@@ -225,35 +270,10 @@ describe("prophet-governance", () => {
     } catch {
       threw = true;
     }
-    assert.equal(threw, true, "locked market should reject new orders");
-
-    await (program.methods as any)
-      .unlockMarket()
-      .accounts({ market, authority: newAuthority.publicKey })
-      .signers([newAuthority])
-      .rpc();
-
-    const newLockTs = new BN(now + 12);
-    const newResolveTs = new BN(now + 18);
-    await (program.methods as any)
-      .updateMarketSchedule(newLockTs, newResolveTs)
-      .accounts({ market, authority: newAuthority.publicKey })
-      .signers([newAuthority])
-      .rpc();
-
-    marketAcc = await program.account.market.fetch(market);
-    assert.equal(marketAcc.status.open !== undefined, true);
-    assert.equal(marketAcc.lockTs.toNumber(), newLockTs.toNumber());
-    assert.equal(marketAcc.resolveTs.toNumber(), newResolveTs.toNumber());
-
-    await waitUntilChainTimeGE(newLockTs.toNumber());
-    await (program.methods as any).syncMarketStatus().accounts({ market }).rpc();
-
-    marketAcc = await program.account.market.fetch(market);
-    assert.equal(marketAcc.status.locked !== undefined, true, "sync should materialize locked status");
+    assert.equal(threw, true, "scheduled locked market should reject new orders");
   });
 
-  it("requires zero open orders for schedule update and supports authority emergency invalid resolution", async () => {
+  it("freezes schedule after first activity and rejects early lock/emergency invalid", async () => {
     const authority = Keypair.generate();
     const outsider = Keypair.generate();
     const trader = Keypair.generate();
@@ -274,8 +294,8 @@ describe("prophet-governance", () => {
     const now = await getSafeChainNow();
     const resolverHash = Buffer.alloc(32, 0xd2);
     const openTs = new BN(now - 5);
-    const lockTs = new BN(now + 25);
-    const resolveTs = new BN(now + 40);
+    const lockTs = new BN(now + 20);
+    const resolveTs = new BN(now + 30);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
@@ -334,6 +354,37 @@ describe("prophet-governance", () => {
     }
     assert.equal(threw, true, "schedule update must fail while open orders remain");
 
+    await program.methods
+      .cancelOrder()
+      .accounts({
+        market,
+        order,
+        position,
+        owner: trader.publicKey,
+      })
+      .signers([trader])
+      .rpc();
+
+    let marketAcc = (await program.account.market.fetch(market)) as any;
+    assert.equal(marketAcc.openOrdersTotal, 0);
+    assert.equal(marketAcc.nextOrderSeq.toNumber(), 1);
+
+    threw = false;
+    try {
+      await (program.methods as any)
+        .updateMarketSchedule(new BN(now + 50), new BN(now + 60))
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(
+      threw,
+      true,
+      "cancelling every order must not restore schedule mutability after first activity"
+    );
+
     const proofHash = Buffer.alloc(32, 7);
     const publicInputsHash = Buffer.alloc(32, 8);
 
@@ -359,21 +410,47 @@ describe("prophet-governance", () => {
     } catch {
       threw = true;
     }
-    assert.equal(threw, true, "market must be manually locked before emergency resolve");
+    assert.equal(threw, true, "an actively open market cannot be emergency-invalidated");
 
+    threw = false;
+    try {
+      await (program.methods as any)
+        .lockMarket()
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "authority cannot lock before the configured lockTs");
+
+    await waitUntilChainTimeGE(lockTs.toNumber());
     await (program.methods as any)
       .lockMarket()
       .accounts({ market, authority: authority.publicKey })
       .signers([authority])
       .rpc();
 
+    threw = false;
+    try {
+      await (program.methods as any)
+        .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "locked market must not emergency-resolve before resolveTs");
+
+    await waitUntilChainTimeGE(resolveTs.toNumber());
     await (program.methods as any)
       .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
       .accounts({ market, authority: authority.publicKey })
       .signers([authority])
       .rpc();
 
-    const marketAcc = await program.account.market.fetch(market);
+    marketAcc = await program.account.market.fetch(market);
     assert.equal(marketAcc.status.resolved !== undefined, true);
     assert.equal(marketAcc.outcome.invalid !== undefined, true);
     assert.deepEqual(marketAcc.proofHash, Array.from(proofHash));
@@ -426,8 +503,8 @@ describe("prophet-governance", () => {
     const now = await getSafeChainNow();
     const resolverHash = Buffer.alloc(32, 0xd3);
     const openTs = new BN(now - 5);
-    const lockTs = new BN(now + 40);
-    const resolveTs = new BN(now + 60);
+    const lockTs = new BN(now + 300);
+    const resolveTs = new BN(now + 360);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
@@ -569,6 +646,22 @@ describe("prophet-governance", () => {
     assert.equal(marketAcc.accruedProtocolFeesAtoms.toNumber(), 2, "only taker execution should accrue fees");
     assert.equal(marketAcc.openOrdersTotal, 0);
 
+    threw = false;
+    try {
+      await (program.methods as any)
+        .updateMarketSchedule(new BN(now + 330), new BN(now + 350))
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(
+      threw,
+      true,
+      "fully filled orders must not restore schedule mutability when openOrdersTotal returns to zero"
+    );
+
     let vaultAccount = await getAccount(provider.connection, quoteVault);
     assert.equal(Number(vaultAccount.amount), 111);
 
@@ -627,5 +720,19 @@ describe("prophet-governance", () => {
 
     const cancelPositionAcc = (await program.account.position.fetch(cancelPosition)) as any;
     assert.equal(cancelPositionAcc.pendingRefundsAtoms.toNumber(), 6, "cancel should refund escrow plus fee reserve");
+
+    marketAcc = (await program.account.market.fetch(market)) as any;
+    assert.equal(marketAcc.openOrdersTotal, 0);
+    threw = false;
+    try {
+      await (program.methods as any)
+        .updateMarketSchedule(new BN(now + 330), new BN(now + 350))
+        .accounts({ market, authority: authority.publicKey })
+        .signers([authority])
+        .rpc();
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, "cancelled orders must leave the schedule permanently frozen");
   });
 });

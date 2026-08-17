@@ -6,6 +6,11 @@ use crate::{
 };
 use anchor_lang::prelude::*;
 
+fn require_emergency_resolution_time(now: i64, resolve_ts: i64) -> Result<()> {
+    require!(now >= resolve_ts, ErrorCode::MarketNotResolvableYet);
+    Ok(())
+}
+
 pub(crate) fn emergency_resolve_invalid(
     ctx: Context<UpdateMarketAuthority>,
     proof_hash: [u8; 32],
@@ -18,6 +23,8 @@ pub(crate) fn emergency_resolve_invalid(
     );
 
     let now = Clock::get()?.unix_timestamp;
+    require_emergency_resolution_time(now, market.resolve_ts)?;
+
     market.status = MarketStatus::Resolved;
     market.outcome = MarketOutcome::Invalid;
     market.proof_hash = proof_hash;
@@ -31,4 +38,16 @@ pub(crate) fn emergency_resolve_invalid(
         public_inputs_hash,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_emergency_resolution_time;
+
+    #[test]
+    fn emergency_invalid_respects_resolution_boundary() {
+        assert!(require_emergency_resolution_time(199, 200).is_err());
+        assert!(require_emergency_resolution_time(200, 200).is_ok());
+        assert!(require_emergency_resolution_time(201, 200).is_ok());
+    }
 }

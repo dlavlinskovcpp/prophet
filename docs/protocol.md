@@ -25,11 +25,13 @@ Main instructions:
 Lifecycle notes:
 
 - `MarketStatus::Locked` is now a real lifecycle state, not just an enum placeholder.
-- Authority can manually lock/unlock a market and transfer governance to a new authority.
-- Anyone can call `sync_market_status` once `lock_ts` has passed to materialize the scheduled `Locked` state on-chain.
-- Schedule updates are intentionally narrow: they require the market to be unresolved, pre-lock, and to have zero open orders.
+- `lock_ts` is an enforceable trading horizon: authority `lock_market` calls are rejected before `lock_ts`; anyone can still call `sync_market_status` at or after `lock_ts` to materialize the scheduled `Locked` state.
+- Authority may transfer governance, but it cannot shorten the advertised trading horizon through an early manual lock. `unlock_market` remains bounded by the existing `now < lock_ts` rule.
+- Schedule updates are intentionally narrow: they require the market to be unresolved and pre-lock, the replacement `lock_ts` to be strictly in the future, `resolve_ts >= lock_ts`, and `next_order_seq == 0`.
+- `next_order_seq` is the durable economic-activity marker. After the first accepted order, schedule timing is permanently immutable even if all orders later fill or cancel and `open_orders_total` returns to zero.
 - Fee configuration is also intentionally narrow: `set_market_fee_config` is authority-only and freezes permanently after the first order (`next_order_seq > 0`).
-- Emergency governance can only force `Invalid`, not arbitrary `Yes` / `No`.
+- Emergency governance can only force `Invalid`, not arbitrary `Yes` / `No`, and only for a locked market at or after the advertised `resolve_ts`.
+- RC3 does not add a separate post-`resolve_ts` emergency grace period because no existing on-chain grace concept is part of this protocol version. A stronger grace period remains a separate governance-hardening item.
 
 Economics notes:
 

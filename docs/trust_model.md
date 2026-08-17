@@ -25,7 +25,8 @@ Prophet aims to provide:
 
 The on-chain program enforces:
 
-- market timing, status transitions, and authority permissions
+- market timing, status transitions, and authority permissions, including an enforceable `lock_ts`
+- permanent schedule immutability after the first accepted order, even when current open-order count later returns to zero
 - order placement constraints, escrow accounting, and fee reserve accounting
 - matching math and payout logic
 - fee-recipient and protocol-fee withdrawal rules
@@ -142,6 +143,8 @@ Mitigation:
 - ops runbooks
 - explicit environment configs
 - durable audit logs
+- on-chain rejection of retroactive schedule updates and schedule mutation after first economic activity
+- authority emergency `Invalid` resolution is unavailable before the market's advertised `resolve_ts`
 - on-chain rejection of zero market limits, unusable notary keys, and threshold
   configurations that cannot fit in the canonical V2 resolution transaction
 
