@@ -95,30 +95,20 @@ describe("prophet-invariants", () => {
   };
 
   const ensureNotaryConfig = async (notaryKeys: PublicKey[]): Promise<{ notaryConfig: PublicKey; version: BN }> => {
-    const notaryConfig = deriveNotaryConfig(admin.publicKey);
-    const existing = await provider.connection.getAccountInfo(notaryConfig);
+    const configAdmin = Keypair.generate();
+    const sig = await provider.connection.requestAirdrop(configAdmin.publicKey, 2_000_000_000);
+    await provider.connection.confirmTransaction(sig, "confirmed");
+    const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
 
-    if (existing) {
-      await program.methods
-        .updateNotaryConfig(1, notaryKeys)
-        .accounts({
-          notaryConfig,
-          admin: admin.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([admin])
-        .rpc();
-    } else {
-      await program.methods
-        .initializeNotaryConfig(1, notaryKeys)
-        .accounts({
-          notaryConfig,
-          admin: admin.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([admin])
-        .rpc();
-    }
+    await program.methods
+      .initializeNotaryConfig(1, notaryKeys)
+      .accounts({
+        notaryConfig,
+        admin: configAdmin.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([configAdmin])
+      .rpc();
 
     const cfgAcc = await program.account.notaryConfig.fetch(notaryConfig);
     return { notaryConfig, version: new BN(cfgAcc.version.toString()) };

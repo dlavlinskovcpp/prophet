@@ -113,3 +113,14 @@ pub struct Redeemed {
     pub yes_burned_atoms: u64,
     pub no_burned_atoms: u64,
 }
+
+#[event]
+pub struct NotaryConfigSnapshotCreated {
+    pub previous_notary_config: Pubkey,
+    pub new_notary_config: Pubkey,
+    pub admin: Pubkey,
+    pub previous_version: u64,
+    pub new_version: u64,
+    pub threshold: u8,
+    pub notary_count: u8,
+}

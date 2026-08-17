@@ -46,28 +46,17 @@ describe("prophet-governance", () => {
   const ensureNotaryConfig = async (configAdmin: Keypair, notaryKeys: PublicKey[], threshold = 1) => {
     const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
     const existing = await provider.connection.getAccountInfo(notaryConfig);
+    assert.isNull(existing, "test fixture must use a fresh immutable notary snapshot admin");
 
-    if (existing) {
-      await program.methods
-        .updateNotaryConfig(threshold, notaryKeys)
-        .accounts({
-          notaryConfig,
-          admin: configAdmin.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([configAdmin])
-        .rpc();
-    } else {
-      await program.methods
-        .initializeNotaryConfig(threshold, notaryKeys)
-        .accounts({
-          notaryConfig,
-          admin: configAdmin.publicKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([configAdmin])
-        .rpc();
-    }
+    await program.methods
+      .initializeNotaryConfig(threshold, notaryKeys)
+      .accounts({
+        notaryConfig,
+        admin: configAdmin.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([configAdmin])
+      .rpc();
 
     return notaryConfig;
   };
@@ -157,7 +146,7 @@ describe("prophet-governance", () => {
     const resolveTs = new BN(now + 90);
     const market = deriveMarket(resolverHash, openTs);
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
-    const notaryConfig = await ensureNotaryConfig(admin, [admin.publicKey]);
+    const notaryConfig = await ensureNotaryConfig(newAuthority, [admin.publicKey]);
 
     await program.methods
       .initializeMarketV2(

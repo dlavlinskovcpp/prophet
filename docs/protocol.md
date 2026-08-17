@@ -16,7 +16,7 @@ Main accounts:
 Main instructions:
 
 - Market setup: `initialize_market_v2`
-- Notary admin: `initialize_notary_config`, `update_notary_config`
+- Notary admin: `initialize_notary_config`, `rotate_notary_config` (`update_notary_config` is retained only as a fail-closed legacy ABI)
 - Market governance: `transfer_market_authority`, `lock_market`, `unlock_market`, `sync_market_status`, `update_market_schedule`, `set_market_fee_config`, `withdraw_protocol_fees`, `emergency_resolve_invalid`
 - Trading: `place_order`, `match_orders`, `cancel_order`
 - Funds: `claim_refunds`, `redeem`
@@ -30,6 +30,9 @@ Lifecycle notes:
 - Schedule updates are intentionally narrow: they require the market to be unresolved and pre-lock, the replacement `lock_ts` to be strictly in the future, `resolve_ts >= lock_ts`, and `next_order_seq == 0`.
 - `next_order_seq` is the durable economic-activity marker. After the first accepted order, schedule timing is permanently immutable even if all orders later fill or cancel and `open_orders_total` returns to zero.
 - Fee configuration is also intentionally narrow: `set_market_fee_config` is authority-only and freezes permanently after the first order (`next_order_seq > 0`).
+- `NotaryConfig` is an immutable trust-root snapshot. Version 1 preserves the deployed legacy PDA `[b"notary_config", admin]`; successor versions use `[b"notary_config", admin, version_le_u64]` and are created only by `rotate_notary_config`.
+- `Market.notary_config` permanently pins the exact snapshot selected at market initialization. Creating a successor does not retarget, rewrite, or invalidate an older unresolved market, and zero-copy/in-place mutation through legacy `update_notary_config` is rejected.
+- `PROPHET_RESOLVE_V2` remains byte-for-byte compatible: its existing notary-config address and `version` fields bind signatures to the pinned immutable snapshot, so rotation does not require a new settlement domain or account layout.
 - Emergency governance can only force `Invalid`, not arbitrary `Yes` / `No`, and only for a locked market at or after the advertised `resolve_ts`.
 - RC3 does not add a separate post-`resolve_ts` emergency grace period because no existing on-chain grace concept is part of this protocol version. A stronger grace period remains a separate governance-hardening item.
 

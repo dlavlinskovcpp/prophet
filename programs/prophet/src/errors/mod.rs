@@ -104,4 +104,10 @@ pub enum ErrorCode {
     MatchQtyTooSmallForRounding,
     #[msg("Market configuration contains an unsafe zero or inconsistent limit")]
     InvalidMarketConfig,
+    #[msg("Notary config snapshots are immutable; create a successor snapshot")]
+    NotaryConfigImmutable,
+    #[msg("Notary config snapshot version is invalid")]
+    InvalidNotaryConfigVersion,
+    #[msg("Notary config account is not the canonical PDA for its immutable snapshot")]
+    InvalidNotaryConfigSnapshot,
 }

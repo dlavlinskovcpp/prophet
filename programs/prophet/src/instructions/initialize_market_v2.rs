@@ -1,7 +1,10 @@
 use crate::{
     errors::ErrorCode,
     state::{Market, MarketOutcome, MarketStatus, NotaryConfig},
-    validation::{validate_market_configuration, validate_stored_notary_config},
+    validation::{
+        validate_market_configuration, validate_notary_config_snapshot_address,
+        validate_stored_notary_config,
+    },
 };
 use anchor_lang::prelude::*;
 use anchor_spl::{
@@ -32,10 +35,6 @@ pub struct InitializeMarketV2<'info> {
         associated_token::authority = market
     )]
     pub quote_vault: Box<Account<'info, TokenAccount>>,
-    #[account(
-        seeds = [b"notary_config", notary_config.admin.as_ref()],
-        bump = notary_config.bump
-    )]
     pub notary_config: Box<Account<'info, NotaryConfig>>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -61,6 +60,11 @@ pub(crate) fn initialize_market_v2(
         min_escrow_atoms,
         max_open_orders_per_user,
         max_open_orders_total,
+    )?;
+    validate_notary_config_snapshot_address(
+        &ctx.accounts.notary_config.key(),
+        &ctx.accounts.notary_config,
+        &crate::ID,
     )?;
     validate_stored_notary_config(&ctx.accounts.notary_config)?;
 

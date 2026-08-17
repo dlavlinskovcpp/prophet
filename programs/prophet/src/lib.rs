@@ -40,6 +40,15 @@ pub mod prophet {
         instructions::update_notary_config(ctx, threshold, notary_keys)
     }
 
+    pub fn rotate_notary_config(
+        ctx: Context<RotateNotaryConfig>,
+        new_version: u64,
+        threshold: u8,
+        notary_keys: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::rotate_notary_config(ctx, new_version, threshold, notary_keys)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn initialize_market_v2(
         ctx: Context<InitializeMarketV2>,
