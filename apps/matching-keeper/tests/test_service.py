@@ -11,6 +11,9 @@ from src.service import MatchingKeeperService
 from src.config import Settings
 
 
+TEST_PROGRAM_ID = "11111111111111111111111111111111"
+
+
 def _pk(seed: int) -> Pubkey:
     return Pubkey.from_bytes(bytes([seed]) * 32)
 
@@ -86,6 +89,7 @@ def test_program_scan_discovery_filters_non_open_and_legacy_markets(tmp_path):
         ]
     )
     settings = Settings(
+        PROPHET_PROGRAM_ID=TEST_PROGRAM_ID,
         DB_PATH=str(tmp_path / "matcher.db"),
         MARKET_DISCOVERY_MODE="program_scan",
         MARKETS="",
@@ -100,6 +104,7 @@ def test_program_scan_discovery_filters_non_open_and_legacy_markets(tmp_path):
 
 def test_health_reports_stale_websocket_for_active_markets(tmp_path):
     settings = Settings(
+        PROPHET_PROGRAM_ID=TEST_PROGRAM_ID,
         DB_PATH=str(tmp_path / "matcher.db"),
         MARKET_DISCOVERY_MODE="explicit",
         MARKETS=str(_pk(10)),
@@ -128,6 +133,7 @@ def test_metrics_report_dirty_backlog_and_snapshot_lag(tmp_path, monkeypatch):
     order_yes = _pk(21)
     order_no = _pk(22)
     settings = Settings(
+        PROPHET_PROGRAM_ID=TEST_PROGRAM_ID,
         DB_PATH=str(tmp_path / "matcher.db"),
         MARKET_DISCOVERY_MODE="explicit",
         MARKETS=str(market),

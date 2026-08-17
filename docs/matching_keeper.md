@@ -31,6 +31,8 @@ make localnet-up
 
 Required env:
 
+- `PROPHET_PROGRAM_ID`: explicit target Prophet deployment; there is no historical,
+  public-devnet, or localnet fallback
 - `PAYER_KEYPAIR_PATH`: signer that pays for `match_orders`
 - `MARKETS` when `MARKET_DISCOVERY_MODE=explicit`
 
@@ -78,7 +80,10 @@ Markets that disappear, resolve, lock, or otherwise stop qualifying are retired 
 - Make target: `Makefile`
 
 The compose service defaults to `MARKET_DISCOVERY_MODE=program_scan`, mounts `./id.json` as the payer, persists SQLite state under `apps/matching-keeper/state`, and publishes the keeper on `:8010`.
-If you use a different payer keypair location, override `PAYER_KEYPAIR_PATH` in `apps/matching-keeper/.env` or in compose env overrides.
+`PROPHET_PROGRAM_ID` must be exported explicitly before starting the local compose
+keeper; compose does not supply a fallback program address. If you use a different
+payer keypair location, override `PAYER_KEYPAIR_PATH` in
+`apps/matching-keeper/.env` or in compose env overrides.
 
 ## Monitoring
 
