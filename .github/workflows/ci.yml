@@ -173,8 +173,8 @@ jobs:
           VAULT_CONTAINER="prophet-ci-vault"
           VAULT_ADDR_LOCAL="http://127.0.0.1:18200"
           VAULT_TOKEN_LOCAL="root"
-          VAULT_KEY_NAME_LOCAL="prophet-ci-notary"
-          VAULT_NEXT_KEY_NAME_LOCAL="prophet-ci-notary-rotated"
+          VAULT_KEY_NAME_A_LOCAL="prophet-ci-notary-a"
+          VAULT_KEY_NAME_B_LOCAL="prophet-ci-notary-b"
 
           mkdir -p .anchor/test-ledger
           VALIDATOR_LOG="/tmp/prophet-ci-validator.log"
@@ -234,8 +234,15 @@ jobs:
           PROPHET_PROGRAM_ID_CI="$(anchor keys list | awk '/prophet:/ {print $2}')"
           echo "Using deployed Prophet program id: ${PROPHET_PROGRAM_ID_CI}"
 
-          if ! (cd apps/oracle-attester && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" poetry run pytest -q tests/test_localnet_threshold_e2e.py); then
-            echo "Attester localnet threshold e2e failed; validator log follows:"
+          # Direct Attester settlement is intentionally disabled after the
+          # secure-coordinator cutover. The Anchor suite above already exercises
+          # actual on-chain threshold resolution; validate the production secure
+          # application path rather than reviving the retired direct /resolve path.
+          if ! (cd apps/oracle-attester && poetry run pytest -q \
+            tests/test_resolution_mode_policy.py \
+            tests/test_secure_settlement_service.py \
+            tests/test_secure_settlement_application_flow.py); then
+            echo "Secure settlement application flow failed; validator log follows:"
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
             else
@@ -246,16 +253,6 @@ jobs:
 
           if ! (cd sdk/python && RUN_LOCALNET=1 RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" PAYER_KEYPAIR_PATH="$ANCHOR_WALLET" ORACLE_KEYPAIR_PATH="$ANCHOR_WALLET" QUOTE_MINT="So11111111111111111111111111111111111111112" poetry run pytest -q tests/test_localnet_e2e.py); then
             echo "SDK localnet threshold e2e failed; validator log follows:"
-            if [ -f "${VALIDATOR_LOG}" ]; then
-              cat "${VALIDATOR_LOG}" || true
-            else
-              echo "Validator log file not found at ${VALIDATOR_LOG}"
-            fi
-            exit 1
-          fi
-
-          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py); then
-            echo "Operated localnet smoke failed; validator log follows:"
             if [ -f "${VALIDATOR_LOG}" ]; then
               cat "${VALIDATOR_LOG}" || true
             else
@@ -295,34 +292,43 @@ jobs:
             -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
             -H "Content-Type: application/json" \
             --data '{"type":"ed25519"}' \
-            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_LOCAL}" >/dev/null
+            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_A_LOCAL}" >/dev/null
 
           curl -fsS \
             -X POST \
             -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
             -H "Content-Type: application/json" \
             --data '{"type":"ed25519"}' \
-            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_NEXT_KEY_NAME_LOCAL}" >/dev/null
+            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_B_LOCAL}" >/dev/null
 
-          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py --signer-backend vault_transit --vault-addr "${VAULT_ADDR_LOCAL}" --vault-token "${VAULT_TOKEN_LOCAL}" --vault-key-name "${VAULT_KEY_NAME_LOCAL}"); then
-            echo "Operated localnet Vault smoke failed; validator log follows:"
+          if ! (cd apps/oracle-attester && \
+            VAULT_ADDR="${VAULT_ADDR_LOCAL}" \
+            VAULT_TOKEN="${VAULT_TOKEN_LOCAL}" \
+            VAULT_SIGNER_A_KEY_NAME="${VAULT_KEY_NAME_A_LOCAL}" \
+            VAULT_SIGNER_B_KEY_NAME="${VAULT_KEY_NAME_B_LOCAL}" \
+            RC3_VAULT_SMOKE_LABEL="initial" \
+            poetry run python ../../scripts/secure_vault_2of2_smoke.py); then
+            echo "Secure Vault 2-of-2 smoke failed; validator log follows:"
             docker logs "${VAULT_CONTAINER}" || true
-            if [ -f "${VALIDATOR_LOG}" ]; then
-              cat "${VALIDATOR_LOG}" || true
-            else
-              echo "Validator log file not found at ${VALIDATOR_LOG}"
-            fi
+            cat "${VALIDATOR_LOG}" || true
             exit 1
           fi
 
-          if ! (RPC_URL="$ANCHOR_PROVIDER_URL" PROPHET_PROGRAM_ID="${PROPHET_PROGRAM_ID_CI}" python3 scripts/operated_localnet_smoke.py --signer-backend vault_transit --vault-addr "${VAULT_ADDR_LOCAL}" --vault-token "${VAULT_TOKEN_LOCAL}" --vault-key-name "${VAULT_KEY_NAME_LOCAL}" --vault-next-key-name "${VAULT_NEXT_KEY_NAME_LOCAL}"); then
-            echo "Operated localnet Vault rotation smoke failed; validator log follows:"
+          curl -fsS \
+            -X POST \
+            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
+            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_B_LOCAL}/rotate" >/dev/null
+
+          if ! (cd apps/oracle-attester && \
+            VAULT_ADDR="${VAULT_ADDR_LOCAL}" \
+            VAULT_TOKEN="${VAULT_TOKEN_LOCAL}" \
+            VAULT_SIGNER_A_KEY_NAME="${VAULT_KEY_NAME_A_LOCAL}" \
+            VAULT_SIGNER_B_KEY_NAME="${VAULT_KEY_NAME_B_LOCAL}" \
+            RC3_VAULT_SMOKE_LABEL="after-b-rotation" \
+            poetry run python ../../scripts/secure_vault_2of2_smoke.py); then
+            echo "Secure Vault 2-of-2 post-rotation smoke failed; validator log follows:"
             docker logs "${VAULT_CONTAINER}" || true
-            if [ -f "${VALIDATOR_LOG}" ]; then
-              cat "${VALIDATOR_LOG}" || true
-            else
-              echo "Validator log file not found at ${VALIDATOR_LOG}"
-            fi
+            cat "${VALIDATOR_LOG}" || true
             exit 1
           fi
 

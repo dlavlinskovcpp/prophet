@@ -12,6 +12,7 @@ test-ledger
 !package.json
 !tsconfig.json
 !deploy/environments/*.json
+!resolver-v2/test-vectors/v2.json
 __pycache__
 *.pyc
 venv

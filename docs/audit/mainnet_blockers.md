@@ -68,3 +68,48 @@ blocked until every item below is complete with durable evidence:
 Local tests, simulated transactions, public-devnet templates, or code-freeze
 status must not be used to mark any of the live/audit items above complete.
 <!-- RC2_MAINNET_BLOCKERS_END -->
+
+<!-- RC3_MAINNET_BLOCKERS_START -->
+## v1.0.0-rc3 mainnet blockers
+
+Reviewed for RC3 security freeze: 2026-08-17.
+
+RC3 closes the reviewed code/CI security blockers but **does not authorize
+mainnet**. The remaining blockers are external review, real infrastructure, and
+live operational validation:
+
+- [ ] Independent external security audit of the frozen RC3 surface and closure
+  or explicit acceptance of required findings.
+- [ ] Approved public-devnet deployment using the RC3 release procedure and the
+  intended DEVNET-only identity `3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE`.
+- [ ] Production-style Vault with TLS, authentication, least-privilege policies,
+  audit devices, durable storage, and two independent non-exportable signer keys.
+- [ ] Independent verifier A/B services with production zkTLS trust, internal
+  authentication, failure isolation, monitoring, and owned operations.
+- [ ] Protected production signed-oracle registry/key bindings where that adapter
+  is enabled.
+- [ ] Dedicated fee payer, approved RPC provider/policy, secret storage, funding,
+  monitoring, and outage/rate-limit handling.
+- [ ] Real monitoring, alert delivery, escalation/on-call ownership, retention,
+  and incident procedures.
+- [ ] Controlled public-devnet secure-settlement E2E through durable AGREED state,
+  strict 2/2 Vault signing, exact transaction construction, simulation,
+  submission, and explicit confirmation.
+- [ ] Deployed restart/recovery drill for coordinator, signing journal, and
+  transaction-attempt journal without duplicate signing or submission.
+- [ ] Fail-closed uncertain-signing recovery drill with real Vault/operator
+  conditions.
+- [ ] Real signer key-rotation drill proving historical intents remain pinned to
+  persisted epochs while new intents use the approved successor epoch.
+- [ ] Controlled ambiguous-submission reconciliation drill without blind resend.
+- [ ] Backup/restore drill preserving coordinator, signing, and submission
+  security history.
+- [ ] Public-devnet soak period under defined traffic/failure criteria.
+- [ ] Mainnet-specific program identity and deployment-authority plan. The
+  DEVNET-only `3AUW4e…` identity must not be inherited for mainnet.
+- [ ] Mainnet-specific Vault/signer/RPC/fee-payer/monitoring/rollback/incident
+  review and explicit final authorization.
+
+Local Vault, local-validator, simulated transaction, and code-freeze evidence
+must not be used to mark these live/mainnet items complete.
+<!-- RC3_MAINNET_BLOCKERS_END -->

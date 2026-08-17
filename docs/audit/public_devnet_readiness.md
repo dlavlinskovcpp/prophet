@@ -62,3 +62,52 @@ The public-devnet deployment itself remains blocked. RC2 may be code-freeze read
 while the items classified **NEEDS REAL INFRA** and **NEEDS LIVE VALIDATION** remain
 open, provided the CODE and required CI gates are green and no unresolved code
 blocker exists.
+
+<!-- RC3_PUBLIC_DEVNET_READINESS_START -->
+# Public-Devnet Readiness Update — v1.0.0-rc3
+
+Status: **code/security gates green; deployment still requires real infrastructure
+and live validation**
+Date: 2026-08-17
+
+## RC3 delta
+
+| Dependency | RC3 classification | RC3 evidence | What remains |
+|---|---|---|---|
+| Prophet program identity/build | **READY IN CODE** | Source and checked-in Anchor identity are `3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE`; release build regenerated matching IDL; TEST public-devnet manifest/environment/IDL all matched. | Actual public-devnet deployment is a separate live gate. |
+| Resolver V2 permanent vector | **READY IN CODE** | Permanent vector is explicitly unignored and passes cross-language Rust/Anchor coverage. | Commit the candidate through normal release workflow; do not substitute generated/temporary vectors. |
+| Secure coordinator settlement | **READY IN CODE** | Direct Attester settlement remains disabled; secure application-flow lane passed 13 tests including durable agreement/recovery/submission behavior. | Provision real services and perform live public-devnet E2E. |
+| SDK localnet path | **READY IN CODE** | SDK localnet E2E passed 2 tests against the deployed ephemeral CI program. | Validate against the eventual public-devnet deployment. |
+| Vault strict 2/2 | **READY IN CODE** | Local real Vault Transit smoke signed with distinct A/B keys through production signer code; both were v1. | Provision real production-style Vault/TLS/auth/policies and managed A/B keys. |
+| Vault key rotation | **READY IN CODE** | After rotating signer B, strict 2/2 passed again with A v1 and B v2. | Execute operator-approved rotation/recovery drill in deployed infrastructure. |
+| CI settlement lane | **READY IN CODE** | Mandatory CI no longer depends on the intentionally disabled direct Attester path; it tests secure settlement flow plus strict Vault 2/2. | Obtain normal repository CI evidence after the candidate is committed by the release workflow. |
+| Release secret boundary | **READY IN CODE** | Release bundle security suite passed 12/12; program keypair is excluded. | Keep deployment credentials separately supplied and outside release bundles. |
+| Fee payer | **NEEDS REAL INFRA** | Code boundary exists and local transaction paths pass. | Provision dedicated key, secret storage, funding, permissions, monitoring. |
+| Vault / signer A / signer B | **NEEDS REAL INFRA** | Runtime integration is green locally. | Provision real non-exportable Transit keys, TLS/auth/policies/audit and record only public bindings. |
+| Verifier A / verifier B | **NEEDS REAL INFRA** | Distinct verifier runtime policy exists and secure flow tests pass. | Provision independent endpoints, trust material, credentials, health/alerting and failure isolation. |
+| Signed-oracle production registry | **NEEDS REAL INFRA** | Parser fails closed on missing/invalid production registry. | Provision protected real registry and key-management procedure if adapter is enabled. |
+| Monitoring / alert receiver | **NEEDS REAL INFRA** | Templates and alert-validation code exist. | Provision receiver, retention, dashboards, ownership and prove delivery/escalation. |
+| Durable SQLite volumes | **NEEDS LIVE VALIDATION** | Reopen/recovery behavior is tested locally. | Validate actual deployed filesystem durability, backup/restore and crash behavior. |
+| Live E2E settlement | **NEEDS LIVE VALIDATION** | Local secure pipeline and exact submission/reconciliation behavior are tested. | Execute controlled public-devnet settlement after deployment approval. |
+| Restart/recovery | **NEEDS LIVE VALIDATION** | Real SQLite restart path is covered in secure application-flow tests. | Kill/restart deployed services at representative durable states. |
+| Rotation/reconciliation drills | **NEEDS LIVE VALIDATION** | Local rotation and ambiguous-send policies are covered. | Exercise real operator and RPC interruption scenarios. |
+| Soak | **NEEDS LIVE VALIDATION** | No public-devnet deployment exists yet. | Begin only after infrastructure, deployment, monitoring and live E2E are green. |
+
+## Current no-broadcast preflight interpretation
+
+The public-devnet templates remain expected to fail closed until the real signer
+policy/version, managed signer public keys, production signed-oracle registry,
+and alert receiver are provisioned. Those are **REAL INFRA** blockers, not
+reasons to insert test credentials or re-enable legacy settlement.
+
+The intended program keypair continuity has been checked locally: exactly one
+DEVNET-only ignored program keypair derives the configured `3AUW4e…` address.
+The keypair is not included in release bundles.
+
+## Deployment interpretation
+
+RC3 code/security freeze readiness is separable from public-devnet deployment
+authorization. With no unresolved CODE blocker, the remaining public-devnet
+work is classified only as **NEEDS REAL INFRA** or **NEEDS LIVE VALIDATION**.
+No broadcast should occur until those deployment gates are intentionally closed.
+<!-- RC3_PUBLIC_DEVNET_READINESS_END -->
