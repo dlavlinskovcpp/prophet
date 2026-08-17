@@ -146,13 +146,11 @@ def _evaluate_resolver(definition: Dict[str, Any], public_inputs: Dict[str, Any]
     return "YES" if matched else "NO"
 
 
-def _release_snapshot_paths(config: Dict[str, Any], env_path: Path) -> List[Tuple[Path, str]]:
-    env_rel = f"deploy/environments/{config['environment']}.json"
+def _release_snapshot_paths(config: Dict[str, Any], _env_path: Path) -> List[Tuple[Path, str]]:
     paths = [
         (ROOT / config["binary_path"], _repo_rel(ROOT / config["binary_path"])),
         (ROOT / config["idl_path"], _repo_rel(ROOT / config["idl_path"])),
         (ROOT / config["ts_types_path"], _repo_rel(ROOT / config["ts_types_path"])),
-        (env_path, _repo_rel(env_path, fallback=env_rel)),
         (ROOT / "Anchor.toml", _repo_rel(ROOT / "Anchor.toml")),
         (ROOT / "programs" / "prophet" / "Cargo.toml", _repo_rel(ROOT / "programs" / "prophet" / "Cargo.toml")),
         (ROOT / "sdk" / "python" / "pyproject.toml", _repo_rel(ROOT / "sdk" / "python" / "pyproject.toml")),
@@ -438,11 +436,22 @@ def _build_review_bundle(
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
     release_dir = bundle_dir / "release"
+    public_env_path = (
+        release_dir
+        / "deploy"
+        / "environments"
+        / f"{config['environment']}.json"
+    )
+    _write_json(
+        public_env_path,
+        release_tool._public_environment_snapshot(config),
+    )
     for src, rel_dst in _release_snapshot_paths(config, env_path):
         dst = release_dir / rel_dst
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
     _write_json(release_dir / "manifest.json", manifest)
+    release_tool._assert_bundle_has_no_private_key_material(release_dir)
 
     config_inventory: List[Dict[str, Any]] = []
     redacted_dir = bundle_dir / "configs" / "redacted"

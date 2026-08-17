@@ -225,25 +225,140 @@ def _default_release_tag() -> str:
     return f"manual-{ts}-{short_sha}"
 
 
-def _resolve_program_id(config: Dict[str, Any], idl_path: Path, keypair_path: Path) -> str:
+EXTERNAL_SECRET_REFERENCE_PREFIX = "EXTERNAL_SECRET_MANAGER_REFERENCE:"
+_PRIVATE_ENV_FIELD_SUFFIXES = (
+    "keypair_path",
+    "wallet_path",
+    "private_key_path",
+    "secret_key_path",
+    "seed_path",
+    "mnemonic_path",
+)
+_PRIVATE_ENV_FIELD_NAMES = {
+    "private_key",
+    "secret_key",
+    "seed",
+    "mnemonic",
+    "password",
+    "api_key",
+    "token",
+}
+_OMIT_PUBLIC_VALUE = object()
+_SUSPICIOUS_PRIVATE_KEY_NAME_RE = re.compile(
+    r"(?:keypair|private[-_]?key|secret[-_]?key|wallet[-_]?secret)",
+    re.IGNORECASE,
+)
+
+
+def _is_external_secret_reference(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and value.strip().startswith(EXTERNAL_SECRET_REFERENCE_PREFIX)
+    )
+
+
+def _is_private_environment_field(name: str) -> bool:
+    normalized = str(name).strip().lower()
+    return (
+        normalized in _PRIVATE_ENV_FIELD_NAMES
+        or normalized.endswith(_PRIVATE_ENV_FIELD_SUFFIXES)
+        or normalized.endswith("_password")
+        or normalized.endswith("_api_key")
+        or normalized.endswith("_token")
+    )
+
+
+def _sanitize_public_environment_value(value: Any, *, key_hint: str = "") -> Any:
+    if key_hint and _is_private_environment_field(key_hint):
+        return _OMIT_PUBLIC_VALUE
+    if _is_external_secret_reference(value):
+        return _OMIT_PUBLIC_VALUE
+
+    if isinstance(value, dict):
+        sanitized: Dict[str, Any] = {}
+        for key, child in value.items():
+            clean = _sanitize_public_environment_value(child, key_hint=str(key))
+            if clean is not _OMIT_PUBLIC_VALUE:
+                sanitized[key] = clean
+        return sanitized
+
+    if isinstance(value, list):
+        sanitized_list = []
+        for child in value:
+            clean = _sanitize_public_environment_value(child)
+            if clean is not _OMIT_PUBLIC_VALUE:
+                sanitized_list.append(clean)
+        return sanitized_list
+
+    return value
+
+
+def _public_environment_snapshot(config: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = _sanitize_public_environment_value(config)
+    if not isinstance(sanitized, dict):
+        raise ReleaseError("Environment config must be a JSON object.")
+    return sanitized
+
+
+def _contains_solana_secret_key_array(value: Any) -> bool:
+    if isinstance(value, list):
+        if len(value) == 64 and all(
+            type(item) is int and 0 <= item <= 255 for item in value
+        ):
+            return True
+        return any(_contains_solana_secret_key_array(item) for item in value)
+
+    if isinstance(value, dict):
+        return any(_contains_solana_secret_key_array(item) for item in value.values())
+
+    return False
+
+
+def _assert_bundle_has_no_private_key_material(bundle_dir: Path) -> None:
+    for path in sorted(bundle_dir.rglob("*")):
+        if not path.is_file():
+            continue
+
+        rel_path = path.relative_to(bundle_dir)
+        if _SUSPICIOUS_PRIVATE_KEY_NAME_RE.search(path.name):
+            raise ReleaseError(
+                f"Release bundle contains a private-key-shaped filename: {rel_path}"
+            )
+
+        try:
+            size_bytes = path.stat().st_size
+        except OSError as exc:
+            raise ReleaseError(
+                f"Unable to inspect release bundle file: {rel_path}"
+            ) from exc
+
+        # Always inspect JSON. Also inspect small files regardless of extension
+        # so a Solana JSON keypair cannot bypass the guard by being renamed.
+        if path.suffix.lower() != ".json" and size_bytes > 64 * 1024:
+            continue
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+            continue
+
+        if _contains_solana_secret_key_array(payload):
+            raise ReleaseError(
+                f"Release bundle contains Solana secret-key material: {rel_path}"
+            )
+
+
+def _resolve_program_id(config: Dict[str, Any], idl_path: Path) -> str:
     candidates: list[str] = []
 
-    if keypair_path.exists():
-        try:
-            proc = _run(["solana", "address", "-k", str(keypair_path)], capture_output=True)
-            if proc.stdout.strip():
-                candidates.append(proc.stdout.strip())
-        except ReleaseError:
-            pass
+    expected = str(config.get("expected_program_id", "")).strip()
+    if expected:
+        candidates.append(expected)
 
     if idl_path.exists():
         idl = _read_json(idl_path)
         if isinstance(idl.get("address"), str) and idl["address"].strip():
             candidates.append(idl["address"].strip())
-
-    expected = str(config.get("expected_program_id", "")).strip()
-    if expected:
-        candidates.append(expected)
 
     unique = []
     for value in candidates:
@@ -252,14 +367,45 @@ def _resolve_program_id(config: Dict[str, Any], idl_path: Path, keypair_path: Pa
 
     if not unique:
         raise ReleaseError(
-            "Unable to resolve program id. Provide expected_program_id in the environment config "
-            "or ensure target/idl/prophet.json / target/deploy/prophet-keypair.json exist."
+            "Unable to resolve program id. Provide expected_program_id in the environment "
+            "config or an IDL with an address."
         )
 
     if len(unique) > 1:
-        raise ReleaseError(f"Program id mismatch across sources: {unique}")
+        raise ReleaseError(f"Program id mismatch across public sources: {unique}")
 
     return unique[0]
+
+
+def _validate_deployment_program_identity(
+    config: Dict[str, Any],
+    program_id: str,
+) -> None:
+    raw_keypair_path = str(config.get("program_keypair_path", "")).strip()
+    if not raw_keypair_path or _is_external_secret_reference(raw_keypair_path):
+        return
+
+    keypair_path = _resolve_repo_path(raw_keypair_path)
+    if not keypair_path.exists():
+        return
+
+    try:
+        proc = _run(
+            ["solana", "address", "-k", str(keypair_path)],
+            capture_output=True,
+        )
+    except ReleaseError:
+        # Preserve the existing deploy behavior when the Solana CLI cannot
+        # independently derive the keypair address. Anchor remains authoritative
+        # for the actual deployment execution.
+        return
+
+    actual_program_id = proc.stdout.strip()
+    if actual_program_id and actual_program_id != program_id:
+        raise ReleaseError(
+            "Program id mismatch between deployment keypair and public release identity: "
+            f"{actual_program_id} != {program_id}"
+        )
 
 
 def _collect_versions() -> Dict[str, str]:
@@ -286,12 +432,10 @@ def _build_manifest(
     binary_path = (ROOT / config["binary_path"]).resolve()
     idl_path = (ROOT / config["idl_path"]).resolve()
     ts_types_path = (ROOT / config["ts_types_path"]).resolve()
-    keypair_path = (ROOT / config["program_keypair_path"]).resolve()
-    wallet_path = _expand_path(config["wallet_path"])
     env_rel = str(Path("deploy") / "environments" / env_path.name)
 
     versions = _collect_versions()
-    program_id = _resolve_program_id(config, idl_path, keypair_path)
+    program_id = _resolve_program_id(config, idl_path)
     service_endpoints = _service_endpoints(config)
     deployment_artifacts = {
         name: _artifact_metadata(path)
@@ -307,7 +451,7 @@ def _build_manifest(
             "cluster_name": config["cluster_name"],
             "anchor_cluster": config["anchor_cluster"],
             "rpc_url": config["rpc_url"],
-            "wallet_path": str(wallet_path),
+            "credential_boundary": "external",
             "service_endpoints": service_endpoints,
             "deployment_artifacts": deployment_artifacts,
         },
@@ -320,7 +464,6 @@ def _build_manifest(
         "program": {
             "name": "prophet",
             "program_id": program_id,
-            "program_keypair_path": _rel(keypair_path),
             "binary": _artifact_metadata(binary_path),
             "idl": _artifact_metadata(idl_path),
             "ts_types": _artifact_metadata(ts_types_path),
@@ -346,14 +489,16 @@ def _bundle_release(
     bundle_root: Path,
 ) -> Path:
     bundle_dir = bundle_root / manifest["release_tag"] / manifest["environment"]
+    if bundle_dir.exists():
+        # Rebuilding the same tag must not leave a keypair copied by an older
+        # release-tool version in place.
+        shutil.rmtree(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
     copy_specs = [
         (ROOT / config["binary_path"], _rel(ROOT / config["binary_path"])),
         (ROOT / config["idl_path"], _rel(ROOT / config["idl_path"])),
         (ROOT / config["ts_types_path"], _rel(ROOT / config["ts_types_path"])),
-        (ROOT / config["program_keypair_path"], _rel(ROOT / config["program_keypair_path"])),
-        (env_path, str(Path("deploy") / "environments" / env_path.name)),
         (ROOT / "Anchor.toml", _rel(ROOT / "Anchor.toml")),
         (ROOT / "programs" / "prophet" / "Cargo.toml", _rel(ROOT / "programs" / "prophet" / "Cargo.toml")),
         (ROOT / "sdk" / "python" / "pyproject.toml", _rel(ROOT / "sdk" / "python" / "pyproject.toml")),
@@ -381,8 +526,16 @@ def _bundle_release(
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 
+    public_env_path = bundle_dir / "deploy" / "environments" / env_path.name
+    public_env_path.parent.mkdir(parents=True, exist_ok=True)
+    public_env_path.write_text(
+        json.dumps(_public_environment_snapshot(config), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
     manifest_path = bundle_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _assert_bundle_has_no_private_key_material(bundle_dir)
     return bundle_dir
 
 
@@ -592,8 +745,8 @@ def main() -> int:
         program_id = _resolve_program_id(
             config,
             (ROOT / config["idl_path"]).resolve(),
-            (ROOT / config["program_keypair_path"]).resolve(),
         )
+        _validate_deployment_program_identity(config, program_id)
         _deploy_program(config, dry_run=args.dry_run)
         _sync_idl(config, program_id, dry_run=args.dry_run)
         if not args.skip_post_verify:

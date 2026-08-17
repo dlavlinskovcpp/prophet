@@ -6,11 +6,11 @@ This runbook covers the repo-supported release path for Prophet.
 
 The release flow now has three explicit stages:
 
-- `plan`: generate a versioned release manifest from the current build artifacts
-- `bundle`: archive the program binary, IDL, TS types, config, and manifest under `releases/`
-- `deploy`: build, deploy, sync the IDL, verify the program, and archive the release bundle
+- `plan`: generate a versioned release manifest from the current build artifacts and public deployment identity
+- `bundle`: archive the program binary, IDL, TS types, sanitized public environment snapshot, and manifest under `releases/`
+- `deploy`: build, deploy with operator-provisioned credentials, sync the IDL, verify the program, and archive the release bundle
 
-The source of truth for environments is `deploy/environments/*.json`.
+The source of truth for environments is `deploy/environments/*.json`. Deployment credential fields in those source configs are deployment inputs only; they are not release artifacts.
 
 ## Environments
 
@@ -23,12 +23,13 @@ Tracked environment configs:
 Each config pins:
 
 - cluster / RPC target
-- wallet path
-- program keypair path
+- external deployment credential inputs such as wallet or program-keypair paths/references
 - build artifact paths
-- expected program id
+- expected public program id
 - service endpoint metadata for the release manifest
 - deployment manifests and env templates for the operated services
+
+The bundle/plan path resolves the program identity from public sources (`expected_program_id` and the IDL address). It does not need to read the program private keypair merely to identify the program.
 
 ## Preconditions
 
@@ -37,9 +38,11 @@ Before any non-localnet release:
 1. CI should be green.
 2. `target/deploy/prophet.so`, `target/idl/prophet.json`, and `target/types/prophet.ts` must exist.
 3. The git tree should be clean.
-4. The wallet in the selected environment config must hold the upgrade authority and enough SOL for deployment.
-5. The environment config's `expected_program_id` should match the actual program keypair and IDL address.
+4. For an actual deploy or rollback, the operator must provision the upgrade/deployment authority credential outside the release bundle and ensure it has enough SOL where applicable.
+5. The environment config's `expected_program_id` should match the IDL address and, at deployment execution time, the externally supplied program identity.
 6. If you use the operated stack templates, render them first with `python3 scripts/render_operated_stack.py --environment <env>` so the tracked environment config carries the real public service endpoints.
+
+A pure `plan` or `bundle` operation must not require the deployment wallet, program keypair, fee payer, or a resolved secret-manager credential to exist.
 
 ## Commands
 
@@ -82,17 +85,20 @@ Each release bundle is written to:
 
 It includes:
 
-- `manifest.json`
+- `manifest.json` with the public program id, release metadata, and artifact hashes
 - `target/deploy/prophet.so`
 - `target/idl/prophet.json`
 - `target/types/prophet.ts`
-- `target/deploy/prophet-keypair.json`
-- environment config used for the release
+- a sanitized public snapshot of the environment config
 - operated deployment templates referenced by the environment config
 - the operated stack values template referenced by the environment config
 - version source files (`Anchor.toml`, relevant `pyproject.toml`, `Cargo.toml`, `package.json`)
 
-That bundle is the rollback artifact set.
+Release and rollback bundles do **not** contain the program private keypair, deployment/upgrade-authority wallet, fee-payer keypair, seed material, wallet secrets, or secret-manager-resolved deployment credentials. Secret/keypair filesystem paths and external secret-manager references are omitted from the bundled environment snapshot and release manifest.
+
+The release tool also rejects a generated bundle if it contains a private-key-shaped filename or a JSON value shaped like a 64-byte Solana secret-key array, including a small renamed JSON payload.
+
+The bundle is the rollback artifact set for public/artifact state. It is safe to place in normal artifact storage **with respect to Solana deployment private-key material**. This is not a blanket claim that every bundled configuration or operational metadata field is non-sensitive.
 
 ## Review Package
 
@@ -104,7 +110,7 @@ make security-review-bundle ENV=devnet TAG=v0.2.3
 
 That writes `security-reviews/<TAG>/<ENV>/` with:
 
-- a safe release snapshot for reviewers
+- a release snapshot that uses the same public-only credential boundary
 - redacted configs
 - sample resolver/proof/public-input fixtures
 - invariant mapping
@@ -115,7 +121,7 @@ That writes `security-reviews/<TAG>/<ENV>/` with:
 After deploy:
 
 1. Confirm `solana program show` succeeds for the deployed program.
-2. Confirm the bundled `manifest.json` has the expected tag, environment, program id, and hashes.
+2. Confirm the bundled `manifest.json` has the expected tag, environment, public program id, and hashes, and no deployment credential paths.
 3. Update downstream runtime config:
    - `PROPHET_PROGRAM_ID`
    - attester / SDK / keeper RPC endpoints if they changed
@@ -131,14 +137,15 @@ Use the previous bundle, for example:
 
 Rollback procedure:
 
-1. Identify the last known good bundle.
-2. Redeploy its `target/deploy/prophet.so` with the same upgrade-authority wallet and program id.
-3. Re-apply its `target/idl/prophet.json`.
-4. Revert runtime config and operators to the previous release's manifest if any addresses or endpoints changed.
-5. Re-run post-deploy checks.
+1. Identify the last known good bundle and verify its binary/IDL hashes and target program id from `manifest.json`.
+2. Separately obtain the authorized deployment/upgrade credential from the operator's secure wallet or secret-management boundary. The bundle intentionally does not provide this credential.
+3. Redeploy the bundle's `target/deploy/prophet.so` to the manifest's program id using that external authorized credential.
+4. Re-apply the bundle's `target/idl/prophet.json`.
+5. Revert runtime config and operators to the previous release's manifest if any public addresses or endpoints changed.
+6. Re-run post-deploy checks.
 
-This repo does not automate rollback execution because that is a destructive production action. The bundle is what makes rollback deterministic.
+This repo does not automate rollback execution because that is a destructive production action. The bundle makes the artifact selection deterministic; credential acquisition remains an explicit operator responsibility outside the artifact boundary.
 
 ## CI Role
 
-CI validates the release path by generating release bundles from the built artifacts and uploading them as workflow artifacts. Because the CI localnet flow deploys a throwaway test program id, the workflow rewrites `expected_program_id` in temporary copied environment configs before running `scripts/release.py`. Real release configs under `deploy/environments/` remain the source of truth for operator-driven releases.
+CI validates the release path by generating release bundles from the built artifacts and uploading them as workflow artifacts. The CI localnet flow may create and use a throwaway program keypair to build/deploy a temporary test program. The bundle stage reads the resulting public program id from the built IDL, rewrites only `expected_program_id` in temporary copied environment configs, and does not read the throwaway private keypair to identify the program. The resulting bundle excludes the throwaway keypair and is checked by the same bundle secret guard. Real release configs under `deploy/environments/` remain the source of truth for operator-driven releases.
