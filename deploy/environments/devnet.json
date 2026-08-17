@@ -10,16 +10,45 @@
   "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
   "service_endpoints": {
-    "attester_base_url": "https://oracle-attester.devnet.prophet.example",
-    "remote_signer_url": "https://remote-signer.devnet.prophet.example/sign",
+    "verifier_a_base_url": "https://verifier-a.devnet.prophet.example",
+    "verifier_b_base_url": "https://verifier-b.devnet.prophet.example",
+    "coordinator_base_url": "https://coordinator.devnet.prophet.example",
+    "secure_settlement_base_url": "https://settlement.devnet.prophet.example",
     "resolver_registry_url": "https://resolver-registry.devnet.prophet.example/resolvers",
     "matching_keeper_base_url": "https://matching-keeper.devnet.prophet.example"
+  },
+  "secure_settlement": {
+    "resolution_mode": "secure-coordinator",
+    "direct_attester_settlement_enabled": false,
+    "generic_remote_signer_settlement_enabled": false,
+    "coordinator_sqlite_path": "/var/lib/prophet/devnet/coordinator.sqlite",
+    "signing_journal_path": "/var/lib/prophet/devnet/signing-journal.sqlite",
+    "submission_journal_path": "/var/lib/prophet/devnet/submission-journal.sqlite",
+    "required_signer_count": 2,
+    "verifier_a": {
+      "identity": "prophet.verifier.runtime.a",
+      "backend_ref": "devnet:zktls-primary",
+      "auth_ref": "devnet:verifier-a-auth"
+    },
+    "verifier_b": {
+      "identity": "prophet.verifier.runtime.b",
+      "backend_ref": "devnet:zktls-independent",
+      "auth_ref": "devnet:verifier-b-auth"
+    },
+    "signer_a": {
+      "identity": "devnet-settlement-a",
+      "vault_key_ref": "devnet:vault:settlement-a",
+      "auth_ref": "devnet:vault-policy-a"
+    },
+    "signer_b": {
+      "identity": "devnet-settlement-b",
+      "vault_key_ref": "devnet:vault:settlement-b",
+      "auth_ref": "devnet:vault-policy-b"
+    }
   },
   "deployment_artifacts": {
     "compose_manifest": "deploy/operated/devnet/docker-compose.yml",
     "stack_values_template": "deploy/operated/devnet/stack.env.example",
-    "oracle_attester_env_template": "deploy/operated/devnet/oracle-attester.env.example",
-    "remote_signer_env_template": "deploy/operated/devnet/remote-signer.env.example",
     "resolver_registry_env_template": "deploy/operated/devnet/resolver-registry.env.example",
     "matching_keeper_env_template": "deploy/operated/devnet/matching-keeper.env.example"
   }

@@ -20,17 +20,23 @@ ENVIRONMENTS_DIR = Path(
 ).resolve()
 DEFAULT_BUNDLE_ROOT = ROOT / "releases"
 TAG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-REQUIRED_SERVICE_ENDPOINT_KEYS = (
+LOCAL_SERVICE_ENDPOINT_KEYS = (
     "attester_base_url",
     "remote_signer_url",
+    "resolver_registry_url",
+    "matching_keeper_base_url",
+)
+SECURE_SERVICE_ENDPOINT_KEYS = (
+    "verifier_a_base_url",
+    "verifier_b_base_url",
+    "coordinator_base_url",
+    "secure_settlement_base_url",
     "resolver_registry_url",
     "matching_keeper_base_url",
 )
 NON_LOCAL_DEPLOYMENT_ARTIFACT_KEYS = (
     "compose_manifest",
     "stack_values_template",
-    "oracle_attester_env_template",
-    "remote_signer_env_template",
     "resolver_registry_env_template",
     "matching_keeper_env_template",
 )
@@ -133,12 +139,86 @@ def _string_map(raw: Any, *, field_name: str) -> Dict[str, str]:
     return result
 
 
-def _service_endpoints(config: Dict[str, Any]) -> Dict[str, str]:
+def _service_endpoints(config: Dict[str, Any], *, env_name: str) -> Dict[str, str]:
     endpoints = _string_map(config.get("service_endpoints", {}), field_name="service_endpoints")
-    missing = [key for key in REQUIRED_SERVICE_ENDPOINT_KEYS if key not in endpoints]
+    required = LOCAL_SERVICE_ENDPOINT_KEYS if env_name == "localnet" else SECURE_SERVICE_ENDPOINT_KEYS
+    missing = [key for key in required if key not in endpoints]
     if missing:
         raise ReleaseError(f"Missing required service_endpoints entries: {', '.join(missing)}")
+    if env_name != "localnet":
+        if "remote_signer_url" in endpoints:
+            raise ReleaseError("Secure release topology must not depend on remote_signer_url.")
+        if endpoints["verifier_a_base_url"].rstrip("/") == endpoints["verifier_b_base_url"].rstrip("/"):
+            raise ReleaseError("Verifier A and verifier B service endpoints must be distinct.")
     return endpoints
+
+
+def _persistent_absolute(raw: Any, field: str) -> str:
+    value = str(raw or "").strip()
+    if not value or value == ":memory:" or not Path(value).is_absolute():
+        raise ReleaseError(f"{field} must be a persistent absolute path.")
+    return value
+
+
+def _secure_settlement_metadata(config: Dict[str, Any], *, env_name: str) -> Dict[str, Any] | None:
+    if env_name == "localnet":
+        return None
+    value = config.get("secure_settlement")
+    required = {
+        "resolution_mode",
+        "direct_attester_settlement_enabled",
+        "generic_remote_signer_settlement_enabled",
+        "coordinator_sqlite_path",
+        "signing_journal_path",
+        "submission_journal_path",
+        "required_signer_count",
+        "verifier_a",
+        "verifier_b",
+        "signer_a",
+        "signer_b",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ReleaseError("secure_settlement topology metadata is missing or malformed.")
+    if value["resolution_mode"] != "secure-coordinator":
+        raise ReleaseError("secure_settlement.resolution_mode must be secure-coordinator.")
+    if value["direct_attester_settlement_enabled"] is not False:
+        raise ReleaseError("Direct attester settlement must be disabled.")
+    if value["generic_remote_signer_settlement_enabled"] is not False:
+        raise ReleaseError("Generic remote signer settlement must be disabled.")
+    if value["required_signer_count"] != 2:
+        raise ReleaseError("Secure settlement requires strict 2/2 signing.")
+    _persistent_absolute(value["coordinator_sqlite_path"], "coordinator_sqlite_path")
+    _persistent_absolute(value["signing_journal_path"], "signing_journal_path")
+    _persistent_absolute(value["submission_journal_path"], "submission_journal_path")
+
+    def exact(row: Any, keys: set[str], name: str) -> Dict[str, str]:
+        if not isinstance(row, dict) or set(row) != keys:
+            raise ReleaseError(f"{name} metadata is malformed.")
+        result = {}
+        for key in keys:
+            item = row[key]
+            if not isinstance(item, str) or not item.strip():
+                raise ReleaseError(f"{name}.{key} must be non-empty.")
+            result[key] = item.strip()
+        return result
+
+    verifier_a = exact(value["verifier_a"], {"identity", "backend_ref", "auth_ref"}, "verifier_a")
+    verifier_b = exact(value["verifier_b"], {"identity", "backend_ref", "auth_ref"}, "verifier_b")
+    signer_a = exact(value["signer_a"], {"identity", "vault_key_ref", "auth_ref"}, "signer_a")
+    signer_b = exact(value["signer_b"], {"identity", "vault_key_ref", "auth_ref"}, "signer_b")
+    if (
+        verifier_a["identity"] == verifier_b["identity"]
+        or verifier_a["backend_ref"] == verifier_b["backend_ref"]
+        or verifier_a["auth_ref"] == verifier_b["auth_ref"]
+    ):
+        raise ReleaseError("Verifier A/B identity, backend, and auth references must be distinct.")
+    if (
+        signer_a["identity"] == signer_b["identity"]
+        or signer_a["vault_key_ref"] == signer_b["vault_key_ref"]
+        or signer_a["auth_ref"] == signer_b["auth_ref"]
+    ):
+        raise ReleaseError("Signer A/B identity, Vault key, and auth references must be distinct.")
+    return dict(value)
 
 
 def _repo_relative(path: Path) -> str:
@@ -436,7 +516,8 @@ def _build_manifest(
 
     versions = _collect_versions()
     program_id = _resolve_program_id(config, idl_path)
-    service_endpoints = _service_endpoints(config)
+    service_endpoints = _service_endpoints(config, env_name=env_name)
+    secure_settlement = _secure_settlement_metadata(config, env_name=env_name)
     deployment_artifacts = {
         name: _artifact_metadata(path)
         for name, path in _deployment_artifact_paths(config, env_name=env_name).items()
@@ -453,6 +534,7 @@ def _build_manifest(
             "rpc_url": config["rpc_url"],
             "credential_boundary": "external",
             "service_endpoints": service_endpoints,
+            "secure_settlement": secure_settlement,
             "deployment_artifacts": deployment_artifacts,
         },
         "git": {

@@ -1,0 +1,65 @@
+schema_version: 1
+environment: public-devnet
+mode: production
+solana:
+  cluster: devnet
+  genesis_hash: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+  prophet_program_id: 3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE
+resolver_v2: {schema_version: 2}
+verifier: {implementation_id: prophet.coordinator.runtime, version: 2.0.0}
+allowed_adapters: [pyth]
+limits: {request_max_bytes: 1048576, request_timeout_seconds: 10}
+freshness: {default_max_evidence_age_seconds: 300, default_max_verification_age_seconds: 60}
+internal_auth: {token_env: PROPHET_UNUSED_RUNTIME_TOKEN}
+coordinator:
+  verifier_a:
+    base_url: http://verifier-a:8301
+    auth_token_env: PROPHET_VERIFIER_A_INTERNAL_TOKEN
+    expected_verifier_id: prophet.verifier.runtime.a
+    expected_verifier_version: 2.0.0
+    expected_verifier_implementation_digest: "4646464646464646464646464646464646464646464646464646464646464646"
+    request_timeout_seconds: 10
+  verifier_b:
+    base_url: http://verifier-b:8302
+    auth_token_env: PROPHET_VERIFIER_B_INTERNAL_TOKEN
+    expected_verifier_id: prophet.verifier.runtime.b
+    expected_verifier_version: 2.0.0
+    expected_verifier_implementation_digest: "4747474747474747474747474747474747474747474747474747474747474747"
+    request_timeout_seconds: 10
+  sqlite_path: /var/lib/prophet/public-devnet/coordinator.sqlite
+  internal_auth: {token_env: PROPHET_COORDINATOR_INTERNAL_TOKEN}
+  request_timeout_seconds: 25
+signing:
+  vault:
+    address: https://vault:8200
+    auth: {token_env: PROPHET_LEGACY_GENERIC_VAULT_TOKEN_DISABLED}
+    transit_mount: transit
+    request_timeout_seconds: 5
+    backend: vault-transit
+  journal_path: /var/lib/prophet/public-devnet/signing-journal.sqlite
+  signers:
+    a:
+      signer_id: public-devnet-settlement-a
+      key_name: prophet-public-devnet-settlement-a
+      expected_public_key: FWq7715Lzdzn3ofYr5HHVSNh1dLAmkiFxNpfUTh2h3vf
+      expected_key_version: 1
+    b:
+      signer_id: public-devnet-settlement-b
+      key_name: prophet-public-devnet-settlement-b
+      expected_public_key: 4mrX5LqBtoRWapJT6bijDkpThCoYNcDmQkcfXchWhE14
+      expected_key_version: 1
+settlement_execution:
+  rpc_url_env: RPC_URL
+  expected_cluster: devnet
+  expected_genesis_hash: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+  fee_payer: {keypair_path_env: PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH}
+  rpc: {timeout_seconds: 10, commitment: confirmed}
+  journal_path: /var/lib/prophet/public-devnet/submission-journal.sqlite
+secure_settlement:
+  resolution_mode: secure-coordinator
+  direct_attester_settlement_enabled: false
+  generic_remote_signer_settlement_enabled: false
+  required_signer_count: 2
+  api_auth_token_env: PROPHET_SECURE_SETTLEMENT_API_TOKEN
+  signer_a_vault_token_env: PROPHET_VAULT_SIGNER_A_TOKEN
+  signer_b_vault_token_env: PROPHET_VAULT_SIGNER_B_TOKEN

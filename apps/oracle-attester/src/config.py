@@ -56,6 +56,12 @@ class Settings(BaseSettings):
 
     APP_ENV: str = os.getenv("APP_ENV", "production")
 
+    # Settlement authorization boundary. Production is secure-by-default.
+    RESOLUTION_MODE: str = os.getenv("RESOLUTION_MODE", "secure-coordinator")
+    GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED: bool = _env_bool(
+        "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED", False
+    )
+
     # zkTLS Settings
     ZKTLS_MODE: str = os.getenv("ZKTLS_MODE", "reclaim_http")
     REQUIRE_ZKTLS: bool = _env_bool("REQUIRE_ZKTLS", True)
@@ -166,10 +172,39 @@ class Settings(BaseSettings):
                 "RECLAIM_VERIFY_URL is required when ZKTLS_MODE=reclaim_http."
             )
 
+    @staticmethod
+    def _is_nonproduction_env(env: str) -> bool:
+        return env in {"dev", "development", "local", "localnet", "test", "testing", "ci"}
+
+    def validate_settlement_cutover_runtime(self) -> None:
+        env = (self.APP_ENV or "production").strip().lower()
+        resolution_mode = (self.RESOLUTION_MODE or "").strip().lower()
+        if resolution_mode not in {"secure-coordinator", "legacy-test"}:
+            raise ValueError(
+                "RESOLUTION_MODE must be secure-coordinator or legacy-test."
+            )
+        production = not self._is_nonproduction_env(env)
+        if production and resolution_mode != "secure-coordinator":
+            raise ValueError(
+                "Production requires RESOLUTION_MODE=secure-coordinator."
+            )
+        if resolution_mode == "secure-coordinator" and self.GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED:
+            raise ValueError(
+                "Generic remote settlement signing must be disabled in secure-coordinator mode."
+            )
+        if production and self.GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED:
+            raise ValueError(
+                "Generic remote settlement signing is forbidden in production."
+            )
+        if production and (self.NOTARY_SIGNER_MODE or "").strip().lower() == "local":
+            raise ValueError(
+                "Local notary mode is forbidden in production after the secure settlement cutover."
+            )
+
     def validate_signer_runtime(self) -> None:
         mode = (self.NOTARY_SIGNER_MODE or "").strip().lower()
         env = (self.APP_ENV or "production").strip().lower()
-        is_dev_env = env in {"dev", "development", "local", "test"}
+        is_dev_env = self._is_nonproduction_env(env)
 
         if mode not in {"local", "remote"}:
             raise ValueError(
@@ -240,7 +275,17 @@ class Settings(BaseSettings):
         backend = (self.REMOTE_SIGNER_BACKEND or "").strip().lower()
         allowlist_mode = (self.REMOTE_SIGNER_ALLOWLIST_MODE or "").strip().lower()
         env = (self.APP_ENV or "production").strip().lower()
-        is_dev_env = env in {"dev", "development", "local", "test"}
+        is_dev_env = self._is_nonproduction_env(env)
+        if (self.RESOLUTION_MODE or "").strip().lower() == "secure-coordinator":
+            raise ValueError(
+                "Generic remote signer service is disabled in secure-coordinator mode."
+            )
+        if not is_dev_env:
+            raise ValueError(
+                "Generic remote signer service is not an authorized production settlement service."
+            )
+        if not self.GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED:
+            raise ValueError("Generic remote signer service is explicitly disabled.")
 
         if backend not in {"local_keypairs", "command", "aws_kms"}:
             raise ValueError(
@@ -376,8 +421,10 @@ class Settings(BaseSettings):
             raise ValueError("MAX_REQUEST_BYTES must be > 0.")
 
     def validate_runtime(self) -> None:
+        self.validate_settlement_cutover_runtime()
         self.validate_zktls_runtime()
-        self.validate_signer_runtime()
+        if (self.RESOLUTION_MODE or "").strip().lower() != "secure-coordinator":
+            self.validate_signer_runtime()
         self.validate_resolver_registry_runtime()
         self.validate_proof_fetch_runtime()
         self.validate_api_runtime()

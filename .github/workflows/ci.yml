@@ -329,6 +329,12 @@ jobs:
       - name: Run Release Bundle Security Tests
         run: python3 scripts/tests/test_release_bundle_security.py -v
 
+      - name: Run Secure Operated Topology Tests
+        run: |
+          python3 scripts/tests/test_secure_operated_renderer.py -v
+          cd apps/oracle-attester
+          poetry run pytest -q ../../scripts/tests/test_secure_release_topology.py
+
       - name: Generate Release Bundles
         run: |
           set -euo pipefail

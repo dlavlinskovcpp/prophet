@@ -10,16 +10,45 @@
   "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
   "service_endpoints": {
-    "attester_base_url": "https://oracle-attester.mainnet-beta.prophet.example",
-    "remote_signer_url": "https://remote-signer.mainnet-beta.prophet.example/sign",
+    "verifier_a_base_url": "https://verifier-a.mainnet-beta.prophet.example",
+    "verifier_b_base_url": "https://verifier-b.mainnet-beta.prophet.example",
+    "coordinator_base_url": "https://coordinator.mainnet-beta.prophet.example",
+    "secure_settlement_base_url": "https://settlement.mainnet-beta.prophet.example",
     "resolver_registry_url": "https://resolver-registry.mainnet-beta.prophet.example/resolvers",
     "matching_keeper_base_url": "https://matching-keeper.mainnet-beta.prophet.example"
+  },
+  "secure_settlement": {
+    "resolution_mode": "secure-coordinator",
+    "direct_attester_settlement_enabled": false,
+    "generic_remote_signer_settlement_enabled": false,
+    "coordinator_sqlite_path": "/var/lib/prophet/mainnet-beta/coordinator.sqlite",
+    "signing_journal_path": "/var/lib/prophet/mainnet-beta/signing-journal.sqlite",
+    "submission_journal_path": "/var/lib/prophet/mainnet-beta/submission-journal.sqlite",
+    "required_signer_count": 2,
+    "verifier_a": {
+      "identity": "prophet.verifier.runtime.a",
+      "backend_ref": "mainnet-beta:zktls-primary",
+      "auth_ref": "mainnet-beta:verifier-a-auth"
+    },
+    "verifier_b": {
+      "identity": "prophet.verifier.runtime.b",
+      "backend_ref": "mainnet-beta:zktls-independent",
+      "auth_ref": "mainnet-beta:verifier-b-auth"
+    },
+    "signer_a": {
+      "identity": "mainnet-beta-settlement-a",
+      "vault_key_ref": "mainnet-beta:vault:settlement-a",
+      "auth_ref": "mainnet-beta:vault-policy-a"
+    },
+    "signer_b": {
+      "identity": "mainnet-beta-settlement-b",
+      "vault_key_ref": "mainnet-beta:vault:settlement-b",
+      "auth_ref": "mainnet-beta:vault-policy-b"
+    }
   },
   "deployment_artifacts": {
     "compose_manifest": "deploy/operated/mainnet-beta/docker-compose.yml",
     "stack_values_template": "deploy/operated/mainnet-beta/stack.env.example",
-    "oracle_attester_env_template": "deploy/operated/mainnet-beta/oracle-attester.env.example",
-    "remote_signer_env_template": "deploy/operated/mainnet-beta/remote-signer.env.example",
     "resolver_registry_env_template": "deploy/operated/mainnet-beta/resolver-registry.env.example",
     "matching_keeper_env_template": "deploy/operated/mainnet-beta/matching-keeper.env.example"
   }

@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down
+.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test secure-settlement-run remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down
 
 validator:
 	@mkdir -p .anchor/test-ledger
@@ -88,6 +88,9 @@ coordinator-run:
 
 coordinator-service-test:
 	cd apps/oracle-attester && poetry run pytest -q tests/test_coordinator_service.py
+
+secure-settlement-run:
+	cd apps/oracle-attester && poetry run uvicorn src.secure_settlement_main:app --host $${SETTLEMENT_HOST:-127.0.0.1} --port $${SETTLEMENT_PORT:-8500}
 
 remote-signer:
 	cd apps/oracle-attester && poetry install && poetry run uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100

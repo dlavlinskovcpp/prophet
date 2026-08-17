@@ -188,6 +188,15 @@ def metrics_endpoint():
 
 @app.post("/sign", response_model=SignResponse)
 async def sign(req: SignRequest):
+    if (
+        (settings.RESOLUTION_MODE or "").strip().lower() == "secure-coordinator"
+        or not settings.GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED
+    ):
+        metrics.inc("prophet_remote_signer_sign_total", labels={"result": "settlement_disabled"})
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Generic settlement signing is disabled"},
+        )
     allowlist_health = signer_allowlist.health()
     if not allowlist_health.get("allowlist_ready", True):
         metrics.inc("prophet_remote_signer_sign_total", labels={"result": "allowlist_unavailable"})

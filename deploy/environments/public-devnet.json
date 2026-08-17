@@ -3,23 +3,80 @@
   "cluster_name": "devnet",
   "anchor_cluster": "https://api.devnet.solana.com",
   "rpc_url": "https://api.devnet.solana.com",
-  "cluster_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
   "wallet_path": "EXTERNAL_SECRET_MANAGER_REFERENCE:PUBLIC_DEVNET_DEPLOY_AUTHORITY",
   "program_keypair_path": "EXTERNAL_SECRET_MANAGER_REFERENCE:PUBLIC_DEVNET_PROGRAM_KEYPAIR",
   "binary_path": "target/deploy/prophet.so",
   "idl_path": "target/idl/prophet.json",
+  "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE",
+  "service_endpoints": {
+    "verifier_a_base_url": "CONFIGURE_PUBLIC_DEVNET_VERIFIER_A_URL",
+    "verifier_b_base_url": "CONFIGURE_PUBLIC_DEVNET_VERIFIER_B_URL",
+    "coordinator_base_url": "CONFIGURE_PUBLIC_DEVNET_COORDINATOR_URL",
+    "secure_settlement_base_url": "CONFIGURE_PUBLIC_DEVNET_SETTLEMENT_URL",
+    "resolver_registry_url": "CONFIGURE_PUBLIC_DEVNET_RESOLVER_REGISTRY_URL",
+    "matching_keeper_base_url": "CONFIGURE_PUBLIC_DEVNET_KEEPER_URL"
+  },
+  "secure_settlement": {
+    "resolution_mode": "secure-coordinator",
+    "direct_attester_settlement_enabled": false,
+    "generic_remote_signer_settlement_enabled": false,
+    "coordinator_sqlite_path": "/var/lib/prophet/public-devnet/coordinator.sqlite",
+    "signing_journal_path": "/var/lib/prophet/public-devnet/signing-journal.sqlite",
+    "submission_journal_path": "/var/lib/prophet/public-devnet/submission-journal.sqlite",
+    "required_signer_count": 2,
+    "verifier_a": {
+      "identity": "prophet.verifier.runtime.a",
+      "backend_ref": "public-devnet:zktls-primary",
+      "auth_ref": "public-devnet:verifier-a-auth"
+    },
+    "verifier_b": {
+      "identity": "prophet.verifier.runtime.b",
+      "backend_ref": "public-devnet:zktls-independent",
+      "auth_ref": "public-devnet:verifier-b-auth"
+    },
+    "signer_a": {
+      "identity": "public-devnet-settlement-a",
+      "vault_key_ref": "public-devnet:vault:settlement-a",
+      "auth_ref": "public-devnet:vault-policy-a"
+    },
+    "signer_b": {
+      "identity": "public-devnet-settlement-b",
+      "vault_key_ref": "public-devnet:vault:settlement-b",
+      "auth_ref": "public-devnet:vault-policy-b"
+    }
+  },
+  "deployment_artifacts": {
+    "compose_manifest": "deploy/operated/public-devnet/docker-compose.yml",
+    "stack_values_template": "deploy/operated/public-devnet/runtime.env.example",
+    "resolver_registry_env_template": "deploy/operated/devnet/resolver-registry.env.example",
+    "matching_keeper_env_template": "deploy/operated/devnet/matching-keeper.env.example"
+  },
+  "cluster_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
   "websocket_url": "wss://api.devnet.solana.com",
   "public_identities": {
     "deployment_authority": "9ZmpShfzkrdCEhkSe8Hq7FN45uCQm2Uo1X9T834LsNBw",
     "program_keypair": "3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE",
     "resolver_registry_authority": "EQpSbrV85kdbRLQsM7zFHcRELkk8dZK7HAkobZqfKBuC",
-    "threshold_signers": ["FWq7715Lzdzn3ofYr5HHVSNh1dLAmkiFxNpfUTh2h3vf", "4mrX5LqBtoRWapJT6bijDkpThCoYNcDmQkcfXchWhE14"],
+    "threshold_signers": [
+      "FWq7715Lzdzn3ofYr5HHVSNh1dLAmkiFxNpfUTh2h3vf",
+      "4mrX5LqBtoRWapJT6bijDkpThCoYNcDmQkcfXchWhE14"
+    ],
     "keeper_authority": "5sL3Z89NdNVYfCTrmnjzCcGHAtjHVJwodDyZswv1P19F"
   },
-  "identity_separation": {"developer_wallet_reuse": false, "ci_key_reuse": false, "localnet_key_reuse": false, "mainnet_key_reuse": false},
-  "service_endpoints": {"attester_base_url": "CONFIGURE_PUBLIC_DEVNET_ATTESTER_URL", "remote_signer_url": "CONFIGURE_PUBLIC_DEVNET_REMOTE_SIGNER_URL", "resolver_registry_url": "CONFIGURE_PUBLIC_DEVNET_RESOLVER_REGISTRY_URL", "matching_keeper_base_url": "CONFIGURE_PUBLIC_DEVNET_KEEPER_URL"},
-  "signer_policy": {"required_verifier_count": 2, "minimum_agreeing_verifiers": 2, "signers": "DEDICATED_PUBLIC_DEVNET_VAULT_TRANSIT_OR_EQUIVALENT"},
-  "monitoring": {"required": true, "rate_limits_required": true},
-  "deployment_artifacts": {"compose_manifest": "deploy/operated/devnet/docker-compose.yml", "stack_values_template": "deploy/operated/devnet/stack.env.example", "oracle_attester_env_template": "deploy/operated/devnet/oracle-attester.env.example", "remote_signer_env_template": "deploy/operated/devnet/remote-signer.env.example", "resolver_registry_env_template": "deploy/operated/devnet/resolver-registry.env.example", "matching_keeper_env_template": "deploy/operated/devnet/matching-keeper.env.example"}
+  "identity_separation": {
+    "developer_wallet_reuse": false,
+    "ci_key_reuse": false,
+    "localnet_key_reuse": false,
+    "mainnet_key_reuse": false
+  },
+  "signer_policy": {
+    "required_verifier_count": 2,
+    "minimum_agreeing_verifiers": 2,
+    "signers": "DEDICATED_PUBLIC_DEVNET_VAULT_TRANSIT"
+  },
+  "monitoring": {
+    "required": true,
+    "rate_limits_required": true
+  }
 }
