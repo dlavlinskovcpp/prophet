@@ -320,6 +320,35 @@ def test_agreed_path_bytes_match_frozen_existing_resolve_v2_layout(tmp_path, mon
     assert message == direct
 
 
+def test_agreed_path_binds_exact_notary_snapshot_address_and_version_without_wire_change():
+    config_v1 = str(Pubkey.from_bytes(bytes([41]) * 32))
+    config_v2 = str(Pubkey.from_bytes(bytes([42]) * 32))
+    common = dict(
+        program_id="11111111111111111111111111111111",
+        market="11111111111111111111111111111111",
+        resolver_hash=H(4),
+        open_ts=-7,
+        resolve_ts=42,
+        outcome="INVALID",
+        proof_hash=H(5),
+        public_inputs_hash=H(6),
+    )
+    pinned_v1 = build_legacy_settlement_message(
+        **common, notary_config=config_v1, notary_config_version=1
+    )
+    different_snapshot_address = build_legacy_settlement_message(
+        **common, notary_config=config_v2, notary_config_version=1
+    )
+    different_snapshot_version = build_legacy_settlement_message(
+        **common, notary_config=config_v1, notary_config_version=2
+    )
+
+    assert len(pinned_v1) == len(different_snapshot_address) == len(different_snapshot_version) == 235
+    assert pinned_v1 != different_snapshot_address
+    assert pinned_v1 != different_snapshot_version
+    assert pinned_v1.startswith(b"PROPHET_RESOLVE_V2")
+
+
 def test_completed_bundle_passes_existing_threshold_validation(tmp_path, monkeypatch):
     service, _, job, threshold, _, _, _, _ = _service(tmp_path, monkeypatch)
     result = service.sign_agreed_job(job.job_id)

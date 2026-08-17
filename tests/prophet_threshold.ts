@@ -70,12 +70,19 @@ describe("prophet-threshold-notary", () => {
 
     const authority = provider.wallet;
 
-    const deriveNotaryConfig = (admin: PublicKey) => {
+    const deriveNotaryConfigSnapshot = (admin: PublicKey, version: BN) => {
+        const seeds = [Buffer.from("notary_config"), admin.toBuffer()];
+        if (version.eqn(1)) {
+            return PublicKey.findProgramAddressSync(seeds, program.programId)[0];
+        }
         return PublicKey.findProgramAddressSync(
-            [Buffer.from("notary_config"), admin.toBuffer()],
+            [...seeds, version.toArrayLike(Buffer, "le", 8)],
             program.programId
         )[0];
     };
+
+    const deriveNotaryConfig = (admin: PublicKey) =>
+        deriveNotaryConfigSnapshot(admin, new BN(1));
 
     const deriveMarket = (resolver: Buffer, openTs: BN) => {
         return PublicKey.findProgramAddressSync(
@@ -150,6 +157,29 @@ describe("prophet-threshold-notary", () => {
         await provider.connection.confirmTransaction(sig, "confirmed");
     };
 
+    const createNotaryConfig = async (threshold: number, notaryKeys: PublicKey[]) => {
+        const configAdmin = Keypair.generate();
+        await airdrop(configAdmin.publicKey, 2e9);
+        const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
+
+        await program.methods
+            .initializeNotaryConfig(threshold, notaryKeys)
+            .accounts({
+                notaryConfig,
+                admin: configAdmin.publicKey,
+                systemProgram: SystemProgram.programId,
+            })
+            .signers([configAdmin])
+            .rpc();
+
+        const config = await program.account.notaryConfig.fetch(notaryConfig);
+        return {
+            configAdmin,
+            notaryConfig,
+            version: new BN(config.version.toString()),
+        };
+    };
+
     const fetchOrderOrNull = async (order: PublicKey): Promise<any | null> => {
         try {
             return await program.account.order.fetch(order);
@@ -205,32 +235,10 @@ describe("prophet-threshold-notary", () => {
 
         const threshold = 2;
 
-        const notaryConfig = deriveNotaryConfig(admin.publicKey);
-        const existing = await provider.connection.getAccountInfo(notaryConfig);
-
-        if (existing) {
-            await program.methods
-                .updateNotaryConfig(threshold, [notary1.publicKey, notary2.publicKey, notary3.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        } else {
-            await program.methods
-                .initializeNotaryConfig(threshold, [notary1.publicKey, notary2.publicKey, notary3.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
-        const cfgAcc = await program.account.notaryConfig.fetch(notaryConfig);
-        const notaryVersion = new BN(cfgAcc.version.toString());
+        const { notaryConfig, version: notaryVersion } = await createNotaryConfig(
+            threshold,
+            [notary1.publicKey, notary2.publicKey, notary3.publicKey]
+        );
 
         // --- Setup: quote mint + market (v2) ---
         const decimals = 6;
@@ -465,32 +473,10 @@ describe("prophet-threshold-notary", () => {
     it("enforces bounded ed25519 scan window for threshold resolution", async () => {
         const admin = (provider.wallet as anchor.Wallet).payer;
         const notary1 = Keypair.generate();
-        const notaryConfig = deriveNotaryConfig(admin.publicKey);
-
-        const existing = await provider.connection.getAccountInfo(notaryConfig);
-        if (existing) {
-            await program.methods
-                .updateNotaryConfig(1, [notary1.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        } else {
-            await program.methods
-                .initializeNotaryConfig(1, [notary1.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
-        const cfgAcc = await program.account.notaryConfig.fetch(notaryConfig);
-        const notaryVersion = new BN(cfgAcc.version.toString());
+        const { notaryConfig, version: notaryVersion } = await createNotaryConfig(
+            1,
+            [notary1.publicKey]
+        );
 
         const quoteMint = await createMint(
             provider.connection,
@@ -642,36 +628,18 @@ describe("prophet-threshold-notary", () => {
         assert.equal(marketOutsideAcc.status.resolved !== undefined, false);
     });
 
-    it("rejects stale signatures after notary config version bump and accepts fresh signatures", async () => {
+    it("keeps v1 immutable across v2 rotation and resolves each market with its pinned snapshot", async () => {
         const admin = (provider.wallet as anchor.Wallet).payer;
         const notary1 = Keypair.generate();
         const notary2 = Keypair.generate();
-        const notaryConfig = deriveNotaryConfig(admin.publicKey);
-
-        const existing = await provider.connection.getAccountInfo(notaryConfig);
-        if (existing) {
-            await program.methods
-                .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        } else {
-            await program.methods
-                .initializeNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
-        const cfgBefore = await program.account.notaryConfig.fetch(notaryConfig);
-        const notaryVersionBefore = new BN(cfgBefore.version.toString());
+        const rotatedNotary1 = Keypair.generate();
+        const rotatedNotary2 = Keypair.generate();
+        const {
+            configAdmin,
+            notaryConfig,
+            version: notaryVersionBefore,
+        } = await createNotaryConfig(2, [notary1.publicKey, notary2.publicKey]);
+        assert.equal(notaryVersionBefore.toNumber(), 1);
 
         const quoteMint = await createMint(
             provider.connection,
@@ -734,29 +702,122 @@ describe("prophet-threshold-notary", () => {
         const staleSig1 = Buffer.from(nacl.sign.detached(msgBefore, notary1.secretKey));
         const staleSig2 = Buffer.from(nacl.sign.detached(msgBefore, notary2.secretKey));
 
-        await program.methods
-            .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
+        let mutationRejected = false;
+        try {
+            await program.methods
+                .updateNotaryConfig(2, [rotatedNotary1.publicKey, rotatedNotary2.publicKey])
+                .accounts({
+                    notaryConfig,
+                    admin: configAdmin.publicKey,
+                    systemProgram: SystemProgram.programId,
+                })
+                .signers([configAdmin])
+                .rpc();
+        } catch {
+            mutationRejected = true;
+        }
+        assert.equal(mutationRejected, true, "historical notary snapshot mutation must fail closed");
+
+        const cfgV1After = await program.account.notaryConfig.fetch(notaryConfig);
+        assert.equal(cfgV1After.version.toNumber(), 1);
+        assert.equal(cfgV1After.threshold, 2);
+        assert.equal(cfgV1After.notaryKeys[0].toBase58(), notary1.publicKey.toBase58());
+        assert.equal(cfgV1After.notaryKeys[1].toBase58(), notary2.publicKey.toBase58());
+
+        const notaryVersionAfter = new BN(2);
+        const notaryConfigV2 = deriveNotaryConfigSnapshot(configAdmin.publicKey, notaryVersionAfter);
+        await (program.methods as any)
+            .rotateNotaryConfig(
+                notaryVersionAfter,
+                2,
+                [rotatedNotary1.publicKey, rotatedNotary2.publicKey]
+            )
             .accounts({
-                notaryConfig,
-                admin: admin.publicKey,
+                previousNotaryConfig: notaryConfig,
+                newNotaryConfig: notaryConfigV2,
+                admin: configAdmin.publicKey,
                 systemProgram: SystemProgram.programId,
+            })
+            .signers([configAdmin])
+            .rpc();
+
+        const cfgV2 = await program.account.notaryConfig.fetch(notaryConfigV2);
+        assert.equal(cfgV2.version.toNumber(), 2);
+        assert.equal(cfgV2.threshold, 2);
+        assert.equal(cfgV2.notaryKeys[0].toBase58(), rotatedNotary1.publicKey.toBase58());
+        assert.equal(cfgV2.notaryKeys[1].toBase58(), rotatedNotary2.publicKey.toBase58());
+
+        const resolveV1Ix = await program.methods
+            .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
+            .accounts({
+                market,
+                notaryConfig,
+                instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+            })
+            .instruction();
+        {
+            const ed1 = createManualEd25519Ix(msgBefore, staleSig1, notary1.publicKey.toBuffer());
+            const ed2 = createManualEd25519Ix(msgBefore, staleSig2, notary2.publicKey.toBuffer());
+            await provider.sendAndConfirm(
+                new Transaction().add(ed1, ed2, resolveV1Ix),
+                [],
+                { skipPreflight: true }
+            );
+            const marketV1Acc = await program.account.market.fetch(market);
+            assert.equal(marketV1Acc.status.resolved !== undefined, true);
+            assert.equal(marketV1Acc.outcome.yes !== undefined, true);
+        }
+
+        const resolverHashV2 = Buffer.alloc(32, 56);
+        const marketV2 = deriveMarket(resolverHashV2, openTs);
+        const quoteVaultV2 = await getAssociatedTokenAddress(quoteMint, marketV2, true);
+        await program.methods
+            .initializeMarketV2(
+                Array.from(resolverHashV2),
+                openTs,
+                lockTs,
+                resolveTs,
+                new BN(1),
+                new BN(1),
+                32,
+                4096
+            )
+            .accounts({
+                market: marketV2,
+                authority: admin.publicKey,
+                oracleAuthority: admin.publicKey,
+                quoteMint,
+                quoteVault: quoteVaultV2,
+                notaryConfig: notaryConfigV2,
+                systemProgram: SystemProgram.programId,
+                tokenProgram: TOKEN_PROGRAM_ID,
+                associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
             })
             .signers([admin])
             .rpc();
-        const cfgAfter = await program.account.notaryConfig.fetch(notaryConfig);
-        const notaryVersionAfter = new BN(cfgAfter.version.toString());
-        assert.equal(
-            notaryVersionAfter.gt(notaryVersionBefore),
-            true,
-            "notary config version must bump on update"
-        );
+
+        const staleMessageForV2 = Buffer.concat([
+            Buffer.from("PROPHET_RESOLVE_V2"),
+            program.programId.toBuffer(),
+            marketV2.toBuffer(),
+            notaryConfig.toBuffer(),
+            resolverHashV2,
+            openTs.toArrayLike(Buffer, "le", 8),
+            resolveTs.toArrayLike(Buffer, "le", 8),
+            notaryVersionBefore.toArrayLike(Buffer, "le", 8),
+            Buffer.from([outcomeIdx]),
+            proofHash,
+            publicInputsHash,
+        ]);
+        const staleV2Sig1 = Buffer.from(nacl.sign.detached(staleMessageForV2, notary1.secretKey));
+        const staleV2Sig2 = Buffer.from(nacl.sign.detached(staleMessageForV2, notary2.secretKey));
 
         const msgAfter = Buffer.concat([
             Buffer.from("PROPHET_RESOLVE_V2"),
             program.programId.toBuffer(),
-            market.toBuffer(),
-            notaryConfig.toBuffer(),
-            resolverHash,
+            marketV2.toBuffer(),
+            notaryConfigV2.toBuffer(),
+            resolverHashV2,
             openTs.toArrayLike(Buffer, "le", 8),
             resolveTs.toArrayLike(Buffer, "le", 8),
             notaryVersionAfter.toArrayLike(Buffer, "le", 8),
@@ -768,15 +829,15 @@ describe("prophet-threshold-notary", () => {
         const resolveIx = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
             .accounts({
-                market,
-                notaryConfig,
+                market: marketV2,
+                notaryConfig: notaryConfigV2,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
             })
             .instruction();
 
         {
-            const ed1 = createManualEd25519Ix(msgBefore, staleSig1, notary1.publicKey.toBuffer());
-            const ed2 = createManualEd25519Ix(msgBefore, staleSig2, notary2.publicKey.toBuffer());
+            const ed1 = createManualEd25519Ix(staleMessageForV2, staleV2Sig1, notary1.publicKey.toBuffer());
+            const ed2 = createManualEd25519Ix(staleMessageForV2, staleV2Sig2, notary2.publicKey.toBuffer());
             const staleTx = new Transaction().add(ed1, ed2, resolveIx);
 
             let threw = false;
@@ -785,18 +846,20 @@ describe("prophet-threshold-notary", () => {
             } catch {
                 threw = true;
             }
-            assert.equal(threw, true, "stale signatures from prior notary config version should fail");
+            assert.equal(threw, true, "v1 snapshot bytes must not authorize a market pinned to v2");
+            const unresolved = await program.account.market.fetch(marketV2);
+            assert.equal(unresolved.status.resolved !== undefined, false);
         }
 
         {
-            const freshSig1 = Buffer.from(nacl.sign.detached(msgAfter, notary1.secretKey));
-            const freshSig2 = Buffer.from(nacl.sign.detached(msgAfter, notary2.secretKey));
-            const ed1 = createManualEd25519Ix(msgAfter, freshSig1, notary1.publicKey.toBuffer());
-            const ed2 = createManualEd25519Ix(msgAfter, freshSig2, notary2.publicKey.toBuffer());
+            const freshSig1 = Buffer.from(nacl.sign.detached(msgAfter, rotatedNotary1.secretKey));
+            const freshSig2 = Buffer.from(nacl.sign.detached(msgAfter, rotatedNotary2.secretKey));
+            const ed1 = createManualEd25519Ix(msgAfter, freshSig1, rotatedNotary1.publicKey.toBuffer());
+            const ed2 = createManualEd25519Ix(msgAfter, freshSig2, rotatedNotary2.publicKey.toBuffer());
             const freshTx = new Transaction().add(ed1, ed2, resolveIx);
 
             await provider.sendAndConfirm(freshTx, [], { skipPreflight: true });
-            const marketAcc = await program.account.market.fetch(market);
+            const marketAcc = await program.account.market.fetch(marketV2);
             assert.equal(marketAcc.status.resolved !== undefined, true);
             assert.equal(marketAcc.outcome.yes !== undefined, true);
         }
@@ -808,35 +871,14 @@ describe("prophet-threshold-notary", () => {
         const notary2 = Keypair.generate();
         const traderA = Keypair.generate();
         const traderB = Keypair.generate();
-        const notaryConfig = deriveNotaryConfig(admin.publicKey);
 
         await airdrop(traderA.publicKey, 2e9);
         await airdrop(traderB.publicKey, 2e9);
 
-        const existing = await provider.connection.getAccountInfo(notaryConfig);
-        if (existing) {
-            await program.methods
-                .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        } else {
-            await program.methods
-                .initializeNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
-                    notaryConfig,
-                    admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
-                })
-                .signers([admin])
-                .rpc();
-        }
-        const cfg = await program.account.notaryConfig.fetch(notaryConfig);
-        const notaryVersion = new BN(cfg.version.toString());
+        const { notaryConfig, version: notaryVersion } = await createNotaryConfig(
+            2,
+            [notary1.publicKey, notary2.publicKey]
+        );
 
         const quoteMint = await createMint(
             provider.connection,

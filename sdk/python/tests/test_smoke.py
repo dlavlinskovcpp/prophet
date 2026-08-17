@@ -5,7 +5,11 @@ from solders.pubkey import Pubkey
 
 import prophet_sdk.client as client_mod
 from prophet_sdk.client import ProphetClient
-from prophet_sdk.pdas import derive_market_pda, derive_notary_config_pda
+from prophet_sdk.pdas import (
+    derive_market_pda,
+    derive_notary_config_pda,
+    derive_notary_config_snapshot_pda,
+)
 
 def test_sdk_has_new_helpers():
     assert hasattr(ProphetClient, "get_next_order_seq")
@@ -24,10 +28,39 @@ def test_sdk_has_new_helpers():
     assert hasattr(ProphetClient, "emergency_resolve_invalid")
     assert hasattr(ProphetClient, "initialize_market_v2")
     assert hasattr(ProphetClient, "initialize_notary_config")
+    assert hasattr(ProphetClient, "rotate_notary_config")
 
 def test_pda_derivation():
     market, bump = derive_market_pda(bytes([0]*32), 100)
     assert str(market) is not None
+
+
+def test_notary_snapshot_pda_preserves_legacy_v1_and_versions_successors():
+    admin = Pubkey.from_bytes(bytes([4]) * 32)
+    program_id = client_mod.SYSTEM_PROGRAM_ID
+    legacy, legacy_bump = derive_notary_config_pda(admin, program_id)
+    v1, v1_bump = derive_notary_config_snapshot_pda(admin, 1, program_id)
+    v2, _ = derive_notary_config_snapshot_pda(admin, 2, program_id)
+    v3, _ = derive_notary_config_snapshot_pda(admin, 3, program_id)
+
+    assert (v1, v1_bump) == (legacy, legacy_bump)
+    assert v1 != v2 != v3
+    try:
+        derive_notary_config_snapshot_pda(admin, 0, program_id)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("zero snapshot version must be rejected")
+
+
+def test_legacy_update_helper_fails_closed_before_rpc():
+    client = ProphetClient.__new__(ProphetClient)
+    try:
+        client.update_notary_config(1, [Pubkey.from_bytes(bytes([8]) * 32)])
+    except ValueError as err:
+        assert "immutable" in str(err).lower()
+    else:
+        raise AssertionError("legacy update helper must reject immutable snapshot mutation")
 
 
 def _encode_notary_config(*, admin: Pubkey, threshold: int, notary_keys, version: int = 1) -> bytes:
@@ -116,3 +149,46 @@ def test_initialize_notary_config_reraises_when_existing_pda_shape_differs(monke
         assert "already in use" in str(err)
     else:
         raise AssertionError("expected initialize_notary_config to re-raise on mismatched config")
+
+
+def test_rotate_notary_config_builds_successor_snapshot(monkeypatch):
+    payer = SimpleNamespace(pubkey=lambda: Pubkey.from_bytes(bytes([12]) * 32))
+    program_id = client_mod.SYSTEM_PROGRAM_ID
+    previous, _ = derive_notary_config_pda(payer.pubkey(), program_id)
+    old_notary = Pubkey.from_bytes(bytes([13]) * 32)
+    new_notary = Pubkey.from_bytes(bytes([14]) * 32)
+
+    class _FakeRpcClient:
+        def get_account_info(self, pubkey, commitment=None):
+            assert pubkey == previous
+            return SimpleNamespace(
+                value=SimpleNamespace(
+                    data=_encode_notary_config(
+                        admin=payer.pubkey(),
+                        threshold=1,
+                        notary_keys=[old_notary],
+                        version=1,
+                    )
+                )
+            )
+
+    client = ProphetClient.__new__(ProphetClient)
+    client.client = _FakeRpcClient()
+    client.payer = payer
+    client.program_id = program_id
+    client._get_discriminator = lambda name: b"discdisc"
+
+    captured = {}
+
+    def _capture_submit(_rpc, ixs, _payer):
+        captured["ix"] = ixs[0]
+        return "sig"
+
+    monkeypatch.setattr(client_mod, "submit_and_confirm", _capture_submit)
+
+    successor, sig = client.rotate_notary_config(previous, 2, 1, [new_notary])
+    expected, _ = derive_notary_config_snapshot_pda(payer.pubkey(), 2, program_id)
+
+    assert successor == expected
+    assert sig == "sig"
+    assert captured["ix"].program_id == program_id

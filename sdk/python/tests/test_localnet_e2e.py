@@ -64,10 +64,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
     resolve_ts = now - 50 
 
     notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
-    try:
-        client.initialize_notary_config(1, [oracle_kp.pubkey()])
-    except Exception:
-        client.update_notary_config(1, [oracle_kp.pubkey()])
+    client.initialize_notary_config(1, [oracle_kp.pubkey()])
 
     client.initialize_market_v2(
         resolver_hash=resolver,

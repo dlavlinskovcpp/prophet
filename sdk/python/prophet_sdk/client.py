@@ -18,6 +18,7 @@ from .pdas import (
     derive_associated_token_account,
     derive_market_pda,
     derive_notary_config_pda,
+    derive_notary_config_snapshot_pda,
     derive_order_pda,
     derive_position_pda,
 )
@@ -138,6 +139,7 @@ class ProphetClient:
             keys.append(Pubkey.from_bytes(data[start:end]))
 
         return {
+            "admin": Pubkey.from_bytes(data[:32]),
             "threshold": int(threshold),
             "version": version,
             "notary_keys": keys,
@@ -302,21 +304,52 @@ class ProphetClient:
         return cfg_pda, sig
 
     def update_notary_config(self, threshold: int, notary_keys: Sequence[Pubkey]) -> str:
-        cfg_pda, _ = derive_notary_config_pda(self.payer.pubkey(), self.program_id)
+        del threshold, notary_keys
+        raise ValueError(
+            "Notary config snapshots are immutable; use rotate_notary_config to create a successor"
+        )
 
-        data = self._get_discriminator("update_notary_config")
+    def rotate_notary_config(
+        self,
+        previous_notary_config: Pubkey,
+        new_version: int,
+        threshold: int,
+        notary_keys: Sequence[Pubkey],
+    ) -> Tuple[Pubkey, str]:
+        if (
+            isinstance(new_version, bool)
+            or not isinstance(new_version, int)
+            or not 1 < new_version < (1 << 64)
+        ):
+            raise ValueError("New notary config version must be a u64 greater than one")
+
+        previous = self._fetch_notary_config_state(previous_notary_config)
+        admin = previous["admin"]
+        if admin != self.payer.pubkey():
+            raise ValueError("Payer is not the admin of the previous notary config snapshot")
+        if new_version != int(previous["version"]) + 1:
+            raise ValueError("New notary config version must immediately follow the previous snapshot")
+
+        new_notary_config, _ = derive_notary_config_snapshot_pda(
+            admin, new_version, self.program_id
+        )
+        data = self._get_discriminator("rotate_notary_config")
+        data += struct.pack("<Q", new_version)
         data += struct.pack("<B", threshold)
         data += struct.pack("<I", len(notary_keys))
         for pk in notary_keys:
             data += bytes(pk)
 
         keys = [
-            AccountMeta(cfg_pda, False, True),
-            AccountMeta(self.payer.pubkey(), True, True),
+            AccountMeta(previous_notary_config, False, False),
+            AccountMeta(new_notary_config, False, True),
+            AccountMeta(admin, True, True),
+            AccountMeta(SYSTEM_PROGRAM_ID, False, False),
         ]
 
         ix = Instruction(self.program_id, data, keys)
-        return submit_and_confirm(self.client, [ix], self.payer)
+        sig = submit_and_confirm(self.client, [ix], self.payer)
+        return new_notary_config, sig
 
     def initialize_market_v2(
         self,

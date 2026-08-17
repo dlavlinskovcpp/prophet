@@ -31,6 +31,7 @@ The on-chain program enforces:
 - matching math and payout logic
 - fee-recipient and protocol-fee withdrawal rules
 - canonical v2 resolution message format
+- immutable per-market notary trust-root snapshots: each market pins one exact `NotaryConfig` address/version, while rotation creates a distinct successor account
 - threshold signature count, distinct signer checks, and `NotaryConfig` version binding
 
 If a submitted resolution does not match the expected message bytes or threshold rules, the chain rejects it.
@@ -50,7 +51,9 @@ The chain stores hashes and verifies signatures, but it does not re-run zkTLS pr
 
 ### Notary Set
 
-Resolution depends on the configured threshold notaries. If enough notary keys sign a bad message, the chain cannot distinguish that from a valid signed resolution.
+Resolution depends on the threshold notaries in the immutable snapshot pinned by that market. If enough keys from that pinned snapshot sign a bad message, the chain cannot distinguish that from a valid signed resolution.
+
+Notary rotation is append-only rather than in-place mutation. Legacy version 1 remains at its deployed PDA; each successor version has a versioned PDA. Existing markets continue to resolve against their original snapshot, while newly initialized markets may opt into a successor. The legacy `update_notary_config` instruction is retained only for ABI compatibility and rejects mutation.
 
 ### Oracle Attester
 
@@ -144,6 +147,7 @@ Mitigation:
 - explicit environment configs
 - durable audit logs
 - on-chain rejection of retroactive schedule updates and schedule mutation after first economic activity
+- immutable notary snapshots prevent later administrator rotation from rewriting the trust root of an already-created market
 - authority emergency `Invalid` resolution is unavailable before the market's advertised `resolve_ts`
 - on-chain rejection of zero market limits, unusable notary keys, and threshold
   configurations that cannot fit in the canonical V2 resolution transaction

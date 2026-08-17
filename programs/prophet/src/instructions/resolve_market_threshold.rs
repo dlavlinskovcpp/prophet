@@ -3,7 +3,10 @@ use crate::{
     events::MarketResolved,
     state::{Market, MarketOutcome, MarketStatus, NotaryConfig},
     utils::resolution_message_v2,
-    validation::{count_valid_notary_signatures, validate_stored_notary_config},
+    validation::{
+        count_valid_notary_signatures, validate_notary_config_snapshot_address,
+        validate_stored_notary_config,
+    },
 };
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::sysvar::SysvarId;
@@ -16,10 +19,6 @@ pub struct ResolveMarketThreshold<'info> {
         bump = market.bump
     )]
     pub market: Box<Account<'info, Market>>,
-    #[account(
-        seeds = [b"notary_config", notary_config.admin.as_ref()],
-        bump = notary_config.bump
-    )]
     pub notary_config: Box<Account<'info, NotaryConfig>>,
     /// CHECK: Checked via address constraint.
     #[account(address = Instructions::id())]
@@ -53,6 +52,7 @@ pub(crate) fn resolve_market_threshold(
         market.notary_config == config.key(),
         ErrorCode::NotaryConfigMismatch
     );
+    validate_notary_config_snapshot_address(&config.key(), config, &crate::ID)?;
     validate_stored_notary_config(config)?;
 
     let expected_message = resolution_message_v2(

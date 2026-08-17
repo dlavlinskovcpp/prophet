@@ -44,13 +44,25 @@ def derive_position_pda(
     return Pubkey.find_program_address(seeds, pid)
 
 
+def derive_notary_config_snapshot_pda(
+    admin: Pubkey,
+    version: int,
+    program_id: Optional[Pubkey] = None,
+) -> Tuple[Pubkey, int]:
+    if isinstance(version, bool) or not isinstance(version, int) or not 0 < version < (1 << 64):
+        raise ValueError("Notary config snapshot version must be a positive u64")
+    pid = get_program_id(program_id)
+    seeds = [b"notary_config", bytes(admin)]
+    if version > 1:
+        seeds.append(struct.pack("<Q", version))
+    return Pubkey.find_program_address(seeds, pid)
+
+
 def derive_notary_config_pda(
     admin: Pubkey,
     program_id: Optional[Pubkey] = None,
 ) -> Tuple[Pubkey, int]:
-    pid = get_program_id(program_id)
-    seeds = [b"notary_config", bytes(admin)]
-    return Pubkey.find_program_address(seeds, pid)
+    return derive_notary_config_snapshot_pda(admin, 1, program_id)
 
 
 def derive_associated_token_account(owner: Pubkey, mint: Pubkey) -> Pubkey:

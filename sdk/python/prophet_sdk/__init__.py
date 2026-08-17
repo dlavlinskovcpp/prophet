@@ -3,6 +3,7 @@ from .pdas import (
     derive_associated_token_account,
     derive_market_pda,
     derive_notary_config_pda,
+    derive_notary_config_snapshot_pda,
     derive_order_pda,
     derive_position_pda,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "derive_order_pda",
     "derive_position_pda",
     "derive_notary_config_pda",
+    "derive_notary_config_snapshot_pda",
     "derive_associated_token_account",
     "compute_resolver_hash_hex",
     "load_resolver_definition",
