@@ -326,11 +326,15 @@ jobs:
             exit 1
           fi
 
+      - name: Run Release Bundle Security Tests
+        run: python3 scripts/tests/test_release_bundle_security.py -v
+
       - name: Generate Release Bundles
         run: |
           set -euo pipefail
           BUNDLE_ROOT="/tmp/prophet-release-bundles"
-          PROPHET_PROGRAM_ID_CI="$(solana address -k target/deploy/prophet-keypair.json)"
+          PROPHET_PROGRAM_ID_CI="$(python3 -c 'import json; print(json.load(open("target/idl/prophet.json", encoding="utf-8"))["address"])')"
+          test -n "${PROPHET_PROGRAM_ID_CI}"
           mkdir -p "${CI_ENV_DIR}"
           export CI_ENV_DIR PROPHET_PROGRAM_ID_CI
 
