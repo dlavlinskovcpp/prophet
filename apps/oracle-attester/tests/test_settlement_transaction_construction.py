@@ -493,8 +493,8 @@ def test_35_artifact_is_frozen_and_contains_no_private_material(tmp_path, monkey
     assert not any("private" in name or "secret" in name or "token" in name or "authorization" in name for name in names)
 
 
-def test_36_real_solders_020_types_are_used(tmp_path, monkeypatch):
-    assert importlib.metadata.version("solders") == "0.20.0"
+def test_36_real_solders_021_types_are_used(tmp_path, monkeypatch):
+    assert importlib.metadata.version("solders") == "0.21.0"
     x = _setup(tmp_path, monkeypatch)
     artifact = x["builder"].build(x["request"])
     assert isinstance(Pubkey.from_string(artifact.program_id), Pubkey)

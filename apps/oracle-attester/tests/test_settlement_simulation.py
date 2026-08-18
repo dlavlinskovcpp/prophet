@@ -571,8 +571,8 @@ def test_33_runtime_config_rejects_invalid_commitment_or_env_names():
         parse_settlement_execution_config({**base, "rpc_url_env": "not-valid"}, solana=runtime)
 
 
-def test_34_real_solders_020_signing_and_serialization(tmp_path, monkeypatch):
-    assert importlib.metadata.version("solders") == "0.20.0"
+def test_34_real_solders_021_signing_and_serialization(tmp_path, monkeypatch):
+    assert importlib.metadata.version("solders") == "0.21.0"
     _x, signer, rpc, service, request = _service(tmp_path, monkeypatch)
     result = service.simulate(request)
     tx = result.transaction.transaction

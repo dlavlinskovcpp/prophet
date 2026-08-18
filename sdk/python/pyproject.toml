@@ -6,8 +6,8 @@ authors = ["Prophet Protocol <dev@prophet.xyz>"]
 
 [tool.poetry.dependencies]
 python = "^3.9.6"
-solana = "^0.32.0"
-solders = "0.20.0"
+solana = "0.33.0"
+solders = "0.21.0"
 borsh-construct = "^0.1.0"
 httpx = ">=0.23.0,<0.24.0"
 
