@@ -601,8 +601,8 @@ def test_35_attempt_row_tampering_fails_closed(tmp_path, monkeypatch):
         attempts.get(attempt.attempt_id)
 
 
-def test_36_attempt_bytes_roundtrip_and_real_solders_020(tmp_path, monkeypatch):
-    assert importlib.metadata.version("solders") == "0.20.0"
+def test_36_attempt_bytes_roundtrip_and_real_solders_021(tmp_path, monkeypatch):
+    assert importlib.metadata.version("solders") == "0.21.0"
     x, _signer, _rpc, _simulation, _request, attempts, service = _execution(tmp_path, monkeypatch)
     result = service.submit_settlement(x["job"].job_id)
     attempt = attempts.get(result.transaction_attempt_id)

@@ -60,3 +60,32 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 - docs/operated_devnet.md and docs/ops_runbook.md steps rehearsed
 - docs/signer_vault_ops.md steps rehearsed
 - incident contacts, escalation paths, and rollback decision owners defined
+
+
+## Production Container Build Contract
+
+- Production Docker builds use the repository root as the build context and the
+  authoritative Dockerfiles `apps/oracle-attester/Dockerfile` and
+  `apps/matching-keeper/Dockerfile`.
+- Both images use `python:3.11.14-slim-bookworm` as the default exact
+  Python-patch/Debian base reference. A digest is not invented; if an approved
+  immutable registry digest is adopted later, pass it through the documented
+  base-image build argument.
+- Builder tooling pins Poetry to `1.8.5`. Production dependencies are installed
+  with `poetry install --sync --only main` from the committed package
+  `pyproject.toml` and `poetry.lock`; no `poetry lock`, update, or mutable
+  dependency resolution belongs in an image build.
+- The oracle-attester image preserves the repository-relative
+  `apps/oracle-attester -> ../../sdk/python` dependency while installing it into
+  the runtime virtualenv. The keeper retains the SDK source at its expected
+  repository-relative path because its dependency is intentionally editable.
+- Runtime stages do not contain Poetry, compiler/build tooling, package test
+  suites, or repository runtime/audit state. The root `.dockerignore` excludes
+  local secret/keypair-shaped files, `.env` files, SQLite/runtime state, release
+  output, caches, backups, and VCS metadata from the build context.
+- Build locally with the repository root as context, for example:
+  `docker build --build-arg IMAGE_REVISION="$(git rev-parse HEAD)" --build-arg IMAGE_VERSION=rc4 -f apps/oracle-attester/Dockerfile .`
+  and equivalently with `apps/matching-keeper/Dockerfile`.
+- `org.opencontainers.image.revision`, `org.opencontainers.image.version`, and
+  `org.opencontainers.image.source` are metadata only; never pass credentials or
+  secrets as build arguments or labels.
