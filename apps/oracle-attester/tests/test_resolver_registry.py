@@ -39,6 +39,16 @@ def test_http_resolver_registry_loads_nested_payload(monkeypatch):
     resolver_hash = compute_resolver_hash(resolver_def)
     seen = {}
 
+    class MockStream:
+        def __init__(self, response):
+            self.response = response
+
+        def __enter__(self):
+            return self.response
+
+        def __exit__(self, *args):
+            return False
+
     class MockClient:
         def __init__(self, *args, **kwargs):
             pass
@@ -49,11 +59,13 @@ def test_http_resolver_registry_loads_nested_payload(monkeypatch):
         def __exit__(self, *args):
             pass
 
-        def get(self, url, headers=None):
+        def stream(self, method, url, headers=None):
             seen["url"] = url
             seen["headers"] = headers
-            req = httpx.Request("GET", url)
-            return httpx.Response(200, json={"resolver": resolver_def}, request=req)
+            req = httpx.Request(method, url)
+            return MockStream(
+                httpx.Response(200, json={"resolver": resolver_def}, request=req)
+            )
 
     monkeypatch.setattr(httpx, "Client", MockClient)
 
@@ -75,6 +87,16 @@ def test_http_resolver_registry_rejects_hash_mismatch(monkeypatch):
     }
     requested_hash = bytes([5] * 32)
 
+    class MockStream:
+        def __init__(self, response):
+            self.response = response
+
+        def __enter__(self):
+            return self.response
+
+        def __exit__(self, *args):
+            return False
+
     class MockClient:
         def __init__(self, *args, **kwargs):
             pass
@@ -85,9 +107,9 @@ def test_http_resolver_registry_rejects_hash_mismatch(monkeypatch):
         def __exit__(self, *args):
             pass
 
-        def get(self, url, headers=None):
-            req = httpx.Request("GET", url)
-            return httpx.Response(200, json=resolver_def, request=req)
+        def stream(self, method, url, headers=None):
+            req = httpx.Request(method, url)
+            return MockStream(httpx.Response(200, json=resolver_def, request=req))
 
     monkeypatch.setattr(httpx, "Client", MockClient)
 

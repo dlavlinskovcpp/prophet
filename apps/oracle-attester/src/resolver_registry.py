@@ -11,6 +11,18 @@ from .config import settings
 from .resolver import ResolverDefinition, compute_resolver_hash
 
 
+class ResolverRegistryClientError(RuntimeError):
+    """Fail-closed resolver-registry transport/response error."""
+
+
+class ResolverRegistryResponseTooLarge(ResolverRegistryClientError):
+    pass
+
+
+class ResolverRegistryMalformedResponse(ResolverRegistryClientError):
+    pass
+
+
 class ResolverRegistry:
     mode = "unknown"
 
@@ -51,10 +63,40 @@ class DirectoryResolverRegistry(ResolverRegistry):
 class HttpResolverRegistry(ResolverRegistry):
     mode = "http"
 
-    def __init__(self, base_url: str, api_key: str, timeout_s: float):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        timeout_s: float,
+        response_max_bytes: int = 256_000,
+    ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout_s = timeout_s
+        self.response_max_bytes = int(response_max_bytes)
+        if self.response_max_bytes <= 0:
+            raise ValueError("resolver registry response limit must be > 0")
+
+    def _read_bounded_response(self, response: httpx.Response) -> bytes:
+        declared = response.headers.get("content-length")
+        if declared is not None:
+            if not declared.isdigit():
+                raise ResolverRegistryMalformedResponse(
+                    "resolver registry returned invalid Content-Length"
+                )
+            if int(declared) > self.response_max_bytes:
+                raise ResolverRegistryResponseTooLarge(
+                    "resolver registry response exceeds configured size limit"
+                )
+
+        raw = bytearray()
+        for chunk in response.iter_bytes():
+            if len(raw) + len(chunk) > self.response_max_bytes:
+                raise ResolverRegistryResponseTooLarge(
+                    "resolver registry response exceeds configured size limit"
+                )
+            raw.extend(chunk)
+        return bytes(raw)
 
     def load(self, resolver_hash: bytes) -> ResolverDefinition:
         hash_hex = resolver_hash.hex()
@@ -65,19 +107,34 @@ class HttpResolverRegistry(ResolverRegistry):
 
         try:
             with httpx.Client(timeout=self.timeout_s) as client:
-                response = client.get(url, headers=headers)
-        except Exception as exc:
-            raise RuntimeError(f"Resolver registry request failed: {exc}")
-
-        if response.status_code >= 300:
-            raise ValueError(
-                f"Resolver registry returned {response.status_code} for resolver {hash_hex}"
-            )
+                with client.stream("GET", url, headers=headers) as response:
+                    if response.status_code >= 300:
+                        raise ValueError(
+                            f"Resolver registry returned {response.status_code} "
+                            f"for resolver {hash_hex}"
+                        )
+                    raw = self._read_bounded_response(response)
+        except (
+            ResolverRegistryResponseTooLarge,
+            ResolverRegistryMalformedResponse,
+            ValueError,
+        ):
+            raise
+        except httpx.TimeoutException as exc:
+            raise ResolverRegistryClientError(
+                "resolver registry request timed out"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ResolverRegistryClientError(
+                "resolver registry request failed"
+            ) from exc
 
         try:
-            payload = response.json()
-        except Exception as exc:
-            raise RuntimeError(f"Resolver registry returned invalid JSON: {exc}")
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ResolverRegistryMalformedResponse(
+                "resolver registry returned invalid JSON"
+            ) from None
 
         if not isinstance(payload, dict):
             raise ValueError("Resolver registry payload must be a JSON object")
@@ -88,7 +145,11 @@ class HttpResolverRegistry(ResolverRegistry):
         return self._parse_and_verify(resolver_hash, payload)
 
     def health(self) -> Dict[str, Any]:
-        return {"mode": self.mode, "base_url": self.base_url}
+        return {
+            "mode": self.mode,
+            "base_url": self.base_url,
+            "response_max_bytes": self.response_max_bytes,
+        }
 
 
 class CachingResolverRegistry(ResolverRegistry):
@@ -188,6 +249,7 @@ def make_resolver_registry() -> ResolverRegistry:
             base_url=settings.RESOLVER_REGISTRY_URL,
             api_key=settings.RESOLVER_REGISTRY_API_KEY,
             timeout_s=settings.RESOLVER_REGISTRY_TIMEOUT_S,
+            response_max_bytes=settings.RESOLVER_REGISTRY_MAX_RESPONSE_BYTES,
         )
     else:
         inner = DirectoryResolverRegistry(settings.RESOLVER_STORE_DIR)

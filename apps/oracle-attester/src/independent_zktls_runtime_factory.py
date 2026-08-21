@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Optional
@@ -9,6 +10,11 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .bounded_http_response import (
+    BoundedHttpResponseHeaderError,
+    BoundedHttpResponseTooLarge,
+    read_bounded_response_bytes,
+)
 from .resolver_v2_independent_verifier import (
     IndependentProofChecker,
     IndependentProofClaims,
@@ -39,6 +45,10 @@ class IndependentZkTlsRuntimeFactory:
             raise PipelineRejected("independent_runtime_verifier_identity_mismatch")
         if "zktls" not in getattr(runtime_config, "allowed_adapters", ()) or getattr(runtime_config, "zktls", None) is None:
             raise PipelineRejected("independent_runtime_zktls_not_enabled")
+        if isinstance(checker, BoundHttpIndependentProofChecker):
+            checker = checker.with_response_limit(
+                int(runtime_config.limits.request_max_bytes)
+            )
         self.runtime_config = runtime_config
         self.verifier_descriptor = MappingProxyType(dict(descriptor))
         self.checker, self.registry, self.clock_ms = checker, registry or RuntimeAdapterRegistry(), clock_ms
@@ -60,7 +70,14 @@ class DeterministicTestIndependentProofChecker:
 class BoundHttpIndependentProofChecker:
     """Verifier-B-only production checker with independent HTTP/parsing code."""
 
-    def __init__(self, *, url: str, token: str, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        url: str,
+        token: str,
+        timeout_seconds: float,
+        max_response_bytes: Optional[int] = None,
+    ) -> None:
         try:
             parsed = urlsplit(url)
         except ValueError as exc:
@@ -69,33 +86,73 @@ class BoundHttpIndependentProofChecker:
             raise PipelineRejected("independent_zktls_requires_https")
         if not token:
             raise PipelineRejected("independent_zktls_token_missing")
+        if max_response_bytes is not None and (
+            isinstance(max_response_bytes, bool)
+            or not isinstance(max_response_bytes, int)
+            or max_response_bytes <= 0
+        ):
+            raise PipelineRejected("independent_zktls_response_limit_invalid")
         self._url, self._token, self._timeout = url.rstrip("/"), token, timeout_seconds
+        self._max_response_bytes = max_response_bytes
+
+    def with_response_limit(self, max_response_bytes: int) -> "BoundHttpIndependentProofChecker":
+        """Return an equivalent transport checker bound to the runtime byte policy."""
+        return BoundHttpIndependentProofChecker(
+            url=self._url,
+            token=self._token,
+            timeout_seconds=self._timeout,
+            max_response_bytes=max_response_bytes,
+        )
 
     @classmethod
-    def from_environment(cls, *, timeout_seconds: float) -> "BoundHttpIndependentProofChecker":
+    def from_environment(
+        cls,
+        *,
+        timeout_seconds: float,
+    ) -> "BoundHttpIndependentProofChecker":
         url = os.getenv("PROPHET_ZKTLS_VERIFY_URL", "").strip()
         token = os.getenv("PROPHET_ZKTLS_VERIFY_TOKEN", "")
         if not url or not token:
             raise PipelineRejected("independent_zktls_dependency_unresolved")
-        return cls(url=url, token=token, timeout_seconds=timeout_seconds)
+        return cls(
+            url=url,
+            token=token,
+            timeout_seconds=timeout_seconds,
+        )
 
     def validate(self, encoded_proof: bytes, response_bytes: bytes) -> IndependentProofClaims:
+        if self._max_response_bytes is None:
+            raise PipelineRejected("independent_zktls_response_limit_unresolved")
         request = {
             "schema": "prophet.independent-zktls-proof-verification.v1",
             "proof_b64": base64.b64encode(encoded_proof).decode("ascii"),
             "response_b64": base64.b64encode(response_bytes).decode("ascii"),
         }
         try:
-            response = httpx.post(
+            with httpx.stream(
+                "POST",
                 self._url,
                 json=request,
                 headers={"Authorization": f"Bearer {self._token}"},
                 timeout=self._timeout,
-            )
-            response.raise_for_status()
-            payload = response.json()
+            ) as response:
+                response.raise_for_status()
+                raw = read_bounded_response_bytes(
+                    response,
+                    max_bytes=self._max_response_bytes,
+                )
+        except BoundedHttpResponseTooLarge as exc:
+            raise PipelineRejected("independent_zktls_response_too_large") from exc
+        except BoundedHttpResponseHeaderError as exc:
+            raise PipelineRejected("independent_zktls_response_invalid") from exc
         except Exception as exc:
             raise PipelineRejected("independent_zktls_verifier_unavailable") from exc
+
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise PipelineRejected("independent_zktls_response_invalid") from exc
+
         keys = {
             "valid", "proof_version", "source_domain", "request_definition_hash",
             "cluster_genesis_hash", "response_hash",

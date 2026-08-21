@@ -20,6 +20,7 @@ services:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/resolver-registry.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver_store:/app/resolver_store
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver_audit:/app/audit
     restart: unless-stopped
 
   verifier-a:

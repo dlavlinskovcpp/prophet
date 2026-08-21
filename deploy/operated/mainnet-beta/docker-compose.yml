@@ -8,6 +8,7 @@ services:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/mainnet-beta}/resolver-registry.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/mainnet-beta}/resolver_store:/app/resolver_store
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/mainnet-beta}/resolver_audit:/app/audit
     restart: unless-stopped
 
   verifier-a:

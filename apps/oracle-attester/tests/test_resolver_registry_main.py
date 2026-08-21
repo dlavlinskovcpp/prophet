@@ -10,6 +10,7 @@ def _load_app(monkeypatch, tmp_path, *, require_auth=True):
     store_dir = tmp_path / "resolver_store"
     audit_log = tmp_path / "audit" / "resolver-registry.jsonl"
 
+    monkeypatch.setattr(settings, "APP_ENV", "test")
     monkeypatch.setattr(settings, "RESOLVER_STORE_DIR", str(store_dir))
     monkeypatch.setattr(settings, "RESOLVER_REGISTRY_AUDIT_LOG_PATH", str(audit_log))
     monkeypatch.setattr(settings, "RESOLVER_REGISTRY_REQUIRE_AUTH", require_auth)
