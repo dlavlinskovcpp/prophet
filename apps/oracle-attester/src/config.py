@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     RESOLVER_REGISTRY_URL: str = os.getenv("RESOLVER_REGISTRY_URL", "")
     RESOLVER_REGISTRY_API_KEY: str = os.getenv("RESOLVER_REGISTRY_API_KEY", "")
     RESOLVER_REGISTRY_TIMEOUT_S: float = _env_float("RESOLVER_REGISTRY_TIMEOUT_S", 5.0)
+    RESOLVER_REGISTRY_MAX_RESPONSE_BYTES: int = _env_int(
+        "RESOLVER_REGISTRY_MAX_RESPONSE_BYTES", 256_000
+    )
     RESOLVER_REGISTRY_REQUIRE_TLS: bool = _env_bool("RESOLVER_REGISTRY_REQUIRE_TLS", True)
     RESOLVER_REGISTRY_CACHE_TTL_S: float = _env_float("RESOLVER_REGISTRY_CACHE_TTL_S", 300.0)
     RESOLVER_REGISTRY_CACHE_MAX_ENTRIES: int = _env_int("RESOLVER_REGISTRY_CACHE_MAX_ENTRIES", 1024)
@@ -49,7 +52,7 @@ class Settings(BaseSettings):
     RESOLVER_REGISTRY_MAX_REQUEST_BYTES: int = _env_int("RESOLVER_REGISTRY_MAX_REQUEST_BYTES", 100_000)
     RESOLVER_REGISTRY_AUDIT_LOG_PATH: str = os.getenv(
         "RESOLVER_REGISTRY_AUDIT_LOG_PATH",
-        "./audit/resolver-registry.jsonl",
+        "/app/audit/resolver-registry.jsonl",
     )
     ATTESTER_AUDIT_LOG_PATH: str = os.getenv("ATTESTER_AUDIT_LOG_PATH", "./audit/attester.jsonl")
     REMOTE_SIGNER_AUDIT_LOG_PATH: str = os.getenv("REMOTE_SIGNER_AUDIT_LOG_PATH", "./audit/remote-signer.jsonl")
@@ -73,6 +76,7 @@ class Settings(BaseSettings):
     PROOF_FETCH_MODE: str = os.getenv("PROOF_FETCH_MODE", "local")  # "local" or "http"
     PROOF_FETCH_URL: str = os.getenv("PROOF_FETCH_URL", "")
     PROOF_FETCH_API_KEY: str = os.getenv("PROOF_FETCH_API_KEY", "")
+    PROOF_HTTP_MAX_RESPONSE_BYTES: int = _env_int("PROOF_HTTP_MAX_RESPONSE_BYTES", 4_000_000)
     PROOF_MAX_BYTES: int = _env_int("PROOF_MAX_BYTES", 2_000_000)
     PUBLIC_INPUTS_MAX_BYTES: int = _env_int("PUBLIC_INPUTS_MAX_BYTES", 256_000)
 
@@ -106,6 +110,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = _env_bool("RATE_LIMIT_ENABLED", True)
     RATE_LIMIT_MAX_REQUESTS: int = _env_int("RATE_LIMIT_MAX_REQUESTS", 30)
     RATE_LIMIT_WINDOW_S: int = _env_int("RATE_LIMIT_WINDOW_S", 60)
+    RATE_LIMIT_MAX_IDENTITIES: int = _env_int("RATE_LIMIT_MAX_IDENTITIES", 10_000)
     RATE_LIMIT_TRUST_X_FORWARDED_FOR: bool = _env_bool("RATE_LIMIT_TRUST_X_FORWARDED_FOR", False)
     MAX_REQUEST_BYTES: int = _env_int("MAX_REQUEST_BYTES", 1_000_000)
     METRICS_ENABLED: bool = _env_bool("METRICS_ENABLED", True)
@@ -240,6 +245,8 @@ class Settings(BaseSettings):
             raise ValueError("RESOLVER_REGISTRY_CACHE_TTL_S must be > 0.")
         if self.RESOLVER_REGISTRY_CACHE_MAX_ENTRIES <= 0:
             raise ValueError("RESOLVER_REGISTRY_CACHE_MAX_ENTRIES must be > 0.")
+        if self.RESOLVER_REGISTRY_MAX_RESPONSE_BYTES <= 0:
+            raise ValueError("RESOLVER_REGISTRY_MAX_RESPONSE_BYTES must be > 0.")
 
         if mode not in {"directory", "http"}:
             raise ValueError(
@@ -372,12 +379,32 @@ class Settings(BaseSettings):
         if self.RESOLVER_REGISTRY_MAX_REQUEST_BYTES <= 0:
             raise ValueError("RESOLVER_REGISTRY_MAX_REQUEST_BYTES must be > 0.")
 
+        audit_path = (self.RESOLVER_REGISTRY_AUDIT_LOG_PATH or "").strip()
+        if not audit_path:
+            raise ValueError("RESOLVER_REGISTRY_AUDIT_LOG_PATH is required.")
+        env = (self.APP_ENV or "production").strip().lower()
+        if not self._is_nonproduction_env(env):
+            resolved_audit = Path(audit_path).expanduser().resolve(strict=False)
+            if not resolved_audit.is_absolute():
+                raise ValueError(
+                    "Production RESOLVER_REGISTRY_AUDIT_LOG_PATH must be absolute."
+                )
+            try:
+                resolved_audit.relative_to(Path("/app/audit"))
+            except ValueError:
+                raise ValueError(
+                    "Production resolver-registry audit log must be under /app/audit, "
+                    "which is the operated persistent mount."
+                ) from None
+
     def validate_proof_fetch_runtime(self) -> None:
         mode = (self.PROOF_FETCH_MODE or "").strip().lower()
         if mode not in {"local", "http"}:
             raise ValueError(
                 f"Unsupported PROOF_FETCH_MODE '{self.PROOF_FETCH_MODE}'. Supported: local, http."
             )
+        if self.PROOF_HTTP_MAX_RESPONSE_BYTES <= 0:
+            raise ValueError("PROOF_HTTP_MAX_RESPONSE_BYTES must be > 0.")
         if self.PROOF_MAX_BYTES <= 0:
             raise ValueError("PROOF_MAX_BYTES must be > 0.")
         if self.PUBLIC_INPUTS_MAX_BYTES <= 0:
@@ -417,6 +444,8 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_MAX_REQUESTS must be > 0.")
         if self.RATE_LIMIT_WINDOW_S <= 0:
             raise ValueError("RATE_LIMIT_WINDOW_S must be > 0.")
+        if self.RATE_LIMIT_MAX_IDENTITIES <= 0:
+            raise ValueError("RATE_LIMIT_MAX_IDENTITIES must be > 0.")
         if self.MAX_REQUEST_BYTES <= 0:
             raise ValueError("MAX_REQUEST_BYTES must be > 0.")
 

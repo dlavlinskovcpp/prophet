@@ -33,13 +33,22 @@ def test_http_fetcher_ok(monkeypatch):
         "extra_meta": "keepme"
     }
     
+    class MockStream:
+        def __init__(self, response):
+            self.response = response
+        def __enter__(self):
+            return self.response
+        def __exit__(self, *args):
+            return False
+
     class MockClient:
         def __init__(self, *args, **kwargs): pass
         def __enter__(self): return self
         def __exit__(self, *args): pass
-        def get(self, url, params=None, headers=None):
-            req = httpx.Request("GET", url)
-            return httpx.Response(200, json=mock_json, request=req)
+        def stream(self, method, url, params=None, headers=None):
+            req = httpx.Request(method, url)
+            response = httpx.Response(200, json=mock_json, request=req)
+            return MockStream(response)
 
     monkeypatch.setattr(httpx, "Client", MockClient)
     

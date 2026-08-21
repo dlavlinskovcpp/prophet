@@ -78,20 +78,46 @@ def build_verify_payload(
         "public_inputs_len": len(public_inputs_bytes)
     }
 
+def _strict_verification_status(data: Dict[str, Any]) -> Tuple[bool, str]:
+    present = []
+    for key in ("ok", "valid"):
+        if key not in data:
+            continue
+        value = data[key]
+        if type(value) is not bool:
+            return False, "invalid_verification_status_type"
+        present.append(value)
+
+    if not present:
+        return False, "missing_verification_status"
+    if len(set(present)) != 1:
+        return False, "conflicting_verification_status"
+    return present[0], ""
+
+
 def parse_verify_response(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Parses the Reclaim HTTP response.
     Returns (is_valid, reason, sanitized_meta).
+
+    Verification status is intentionally strict: only actual JSON booleans are
+    accepted. Strings/numbers/null and conflicting ok/valid fields fail closed.
     """
-    is_valid = bool(data.get("ok", False) or data.get("valid", False))
-    
+    if not isinstance(data, dict):
+        return False, "invalid_verification_response", {}
+
+    is_valid, status_error = _strict_verification_status(data)
+
     reason = ""
     if not is_valid:
-        reason = str(data.get("reason", "") or data.get("error", "Unknown verification failure"))
-        
+        reason = status_error or str(
+            data.get("reason", "")
+            or data.get("error", "Unknown verification failure")
+        )
+
     # Full recursive scrub
     sanitized_root = _scrub_value(data, 0)
-    
+
     # Ensure root is a dict (scrub can return other types if input wasn't dict, but data type hint says Dict)
     if not isinstance(sanitized_root, dict):
         sanitized_root = {}
@@ -99,5 +125,5 @@ def parse_verify_response(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, An
     # Remove status fields from meta to avoid redundancy
     for key in ["ok", "valid", "reason", "error"]:
         sanitized_root.pop(key, None)
-            
+
     return is_valid, reason, sanitized_root

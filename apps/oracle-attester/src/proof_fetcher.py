@@ -1,4 +1,6 @@
 import base64
+import binascii
+import json
 import os
 import stat
 import httpx
@@ -345,56 +347,184 @@ class LocalFileProofFetcher(ProofFetcher):
 
 
 class HttpProofFetcher(ProofFetcher):
+    def __init__(
+        self,
+        *,
+        response_max_bytes: Optional[int] = None,
+        proof_max_bytes: Optional[int] = None,
+        public_inputs_max_bytes: Optional[int] = None,
+    ):
+        self.response_max_bytes = int(
+            settings.PROOF_HTTP_MAX_RESPONSE_BYTES
+            if response_max_bytes is None
+            else response_max_bytes
+        )
+        self.proof_max_bytes = int(
+            settings.PROOF_MAX_BYTES if proof_max_bytes is None else proof_max_bytes
+        )
+        self.public_inputs_max_bytes = int(
+            settings.PUBLIC_INPUTS_MAX_BYTES
+            if public_inputs_max_bytes is None
+            else public_inputs_max_bytes
+        )
+        if min(
+            self.response_max_bytes,
+            self.proof_max_bytes,
+            self.public_inputs_max_bytes,
+        ) <= 0:
+            raise ProofFetchConfigurationError(
+                "invalid_size_limit",
+                "HTTP proof fetch size limits must be positive",
+            )
+
+    @staticmethod
+    def _read_bounded_response(resp: httpx.Response, max_bytes: int) -> bytes:
+        declared = resp.headers.get("content-length")
+        if declared is not None:
+            if not declared.isdigit():
+                raise ProofFetchError(
+                    "invalid_content_length",
+                    "proof endpoint returned an invalid Content-Length",
+                )
+            if int(declared) > max_bytes:
+                raise ProofFetchError(
+                    "http_response_too_large",
+                    "proof endpoint response exceeds the configured size limit",
+                )
+
+        raw = bytearray()
+        for chunk in resp.iter_bytes():
+            if len(raw) + len(chunk) > max_bytes:
+                raise ProofFetchError(
+                    "http_response_too_large",
+                    "proof endpoint response exceeds the configured size limit",
+                )
+            raw.extend(chunk)
+        return bytes(raw)
+
+    @staticmethod
+    def _decode_b64_bounded(value: Any, *, max_bytes: int, label: str) -> bytes:
+        if not isinstance(value, str) or not value or not value.isascii():
+            raise ProofFetchError("malformed_base64", f"{label} is not valid base64")
+
+        max_encoded_bytes = 4 * ((max_bytes + 2) // 3)
+        if len(value) > max_encoded_bytes:
+            raise ProofFetchError(
+                f"{label}_too_large",
+                f"{label.replace('_', ' ')} exceeds the configured decoded-size limit",
+            )
+
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError):
+            raise ProofFetchError(
+                "malformed_base64",
+                f"{label} is not valid base64",
+            ) from None
+
+        if len(decoded) > max_bytes:
+            raise ProofFetchError(
+                f"{label}_too_large",
+                f"{label.replace('_', ' ')} exceeds the configured decoded-size limit",
+            )
+        return decoded
+
     def fetch(self, ref: str) -> FetchedProof:
         url = settings.PROOF_FETCH_URL
         if not url:
-            raise ValueError("PROOF_FETCH_URL not configured")
-            
+            raise ProofFetchConfigurationError(
+                "missing_url",
+                "PROOF_FETCH_URL is not configured",
+            )
+
         headers = {}
         if settings.PROOF_FETCH_API_KEY:
             headers["Authorization"] = f"Bearer {settings.PROOF_FETCH_API_KEY}"
-            
+
         try:
             with httpx.Client(timeout=15.0) as client:
-                resp = client.get(url, params={"ref": ref}, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                
-                # Support variant keys
-                p_b64 = data.get("proof_bytes_b64") or data.get("proof_b64")
-                pi_b64 = data.get("public_inputs_bytes_b64") or data.get("public_inputs_b64")
-                
-                if not p_b64 or not pi_b64:
-                    raise ValueError("Response missing required b64 fields")
-                    
-                proof = base64.b64decode(p_b64)
-                pi = base64.b64decode(pi_b64)
-                
-                # Strict scrub of base64 fields from meta
-                scrub_keys = {
-                    "proof_bytes_b64", "public_inputs_bytes_b64",
-                    "proof_b64", "public_inputs_b64"
-                }
-                
-                meta = {}
-                for k, v in data.items():
-                    if k in scrub_keys or k.endswith("_b64"):
-                        continue
-                    meta[k] = v
-                    
-                meta["ref"] = ref
-                meta["status_code"] = resp.status_code
-                
-                return FetchedProof(
-                    proof_bytes=proof,
-                    public_inputs_bytes=pi,
-                    provider="http_fetch",
-                    meta=meta
-                )
-                
-        except Exception as e:
-            raise RuntimeError(f"HTTP fetch failed: {e}")
+                with client.stream(
+                    "GET",
+                    url,
+                    params={"ref": ref},
+                    headers=headers,
+                ) as resp:
+                    resp.raise_for_status()
+                    raw = self._read_bounded_response(
+                        resp,
+                        self.response_max_bytes,
+                    )
+                    status_code = resp.status_code
+        except ProofFetchError:
+            raise
+        except httpx.TimeoutException as exc:
+            raise ProofFetchError(
+                "timeout",
+                "proof endpoint timed out",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise ProofFetchError(
+                "http_status",
+                f"proof endpoint returned HTTP {exc.response.status_code}",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ProofFetchError(
+                "transport_error",
+                "proof endpoint request failed",
+            ) from exc
 
+        try:
+            data = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ProofFetchError(
+                "invalid_json",
+                "proof endpoint returned invalid JSON",
+            ) from None
+        if not isinstance(data, dict):
+            raise ProofFetchError(
+                "invalid_payload",
+                "proof endpoint response must be a JSON object",
+            )
+
+        p_b64 = data.get("proof_bytes_b64") or data.get("proof_b64")
+        pi_b64 = data.get("public_inputs_bytes_b64") or data.get("public_inputs_b64")
+        if p_b64 is None or pi_b64 is None:
+            raise ProofFetchError(
+                "invalid_payload",
+                "proof endpoint response is missing required base64 fields",
+            )
+
+        proof = self._decode_b64_bounded(
+            p_b64,
+            max_bytes=self.proof_max_bytes,
+            label="proof",
+        )
+        pi = self._decode_b64_bounded(
+            pi_b64,
+            max_bytes=self.public_inputs_max_bytes,
+            label="public_inputs",
+        )
+
+        scrub_keys = {
+            "proof_bytes_b64",
+            "public_inputs_bytes_b64",
+            "proof_b64",
+            "public_inputs_b64",
+        }
+        meta = {
+            k: v
+            for k, v in data.items()
+            if k not in scrub_keys and not k.endswith("_b64")
+        }
+        meta["ref"] = ref
+        meta["status_code"] = status_code
+
+        return FetchedProof(
+            proof_bytes=proof,
+            public_inputs_bytes=pi,
+            provider="http_fetch",
+            meta=meta,
+        )
 
 def make_fetcher() -> ProofFetcher:
     mode = (settings.PROOF_FETCH_MODE or "").strip().lower()

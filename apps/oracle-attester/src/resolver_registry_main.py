@@ -1,4 +1,6 @@
+import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -62,20 +64,73 @@ class MetricsRegistry:
 
 
 class SlidingWindowRateLimiter:
-    def __init__(self, max_requests: int, window_s: int):
+    def __init__(
+        self,
+        max_requests: int,
+        window_s: int,
+        *,
+        max_identities: int = 10_000,
+        clock=None,
+        cleanup_interval_s: Optional[float] = None,
+    ):
+        if max_requests <= 0 or window_s <= 0 or max_identities <= 0:
+            raise ValueError("rate-limiter limits must be positive")
         self.max_requests = max_requests
         self.window_s = window_s
+        self.max_identities = max_identities
+        self._clock = clock or time.monotonic
+        self._cleanup_interval_s = (
+            float(cleanup_interval_s)
+            if cleanup_interval_s is not None
+            else min(5.0, max(0.25, float(window_s) / 2.0))
+        )
+        if self._cleanup_interval_s <= 0:
+            raise ValueError("cleanup_interval_s must be positive")
+        self._next_cleanup_at = 0.0
         self._lock = Lock()
-        self._hits: Dict[str, Deque[float]] = defaultdict(deque)
+        self._hits: Dict[str, Deque[float]] = {}
+
+    @property
+    def identity_count(self) -> int:
+        with self._lock:
+            return len(self._hits)
+
+    def _prune_queue(self, q: Deque[float], cutoff: float) -> None:
+        while q and q[0] <= cutoff:
+            q.popleft()
+
+    def _cleanup_locked(self, now: float, cutoff: float) -> int:
+        if now < self._next_cleanup_at:
+            return 0
+        removed = 0
+        for key, q in list(self._hits.items()):
+            self._prune_queue(q, cutoff)
+            if not q:
+                del self._hits[key]
+                removed += 1
+        self._next_cleanup_at = now + self._cleanup_interval_s
+        return removed
 
     def allow(self, key: str) -> Tuple[bool, int]:
-        now = time.monotonic()
+        now = self._clock()
         cutoff = now - float(self.window_s)
 
         with self._lock:
-            q = self._hits[key]
-            while q and q[0] <= cutoff:
-                q.popleft()
+            self._cleanup_locked(now, cutoff)
+            q = self._hits.get(key)
+            if q is not None:
+                self._prune_queue(q, cutoff)
+                if not q:
+                    del self._hits[key]
+                    q = None
+
+            if q is None:
+                if len(self._hits) >= self.max_identities:
+                    # Fail closed instead of evicting an active identity and
+                    # weakening the configured per-identity request limit.
+                    return False, max(1, int(self.window_s))
+                q = deque()
+                self._hits[key] = q
 
             if len(q) >= self.max_requests:
                 retry_after = max(1, int(q[0] + self.window_s - now))
@@ -94,14 +149,55 @@ def _extract_bearer_token(auth_header: str) -> str:
     return parts[1].strip()
 
 
+def _direct_client_identity(request: Request) -> str:
+    if not request.client:
+        return "unknown"
+    host = str(request.client.host or "").strip()
+    if not host:
+        return "unknown"
+    try:
+        return str(ipaddress.ip_address(host))
+    except ValueError:
+        # ASGI test clients and trusted local transports may expose a host
+        # label rather than an IP. Bound it so attacker-controlled key strings
+        # cannot grow without limit.
+        return host[:128]
+
+
 def _client_ip(request: Request) -> str:
-    if settings.RATE_LIMIT_TRUST_X_FORWARDED_FOR:
-        xff = request.headers.get("x-forwarded-for", "")
-        if xff:
-            return xff.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+    direct = _direct_client_identity(request)
+    if not settings.RATE_LIMIT_TRUST_X_FORWARDED_FOR:
+        return direct
+
+    xff = request.headers.get("x-forwarded-for", "")
+    if not xff:
+        return direct
+    candidate = xff.split(",", 1)[0].strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return direct
+
+
+def _rate_limit_token_identity(token: str) -> str:
+    if not token:
+        return "anon"
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+
+
+class RequestBodyTooLarge(ValueError):
+    pass
+
+
+async def _read_bounded_request_body(request: Request, max_bytes: int) -> bytes:
+    if max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > max_bytes:
+            raise RequestBodyTooLarge("request body exceeds configured size limit")
+        data.extend(chunk)
+    return bytes(data)
 
 
 def _canonicalize_resolver(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -175,6 +271,7 @@ metrics = MetricsRegistry()
 rate_limiter = SlidingWindowRateLimiter(
     max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
     window_s=settings.RATE_LIMIT_WINDOW_S,
+    max_identities=settings.RATE_LIMIT_MAX_IDENTITIES,
 )
 audit_log = JsonlAuditLogger(settings.RESOLVER_REGISTRY_AUDIT_LOG_PATH, "resolver-registry")
 app = FastAPI(title="Prophet Resolver Registry")
@@ -190,21 +287,39 @@ async def security_middleware(request: Request, call_next):
         if path.startswith("/resolvers"):
             if method in {"POST", "PUT"}:
                 cl = request.headers.get("content-length")
-                if cl:
+                if cl is not None:
                     try:
                         cl_val = int(cl)
                     except ValueError:
-                        cl_val = settings.RESOLVER_REGISTRY_MAX_REQUEST_BYTES + 1
-                else:
-                    cl_val = 0
-
-                if cl_val > settings.RESOLVER_REGISTRY_MAX_REQUEST_BYTES:
-                    metrics.inc(
-                        "prophet_resolver_registry_request_rejected_total",
-                        labels={"reason": "payload_too_large"},
-                    )
-                    status_code = 413
-                    return JSONResponse(status_code=413, content={"detail": "Payload too large"})
+                        metrics.inc(
+                            "prophet_resolver_registry_request_rejected_total",
+                            labels={"reason": "invalid_content_length"},
+                        )
+                        status_code = 400
+                        return JSONResponse(
+                            status_code=400,
+                            content={"detail": "Invalid Content-Length"},
+                        )
+                    if cl_val < 0:
+                        metrics.inc(
+                            "prophet_resolver_registry_request_rejected_total",
+                            labels={"reason": "invalid_content_length"},
+                        )
+                        status_code = 400
+                        return JSONResponse(
+                            status_code=400,
+                            content={"detail": "Invalid Content-Length"},
+                        )
+                    if cl_val > settings.RESOLVER_REGISTRY_MAX_REQUEST_BYTES:
+                        metrics.inc(
+                            "prophet_resolver_registry_request_rejected_total",
+                            labels={"reason": "payload_too_large"},
+                        )
+                        status_code = 413
+                        return JSONResponse(
+                            status_code=413,
+                            content={"detail": "Payload too large"},
+                        )
 
             token = ""
             if settings.RESOLVER_REGISTRY_REQUIRE_AUTH:
@@ -215,8 +330,10 @@ async def security_middleware(request: Request, call_next):
                     return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
             if settings.RATE_LIMIT_ENABLED:
-                key_suffix = token[:12] if token else "anon"
-                key = f"{_client_ip(request)}:{key_suffix}"
+                key = (
+                    f"{_client_ip(request)}:"
+                    f"{_rate_limit_token_identity(token)}"
+                )
                 allowed, retry_after = rate_limiter.allow(key)
                 if not allowed:
                     metrics.inc("prophet_resolver_registry_rate_limited_total")
@@ -285,8 +402,24 @@ def get_resolver(resolver_hash: str):
 @app.post("/resolvers")
 async def publish_resolver(request: Request):
     try:
-        body = await request.json()
-    except Exception:
+        raw_body = await _read_bounded_request_body(
+            request,
+            settings.RESOLVER_REGISTRY_MAX_REQUEST_BYTES,
+        )
+    except RequestBodyTooLarge:
+        metrics.inc(
+            "prophet_resolver_registry_request_rejected_total",
+            labels={"reason": "payload_too_large"},
+        )
+        metrics.inc(
+            "prophet_resolver_registry_publish_total",
+            labels={"result": "payload_too_large"},
+        )
+        raise HTTPException(status_code=413, detail="Payload too large")
+
+    try:
+        body = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
         metrics.inc("prophet_resolver_registry_publish_total", labels={"result": "bad_json"})
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
