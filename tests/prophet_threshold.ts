@@ -84,9 +84,9 @@ describe("prophet-threshold-notary", () => {
     const deriveNotaryConfig = (admin: PublicKey) =>
         deriveNotaryConfigSnapshot(admin, new BN(1));
 
-    const deriveMarket = (resolver: Buffer, openTs: BN) => {
+    const deriveMarket = (creator: PublicKey, resolver: Buffer, openTs: BN, marketNonce: BN) => {
         return PublicKey.findProgramAddressSync(
-            [Buffer.from("market"), resolver, openTs.toArrayLike(Buffer, "le", 8)],
+            [Buffer.from("market"), creator.toBuffer(), resolver, openTs.toArrayLike(Buffer, "le", 8), marketNonce.toArrayLike(Buffer, "le", 8)],
             program.programId
         )[0];
     };
@@ -257,13 +257,14 @@ describe("prophet-threshold-notary", () => {
 
         const resolverHash = Buffer.alloc(32, 7);
 
-        const market = deriveMarket(resolverHash, openTs);
+        const market = deriveMarket(admin.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
         const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverHash),
                 openTs,
+                new BN(resolverHash[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -273,7 +274,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey, // legacy field; unused
                 quoteMint,
                 quoteVault,
@@ -335,7 +336,7 @@ describe("prophet-threshold-notary", () => {
         }
 
         // Re-initialize a fresh market for failure cases (since the above resolved it)
-        const market2 = deriveMarket(Buffer.alloc(32, 8), openTs);
+        const market2 = deriveMarket(admin.publicKey, Buffer.alloc(32, 8), openTs, new BN(8));
         const resolverHash2 = Buffer.alloc(32, 8);
         const quoteVault2 = await getAssociatedTokenAddress(quoteMint, market2, true);
 
@@ -343,6 +344,7 @@ describe("prophet-threshold-notary", () => {
             .initializeMarketV2(
                 Array.from(resolverHash2),
                 openTs,
+                new BN(resolverHash2[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -352,7 +354,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market: market2,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault: quoteVault2,
@@ -495,13 +497,14 @@ describe("prophet-threshold-notary", () => {
         const publicInputsHash = Buffer.alloc(32, 32);
 
         const resolverInside = Buffer.alloc(32, 41);
-        const marketInside = deriveMarket(resolverInside, openTs);
+        const marketInside = deriveMarket(admin.publicKey, resolverInside, openTs, new BN(resolverInside[0]));
         const quoteVaultInside = await getAssociatedTokenAddress(quoteMint, marketInside, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverInside),
                 openTs,
+                new BN(resolverInside[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -511,7 +514,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market: marketInside,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault: quoteVaultInside,
@@ -558,13 +561,14 @@ describe("prophet-threshold-notary", () => {
         assert.equal(marketInsideAcc.status.resolved !== undefined, true, "signature inside scan window must resolve");
 
         const resolverOutside = Buffer.alloc(32, 42);
-        const marketOutside = deriveMarket(resolverOutside, openTs);
+        const marketOutside = deriveMarket(admin.publicKey, resolverOutside, openTs, new BN(resolverOutside[0]));
         const quoteVaultOutside = await getAssociatedTokenAddress(quoteMint, marketOutside, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverOutside),
                 openTs,
+                new BN(resolverOutside[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -574,7 +578,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market: marketOutside,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault: quoteVaultOutside,
@@ -654,13 +658,14 @@ describe("prophet-threshold-notary", () => {
         const lockTs = new BN(now - 20);
         const resolveTs = new BN(now - 1);
         const resolverHash = Buffer.alloc(32, 55);
-        const market = deriveMarket(resolverHash, openTs);
+        const market = deriveMarket(admin.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
         const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverHash),
                 openTs,
+                new BN(resolverHash[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -670,7 +675,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault,
@@ -769,12 +774,13 @@ describe("prophet-threshold-notary", () => {
         }
 
         const resolverHashV2 = Buffer.alloc(32, 56);
-        const marketV2 = deriveMarket(resolverHashV2, openTs);
+        const marketV2 = deriveMarket(admin.publicKey, resolverHashV2, openTs, new BN(resolverHashV2[0]));
         const quoteVaultV2 = await getAssociatedTokenAddress(quoteMint, marketV2, true);
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverHashV2),
                 openTs,
+                new BN(resolverHashV2[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -784,7 +790,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market: marketV2,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault: quoteVaultV2,
@@ -908,13 +914,14 @@ describe("prophet-threshold-notary", () => {
         const lockTs = new BN(safeNow + 15);
         const resolveTs = new BN(safeNow + 15);
 
-        const market = deriveMarket(resolverHash, openTs);
+        const market = deriveMarket(admin.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
         const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverHash),
                 openTs,
+                new BN(resolverHash[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -924,7 +931,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault,
@@ -1232,13 +1239,14 @@ describe("prophet-threshold-notary", () => {
         const lockTs = new BN(safeNow + 8);
         const resolveTs = new BN(safeNow + 8);
 
-        const market = deriveMarket(resolverHash, openTs);
+        const market = deriveMarket(admin.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
         const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
 
         await program.methods
             .initializeMarketV2(
                 Array.from(resolverHash),
                 openTs,
+                new BN(resolverHash[0]),
                 lockTs,
                 resolveTs,
                 new BN(1),
@@ -1248,7 +1256,7 @@ describe("prophet-threshold-notary", () => {
             )
             .accounts({
                 market,
-                authority: admin.publicKey,
+                creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
                 quoteMint,
                 quoteVault,

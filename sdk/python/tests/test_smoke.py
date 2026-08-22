@@ -7,8 +7,10 @@ import prophet_sdk.client as client_mod
 from prophet_sdk.client import ProphetClient
 from prophet_sdk.pdas import (
     derive_market_pda,
+    derive_order_pda,
     derive_notary_config_pda,
     derive_notary_config_snapshot_pda,
+    derive_position_pda,
 )
 
 def test_sdk_has_new_helpers():
@@ -31,8 +33,23 @@ def test_sdk_has_new_helpers():
     assert hasattr(ProphetClient, "rotate_notary_config")
 
 def test_pda_derivation():
-    market, bump = derive_market_pda(bytes([0]*32), 100)
+    market, bump = derive_market_pda(Pubkey.default(), bytes([0]*32), 100, 0)
     assert str(market) is not None
+
+
+def test_market_namespace_binds_creator_and_nonce_without_changing_order_or_position_rules():
+    resolver = bytes([3]) * 32
+    creator_a = Pubkey.from_bytes(bytes([4]) * 32)
+    creator_b = Pubkey.from_bytes(bytes([5]) * 32)
+    market_a0, _ = derive_market_pda(creator_a, resolver, -7, 0)
+    market_a1, _ = derive_market_pda(creator_a, resolver, -7, 1)
+    market_b0, _ = derive_market_pda(creator_b, resolver, -7, 0)
+
+    assert market_a0 != market_a1
+    assert market_a0 != market_b0
+    order, _ = derive_order_pda(market_a0, creator_a, 0)
+    position, _ = derive_position_pda(market_a0, creator_a)
+    assert order != position
 
 
 def test_notary_snapshot_pda_preserves_legacy_v1_and_versions_successors():

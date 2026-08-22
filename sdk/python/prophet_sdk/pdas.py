@@ -14,12 +14,20 @@ def get_program_id(program_id: Optional[Pubkey] = None) -> Pubkey:
 
 
 def derive_market_pda(
+    creator: Pubkey,
     resolver_hash: bytes,
     open_ts: int,
+    market_nonce: int,
     program_id: Optional[Pubkey] = None,
 ) -> Tuple[Pubkey, int]:
+    if not isinstance(creator, Pubkey):
+        raise TypeError("creator must be a Pubkey")
+    if len(resolver_hash) != 32:
+        raise ValueError("resolver_hash must be 32 bytes")
+    if isinstance(market_nonce, bool) or not isinstance(market_nonce, int) or not 0 <= market_nonce < (1 << 64):
+        raise ValueError("market_nonce must be a u64")
     pid = get_program_id(program_id)
-    seeds = [b"market", resolver_hash, struct.pack("<q", open_ts)]
+    seeds = [b"market", bytes(creator), resolver_hash, struct.pack("<q", open_ts), struct.pack("<Q", market_nonce)]
     return Pubkey.find_program_address(seeds, pid)
 
 

@@ -136,6 +136,8 @@ def _validate_request(
             raise ValueError("trusted_solana_runtime_required")
         row = payload["settlement_context"]
         keys = {
+            "creator",
+            "market_nonce",
             "notary_config",
             "open_ts",
             "resolve_ts",
@@ -147,6 +149,8 @@ def _validate_request(
             raise ValueError("settlement_context_shape_invalid")
         context = SettlementMessageContext(
             program_id=solana_runtime.prophet_program_id,
+            creator=row["creator"],
+            market_nonce=row["market_nonce"],
             notary_config=row["notary_config"],
             open_ts=row["open_ts"],
             resolve_ts=row["resolve_ts"],

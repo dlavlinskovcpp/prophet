@@ -67,7 +67,8 @@ class DemoBackend:
 
     def create_market(self, question: str, resolver: ResolverConfig) -> MarketHandle:
         resolver_hash = bytes.fromhex(resolver_v2.resolver_definition_hash(self.definition).hex())
-        pda, _ = derive_market_pda(resolver_hash, MARKET_OPEN, __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID))
+        creator = __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID)
+        pda, _ = derive_market_pda(creator, resolver_hash, MARKET_OPEN, 0, creator)
         self.market = MarketHandle("demo-market-eth-5000", str(pda), question, resolver)
         return self.market
 

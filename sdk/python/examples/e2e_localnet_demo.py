@@ -128,6 +128,7 @@ def main():
     client_a.initialize_market_v2(
         resolver_hash=resolver_hash,
         open_ts=open_ts,
+        market_nonce=0,
         lock_ts=lock_ts,
         resolve_ts=resolve_ts,
         notary_config=notary_config,
@@ -135,7 +136,7 @@ def main():
         quote_mint=quote_mint
     )
     
-    market_pda, _ = derive_market_pda(resolver_hash, open_ts, client_a.program_id)
+    market_pda, _ = derive_market_pda(client_a.payer.pubkey(), resolver_hash, open_ts, 0, client_a.program_id)
     print(f"  Market: {market_pda}")
 
     if bal_a >= 60 and bal_b >= 20:

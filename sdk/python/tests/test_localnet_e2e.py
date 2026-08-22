@@ -69,6 +69,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
     client.initialize_market_v2(
         resolver_hash=resolver,
         open_ts=open_ts,
+        market_nonce=0,
         lock_ts=lock_ts,
         resolve_ts=resolve_ts,
         notary_config=notary_config,
@@ -76,7 +77,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
         quote_mint=mint,
     )
     
-    market, _ = derive_market_pda(resolver, open_ts, client.program_id)
+    market, _ = derive_market_pda(client.payer.pubkey(), resolver, open_ts, 0, client.program_id)
     
     proof_hash = bytes([proof_fill] * 32)
     pi_hash = bytes([pi_fill] * 32)

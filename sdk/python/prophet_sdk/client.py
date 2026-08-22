@@ -355,6 +355,7 @@ class ProphetClient:
         self,
         resolver_hash: bytes,
         open_ts: int,
+        market_nonce: int,
         lock_ts: int,
         resolve_ts: int,
         notary_config: Pubkey,
@@ -368,7 +369,10 @@ class ProphetClient:
         if len(resolver_hash) != 32:
             raise ValueError("Resolver hash must be 32 bytes")
 
-        market_pda, _ = derive_market_pda(resolver_hash, open_ts, self.program_id)
+        if isinstance(market_nonce, bool) or not isinstance(market_nonce, int) or not 0 <= market_nonce < (1 << 64):
+            raise ValueError("market_nonce must be a u64")
+        creator = self.payer.pubkey()
+        market_pda, _ = derive_market_pda(creator, resolver_hash, open_ts, market_nonce, self.program_id)
         quote_vault = derive_associated_token_account(market_pda, quote_mint)
 
         oracle_auth = oracle_authority or self.payer.pubkey()
@@ -376,8 +380,9 @@ class ProphetClient:
         data = self._get_discriminator("initialize_market_v2")
         data += resolver_hash
         data += struct.pack(
-            "<qqqQQHI",
+            "<qQqqQQHI",
             open_ts,
+            market_nonce,
             lock_ts,
             resolve_ts,
             min_order_qty_atoms,
@@ -388,7 +393,7 @@ class ProphetClient:
 
         keys = [
             AccountMeta(market_pda, False, True),
-            AccountMeta(self.payer.pubkey(), True, True),
+            AccountMeta(creator, True, True),
             AccountMeta(oracle_auth, False, False),
             AccountMeta(quote_mint, False, False),
             AccountMeta(quote_vault, False, True),

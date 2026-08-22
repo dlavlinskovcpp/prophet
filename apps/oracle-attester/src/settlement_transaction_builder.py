@@ -312,7 +312,11 @@ class SettlementTransactionBuilder:
         try:
             market = Pubkey.from_bytes(bytes.fromhex(job.market))
             expected_market, _ = derive_market_pda(
-                bytes.fromhex(job.resolver_definition_hash), context.open_ts, self._program_id
+                Pubkey.from_string(context.creator),
+                bytes.fromhex(job.resolver_definition_hash),
+                context.open_ts,
+                context.market_nonce,
+                self._program_id,
             )
         except Exception as exc:
             raise SettlementTransactionBindingError("market_pda_binding_invalid") from exc

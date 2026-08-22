@@ -52,7 +52,7 @@ def _results(*, valid_until: str = "1000"):
 def _agreed_state(tmp_path, clock: _Clock):
     definition, evidence, a, b = _results()
     market, _ = derive_market_pda(
-        bytes.fromhex(a["definition_hash"]), OPEN_TS, Pubkey.from_string(PROGRAM_ID)
+        Pubkey.default(), bytes.fromhex(a["definition_hash"]), OPEN_TS, 0, Pubkey.from_string(PROGRAM_ID)
     )
     store = ResolutionCoordinatorStore(
         tmp_path / "coordinator.sqlite",

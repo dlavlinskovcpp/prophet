@@ -13,24 +13,30 @@ use anchor_spl::{
 };
 
 #[derive(Accounts)]
-#[instruction(resolver_hash: [u8; 32], open_ts: i64)]
+#[instruction(resolver_hash: [u8; 32], open_ts: i64, market_nonce: u64)]
 pub struct InitializeMarketV2<'info> {
     #[account(
         init,
-        seeds = [b"market", resolver_hash.as_ref(), &open_ts.to_le_bytes()],
+        seeds = [
+            b"market",
+            creator.key().as_ref(),
+            resolver_hash.as_ref(),
+            &open_ts.to_le_bytes(),
+            &market_nonce.to_le_bytes(),
+        ],
         bump,
-        payer = authority,
+        payer = creator,
         space = 8 + Market::LEN
     )]
     pub market: Box<Account<'info, Market>>,
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub creator: Signer<'info>,
     /// CHECK: Legacy field; unused for threshold resolution.
     pub oracle_authority: UncheckedAccount<'info>,
     pub quote_mint: Box<Account<'info, token::Mint>>,
     #[account(
         init,
-        payer = authority,
+        payer = creator,
         associated_token::mint = quote_mint,
         associated_token::authority = market
     )]
@@ -46,6 +52,7 @@ pub(crate) fn initialize_market_v2(
     ctx: Context<InitializeMarketV2>,
     resolver_hash: [u8; 32],
     open_ts: i64,
+    market_nonce: u64,
     lock_ts: i64,
     resolve_ts: i64,
     min_order_qty_atoms: u64,
@@ -68,13 +75,15 @@ pub(crate) fn initialize_market_v2(
     )?;
     validate_stored_notary_config(&ctx.accounts.notary_config)?;
 
-    let authority_key = ctx.accounts.authority.key();
+    let creator_key = ctx.accounts.creator.key();
     let market = &mut ctx.accounts.market;
-    market.authority = authority_key;
+    market.creator = creator_key;
+    market.authority = creator_key;
+    market.market_nonce = market_nonce;
     market.oracle_authority = ctx.accounts.oracle_authority.key();
     market.quote_mint = ctx.accounts.quote_mint.key();
     market.quote_vault = ctx.accounts.quote_vault.key();
-    market.fee_recipient = authority_key;
+    market.fee_recipient = creator_key;
     market.quote_decimals = ctx.accounts.quote_mint.decimals;
     market.notary_config = ctx.accounts.notary_config.key();
     market.resolver_hash = resolver_hash;
