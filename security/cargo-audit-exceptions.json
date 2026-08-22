@@ -1,0 +1,44 @@
+{
+  "exceptions": [
+    {
+      "id": "RUSTSEC-2025-0141",
+      "package": "bincode",
+      "kind": "unmaintained",
+      "reason": "The locked Solana/Anchor dependency graph still requires bincode 1.3.3; no compatible replacement has been adopted in this release-only hardening batch.",
+      "risk_assessment": "Maintenance status is a supply-chain concern. It is not a known exploitable vulnerability in the locked use here; removal requires a dependency-graph migration outside RC4 Batch 5.",
+      "review_by": "2026-09-22"
+    },
+    {
+      "id": "RUSTSEC-2026-0190",
+      "package": "anyhow",
+      "kind": "unsound",
+      "reason": "The advisory's fixed version is not available in the constrained lock graph at this release point.",
+      "risk_assessment": "The affected downcast_mut pattern is not intentionally used by the Prophet program. The dependency must be upgraded or removed at the next compatible dependency refresh.",
+      "review_by": "2026-09-22"
+    },
+    {
+      "id": "RUSTSEC-2026-0012",
+      "package": "keccak",
+      "kind": "unsound",
+      "reason": "keccak 0.1.5 is transitive through the locked Solana cryptography graph; replacing it requires an upstream-compatible update.",
+      "risk_assessment": "The reported ARMv8 assembly backend is opt-in and not selected by the current supported configuration. This remains a time-bounded upstream dependency risk.",
+      "review_by": "2026-09-22"
+    },
+    {
+      "id": "RUSTSEC-2026-0097",
+      "package": "rand",
+      "kind": "unsound",
+      "reason": "rand 0.8.5 is transitive in the locked Solana/Anchor graph; its patched compatible release must be validated with the pinned toolchain before adoption.",
+      "risk_assessment": "The advisory requires a custom logger calling rand from within logger execution and a reseed path. Prophet does not intentionally use that pattern, but the dependency must be refreshed.",
+      "review_by": "2026-09-22"
+    },
+    {
+      "id": "YANKED:keccak@0.1.5",
+      "package": "keccak",
+      "kind": "yanked",
+      "reason": "This is the same locked transitive keccak release covered by RUSTSEC-2026-0012 and cannot be substituted without an upstream-compatible update.",
+      "risk_assessment": "Yanked status prevents new resolution but does not alter the already locked checksum. The package remains explicitly reviewed until replacement.",
+      "review_by": "2026-09-22"
+    }
+  ]
+}

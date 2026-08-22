@@ -3,8 +3,7 @@
 .PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test secure-settlement-run remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down
 
 validator:
-	@mkdir -p .anchor/test-ledger
-	solana-test-validator --reset --rpc-port 8899  --ledger .anchor/test-ledger
+	SOLANA_VERSION=3.1.10 bash scripts/localnet_start.sh
 
 build:
 	anchor build
@@ -122,7 +121,7 @@ keeper:
 	cd apps/matching-keeper && poetry install && poetry run prophet-matching-keeper
 
 grafana:
-	docker-compose -f docker-compose.localnet.yml up -d grafana
+	docker compose -f docker-compose.localnet.yml up -d grafana
 
 ops-backup:
 	# Usage: make ops-backup [OUT=ops/backups/prophet-ops.tgz]
@@ -148,10 +147,12 @@ keeper-example:
 		$(MARKETS) --ws-url $(WS_URL)
 
 localnet-up:
-	docker-compose -f docker-compose.localnet.yml up -d validator resolver-registry remote-signer oracle-attester matching-keeper prometheus grafana
+	SOLANA_VERSION=3.1.10 BIND_ADDRESS=$${BIND_ADDRESS:-0.0.0.0} bash scripts/localnet_start.sh
+	docker compose -f docker-compose.localnet.yml up -d resolver-registry remote-signer oracle-attester matching-keeper prometheus grafana
 
 localnet-down:
-	docker-compose -f docker-compose.localnet.yml down
+	docker compose -f docker-compose.localnet.yml down
+	-bash scripts/localnet_stop.sh
 
 zktls-audit:
 	./scripts/check_zktls.sh

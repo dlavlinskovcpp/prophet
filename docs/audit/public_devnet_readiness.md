@@ -111,3 +111,25 @@ authorization. With no unresolved CODE blocker, the remaining public-devnet
 work is classified only as **NEEDS REAL INFRA** or **NEEDS LIVE VALIDATION**.
 No broadcast should occur until those deployment gates are intentionally closed.
 <!-- RC3_PUBLIC_DEVNET_READINESS_END -->
+
+<!-- RC4_BATCH5_READINESS_START -->
+## RC4 Batch 5 code-readiness update
+
+Classification date: 2026-08-21. This section separates repository/CI code readiness from deployment infrastructure.
+
+| Gate | Classification | Evidence/policy |
+|---|---|---|
+| Untouched environment configs | **READY IN CODE / CLOSED** | Mandatory validation reads the four checked-in JSON files directly; no rewrite is permitted before this gate. |
+| Public-devnet identity | **READY IN CODE / CLOSED** | Source, Anchor, checked-in public-devnet, generated IDL and release manifest are required to match `3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE`. |
+| Secure topology/resource defaults | **READY IN CODE / CLOSED** | Structural operated validation requires verifier A/B, coordinator, secure settlement, durable state/audit mounts, no direct/generic signer path, safe XFF default, and bounded-resource settings. |
+| Production images | **READY IN CODE / CLOSED** | CI builds oracle + keeper from the same repository-root Docker contexts used by operated compose and runs runtime import/dependency/dev-tool checks. |
+| Dependency locks / SDK / Rust quality | **READY IN CODE / CLOSED** | Poetry lock installs, full SDK tests, Rust fmt/workspace locked tests/strict Clippy are mandatory. |
+| Supply-chain baseline | **READY IN CODE / CLOSED** | Pinned Rust/Python/JS/image scanners and SPDX SBOM are mandatory; findings are not silently ignored. |
+| Real verifier/Vault/RPC/fee payer/alert receiver/secrets | **NEEDS REAL INFRA** | CI uses no real operator secrets and does not substitute test credentials for public-devnet readiness. |
+| Live E2E, restart/recovery, rotation, reconciliation, backup/restore, soak | **NEEDS LIVE VALIDATION** | Must be exercised against deployed public-devnet infrastructure. |
+| External independent audit | **NEEDS LIVE VALIDATION** | RC4 is not externally audited. |
+
+`PUBLIC DEVNET CODE PREFLIGHT PASSED` means repository configuration/policy is code-ready. It does **not** resolve `NEEDS REAL INFRA` or `NEEDS LIVE VALIDATION` items and does not authorize a deployment.
+
+**RC4 is not externally audited. RC4 does not authorize mainnet.**
+<!-- RC4_BATCH5_READINESS_END -->

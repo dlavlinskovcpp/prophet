@@ -13,8 +13,22 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+try:
+    from release_config import (
+        ConfigValidationError,
+        validate_checked_in_environments,
+        validate_environment_config,
+    )
+except ModuleNotFoundError:  # pragma: no cover - package-style imports
+    from scripts.release_config import (
+        ConfigValidationError,
+        validate_checked_in_environments,
+        validate_environment_config,
+    )
+
 
 ROOT = Path(__file__).resolve().parent.parent
+CHECKED_IN_ENVIRONMENTS_DIR = (ROOT / "deploy" / "environments").resolve()
 ENVIRONMENTS_DIR = Path(
     os.getenv("PROPHET_RELEASE_ENVIRONMENTS_DIR", str(ROOT / "deploy" / "environments"))
 ).resolve()
@@ -452,6 +466,11 @@ def _resolve_program_id(config: Dict[str, Any], idl_path: Path) -> str:
         )
 
     if len(unique) > 1:
+        # An explicitly future/unapproved mainnet template is allowed to describe
+        # a future identity while bundling the current build for audit. This is
+        # never accepted by the live deploy path.
+        if config.get("program_identity_policy") == "future-unapproved" and expected:
+            return expected
         raise ReleaseError(f"Program id mismatch across public sources: {unique}")
 
     return unique[0]
@@ -509,6 +528,12 @@ def _build_manifest(
     config: Dict[str, Any],
     release_tag: str,
 ) -> Dict[str, Any]:
+    try:
+        validate_environment_config(
+            config, env_name=env_name, root=ROOT, live=False, check_artifacts=True
+        )
+    except ConfigValidationError as exc:
+        raise ReleaseError(f"Environment template invalid: {exc}") from exc
     binary_path = (ROOT / config["binary_path"]).resolve()
     idl_path = (ROOT / config["idl_path"]).resolve()
     ts_types_path = (ROOT / config["ts_types_path"]).resolve()
@@ -528,6 +553,16 @@ def _build_manifest(
         "release_tag": release_tag,
         "environment": env_name,
         "generated_at_utc": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "authorization": {
+            "template_valid": True,
+            "deployment_authorized": config["deployment_authorized"],
+            "program_identity_policy": config["program_identity_policy"],
+            "status": (
+                "LIVE DEPLOY AUTHORIZED"
+                if config["deployment_authorized"]
+                else "TEMPLATE VALID / LIVE DEPLOY NOT AUTHORIZED"
+            ),
+        },
         "deployment": {
             "cluster_name": config["cluster_name"],
             "anchor_cluster": config["anchor_cluster"],
@@ -631,6 +666,15 @@ def _write_manifest(manifest: Dict[str, Any], output_path: str) -> None:
         path = (ROOT / path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _validate_live_deploy_config(env_name: str, config: Dict[str, Any]) -> None:
+    try:
+        validate_environment_config(
+            config, env_name=env_name, root=ROOT, live=True, check_artifacts=True
+        )
+    except ConfigValidationError as exc:
+        raise ReleaseError(f"Live deployment authorization failed: {exc}") from exc
 
 
 def _ensure_clean_for_deploy(allow_dirty: bool) -> None:
@@ -767,6 +811,14 @@ def main() -> int:
         subparser.add_argument("--release-tag", default="", help="Release tag for manifest/bundle naming")
         subparser.add_argument("--output", default="", help="Write manifest JSON to this path ('-' for stdout)")
 
+    validate_parser = subparsers.add_parser(
+        "validate-checked-in",
+        help="Validate untouched checked-in deployment environments and identity policy",
+    )
+    validate_parser.add_argument(
+        "--idl", default="", help="Optional generated IDL path to bind match-source environments"
+    )
+
     plan_parser = subparsers.add_parser("plan", help="Generate a release manifest from existing artifacts")
     add_common_arguments(plan_parser)
 
@@ -795,9 +847,15 @@ def main() -> int:
     )
 
     args = parser.parse_args()
-    release_tag = _normalize_tag(args.release_tag or None)
 
     try:
+        if args.command == "validate-checked-in":
+            idl = None if not args.idl else _resolve_repo_path(args.idl)
+            validate_checked_in_environments(ROOT, idl_path=idl)
+            print("CHECKED-IN CONFIG VALIDATION PASSED")
+            return 0
+
+        release_tag = _normalize_tag(args.release_tag or None)
         if args.command == "plan":
             _build_or_bundle(
                 action="plan",
@@ -818,7 +876,14 @@ def main() -> int:
             )
             return 0
 
+        if ENVIRONMENTS_DIR.resolve() != CHECKED_IN_ENVIRONMENTS_DIR:
+            raise ReleaseError("Live deploy requires the checked-in deploy/environments configuration.")
+        try:
+            validate_checked_in_environments(ROOT)
+        except ConfigValidationError as exc:
+            raise ReleaseError(f"Checked-in deployment configuration invalid: {exc}") from exc
         env_path, config = _load_environment(args.environment)
+        _validate_live_deploy_config(args.environment, config)
         if args.environment == "mainnet-beta" and not args.yes:
             raise ReleaseError("Mainnet deploy requires --yes.")
 
@@ -853,6 +918,9 @@ def main() -> int:
         print(f"bundle_dir: {bundle_dir}")
         return 0
 
+    except ConfigValidationError as exc:
+        print(f"release config error: {exc}", file=sys.stderr)
+        return 1
     except ReleaseError as exc:
         print(f"release error: {exc}", file=sys.stderr)
         return 1

@@ -74,3 +74,11 @@ The usual Anchor/Solana macro `unexpected_cfgs` warnings remain. They were not b
 4. Start `solana-test-validator` explicitly, deploy, and verify `solana program show 913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A`.
 5. Run the complete integration, SDK, keeper, attester, E2E, smoke, release-bundle, security-bundle, and named security-regression suites.
 6. Change this status to `ANCHOR 1.0 MIGRATION PASSED` only after every remaining gate succeeds.
+
+## RC4 Batch 5 security follow-up
+
+The original compatibility baseline used Anchor 1.0.1.
+RC4 Batch 5 subsequently upgraded the Rust crates, Anchor CLI policy,
+and TypeScript client to Anchor 1.0.3 after RUSTSEC-2026-0144 affected
+Anchor 1.0.1 and Anchor 1.0.2 exposed an incompatible mixed-crate
+dependency resolution. Anchor 1.0.3 is the current RC4 security baseline.

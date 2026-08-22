@@ -8,7 +8,9 @@
   "binary_path": "target/deploy/prophet.so",
   "idl_path": "target/idl/prophet.json",
   "ts_types_path": "target/types/prophet.ts",
-  "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
+  "expected_program_id": "3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE",
+  "program_identity_policy": "match-source",
+  "deployment_authorized": true,
   "service_endpoints": {
     "attester_base_url": "http://127.0.0.1:8000",
     "remote_signer_url": "http://127.0.0.1:8100/sign",

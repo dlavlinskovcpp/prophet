@@ -9,6 +9,8 @@
   "idl_path": "target/idl/prophet.json",
   "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A",
+  "program_identity_policy": "future-unapproved",
+  "deployment_authorized": false,
   "service_endpoints": {
     "verifier_a_base_url": "https://verifier-a.mainnet-beta.prophet.example",
     "verifier_b_base_url": "https://verifier-b.mainnet-beta.prophet.example",

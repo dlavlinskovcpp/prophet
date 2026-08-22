@@ -32,11 +32,14 @@ jobs:
       - name: Run zkTLS guardrail audit
         run: bash scripts/check_zktls.sh
 
-      - name: Cargo check (program)
-        run: cargo check -p prophet
+      - name: Rust format gate
+        run: cargo fmt --all --check
 
-      - name: Cargo test (program reliability)
-        run: cargo test -p prophet --lib
+      - name: Locked workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Strict Clippy gate
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   anchor-ts:
     name: Anchor TS Integration
@@ -147,6 +150,20 @@ jobs:
       - name: Install SDK Python dependencies
         working-directory: sdk/python
         run: poetry install --no-interaction
+
+      - name: Validate untouched checked-in identity before ephemeral CI key sync
+        run: |
+          anchor build
+          python3 scripts/release.py validate-checked-in --idl target/idl/prophet.json
+          python3 scripts/release.py plan --environment public-devnet --release-tag "checked-in-${GITHUB_SHA}" --output /tmp/public-devnet-checked-in-manifest.json >/dev/null
+          python3 - <<'PY'
+          import json
+          manifest = json.load(open('/tmp/public-devnet-checked-in-manifest.json', encoding='utf-8'))
+          expected = '3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE'
+          assert manifest['program']['program_id'] == expected
+          assert manifest['authorization']['program_identity_policy'] == 'match-source'
+          PY
+          echo "CHECKED-IN CONFIG VALIDATION PASSED"
 
       - name: Create test wallet
         run: |
@@ -341,7 +358,7 @@ jobs:
           cd apps/oracle-attester
           poetry run pytest -q ../../scripts/tests/test_secure_release_topology.py
 
-      - name: Generate Release Bundles
+      - name: Prepare explicit ephemeral CI environments and generate audit bundles
         run: |
           set -euo pipefail
           BUNDLE_ROOT="/tmp/prophet-release-bundles"
@@ -359,12 +376,20 @@ jobs:
           dst_dir = Path(os.environ["CI_ENV_DIR"])
           program_id = os.environ["PROPHET_PROGRAM_ID_CI"]
 
+          # These copies exist only for the throwaway program identity created
+          # by this local CI deployment lane. They are NOT source-config validation.
           for name in ("localnet", "devnet", "mainnet-beta"):
               src = src_dir / f"{name}.json"
               data = json.loads(src.read_text(encoding="utf-8"))
               data["expected_program_id"] = program_id
+              data["deployment_authorized"] = False
+              if name == "mainnet-beta":
+                  data["program_identity_policy"] = "future-unapproved"
+              else:
+                  data["program_identity_policy"] = "match-source"
               (dst_dir / src.name).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
           PY
+          echo "EPHEMERAL CI ENVIRONMENT PREPARED"
 
           PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment localnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
           PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment devnet --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
@@ -388,6 +413,252 @@ jobs:
         with:
           name: prophet-security-review-bundles
           path: /tmp/prophet-security-review-bundles
+
+  deployment-config:
+    name: Checked-in Deployment Config
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate untouched checked-in environments
+        run: |
+          python3 scripts/release.py validate-checked-in
+          python3 scripts/tests/test_release_config_validation.py -v
+
+      - name: Validate production topology structure
+        run: python3 scripts/validate_operated_config.py
+
+      - name: Compose config without real secrets
+        run: |
+          set -euo pipefail
+          SECRET_BASE="$(mktemp -d)"
+          RUNTIME_BASE="$(mktemp -d)"
+          for environment in devnet public-devnet mainnet-beta; do
+            SECRET_ROOT="${SECRET_BASE}/${environment}"
+            RUNTIME_ROOT="${RUNTIME_BASE}/${environment}"
+            mkdir -p "${SECRET_ROOT}" "${RUNTIME_ROOT}"
+            for envfile in resolver-registry.env verifier-a.env verifier-b.env coordinator.env secure-settlement.env matching-keeper.env; do
+              : > "${SECRET_ROOT}/${envfile}"
+            done
+            PROPHET_SECRET_ROOT="${SECRET_ROOT}" PROPHET_RUNTIME_ROOT="${RUNTIME_ROOT}" \
+              docker compose -f "deploy/operated/${environment}/docker-compose.yml" config >/dev/null
+          done
+          echo "OPERATED COMPOSE CONFIG PASSED"
+
+  python-locks:
+    name: Poetry Lock Authority
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.8.5
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Validate and install committed locks
+        run: |
+          set -euo pipefail
+          for project in sdk/python apps/oracle-attester apps/matching-keeper; do
+            echo "checking ${project}"
+            (cd "${project}" && poetry check --lock && poetry install --sync --no-interaction)
+          done
+          git diff --exit-code -- \
+            sdk/python/pyproject.toml sdk/python/poetry.lock \
+            apps/oracle-attester/pyproject.toml apps/oracle-attester/poetry.lock \
+            apps/matching-keeper/pyproject.toml apps/matching-keeper/poetry.lock
+          cd apps/oracle-attester
+          poetry run python - <<'PY'
+          from importlib.metadata import version
+          assert version('solana') == '0.33.0'
+          assert version('solders') == '0.21.0'
+          print('LOCKED SOLANA DEPENDENCY CONTRACT PASSED')
+          PY
+
+  production-images:
+    name: Production Images + Runtime Contract
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build production-shaped images from repository root
+        run: |
+          docker build -f apps/oracle-attester/Dockerfile --build-arg IMAGE_REVISION="${GITHUB_SHA}" --build-arg IMAGE_VERSION="ci-${GITHUB_SHA}" -t prophet-oracle-ci .
+          docker build -f apps/matching-keeper/Dockerfile --build-arg IMAGE_REVISION="${GITHUB_SHA}" --build-arg IMAGE_VERSION="ci-${GITHUB_SHA}" -t prophet-keeper-ci .
+      - name: Oracle runtime imports, versions, and dev-tool absence
+        run: |
+          # Import-only contract: disable the registry's runtime auth check
+          # without supplying a credential. This does not start any service.
+          docker run --rm -e RESOLVER_REGISTRY_REQUIRE_AUTH=0 -i prophet-oracle-ci python - <<'PY'
+          import importlib.util
+          import shutil
+          from importlib.metadata import version
+          import solders.rpc.responses
+          import solana.rpc.api
+          import prophet_sdk
+          import src.resolver_registry_main
+          import src.verifier_a_main
+          import src.verifier_b_main
+          import src.coordinator_main
+          import src.secure_settlement_main
+          assert version('solana') == '0.33.0'
+          assert version('solders') == '0.21.0'
+          assert importlib.util.find_spec('pytest') is None
+          assert importlib.util.find_spec('pytest_asyncio') is None
+          assert importlib.util.find_spec('poetry') is None
+          assert importlib.util.find_spec('pip') is None
+          assert importlib.util.find_spec('setuptools') is None
+          assert importlib.util.find_spec('msgpack') is None
+          assert shutil.which('poetry') is None
+          assert shutil.which('pip') is None
+          print('ORACLE PRODUCTION RUNTIME CONTRACT PASSED')
+          PY
+      - name: Keeper runtime dev-tool absence
+        run: |
+          # Generate a process-local test key inside the container solely to
+          # satisfy import-time SDK construction. It is never persisted or logged.
+          docker run --rm -e PROPHET_PROGRAM_ID=3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE -i prophet-keeper-ci sh -c 'export PAYER_KEYPAIR_PATH="$(python -c "from solders.keypair import Keypair; print(Keypair())")"; python - <<"PY"
+          import importlib.util
+          import shutil
+          from importlib.metadata import version
+          import prophet_sdk
+          import src.main
+          assert version('solana') == '0.33.0'
+          assert version('solders') == '0.21.0'
+          assert importlib.util.find_spec('pytest') is None
+          assert importlib.util.find_spec('poetry') is None
+          assert importlib.util.find_spec('pip') is None
+          assert importlib.util.find_spec('setuptools') is None
+          assert importlib.util.find_spec('msgpack') is None
+          assert shutil.which('poetry') is None
+          assert shutil.which('pip') is None
+          print('KEEPER PRODUCTION RUNTIME CONTRACT PASSED')
+          PY'
+      - name: Prepare pinned Trivy vulnerability database
+        run: |
+          mkdir -p /tmp/trivy-cache
+          docker run --rm -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 image --download-db-only
+      - name: Generate SPDX JSON SBOMs with pinned Syft
+        run: |
+          mkdir -p sbom
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft:v1.50.0 prophet-oracle-ci -o spdx-json=/out/oracle.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft:v1.50.0 prophet-keeper-ci -o spdx-json=/out/keeper.spdx.json
+          python3 - <<'PY'
+          import json, os
+          payload = {
+              'commit_sha': os.environ['GITHUB_SHA'],
+              'release_candidate': 'ci-' + os.environ['GITHUB_SHA'],
+              'images': ['prophet-oracle-ci', 'prophet-keeper-ci'],
+              'format': 'SPDX JSON',
+              'syft_version': '1.50.0',
+          }
+          open('sbom/metadata.json', 'w', encoding='utf-8').write(json.dumps(payload, indent=2) + '\n')
+          PY
+      - name: Scan final production runtime filesystems and SBOMs
+        run: |
+          set -euo pipefail
+          scan_role() {
+            local role="$1"
+            local image="$2"
+            local rootfs
+            local container
+            rootfs="$(mktemp -d)"
+            container="$(docker create "${image}")"
+            docker export "${container}" | tar -x -C "${rootfs}"
+            docker rm "${container}"
+            docker run --rm -v "${rootfs}":/rootfs:ro -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 fs --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json /rootfs > "sbom/${role}-rootfs-trivy.json"
+            python3 scripts/check_trivy_image_scan.py --report "sbom/${role}-rootfs-trivy.json" --exceptions security/production-image-vulnerability-exceptions.json --role "${role}"
+            rm -rf "${rootfs}"
+            docker run --rm -v "${PWD}/sbom:/sbom:ro" -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 sbom --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json "/sbom/${role}.spdx.json" > "sbom/${role}-sbom-trivy.json"
+            python3 scripts/check_trivy_image_scan.py --report "sbom/${role}-sbom-trivy.json" --role "${role}"
+          }
+          scan_role oracle prophet-oracle-ci
+          scan_role keeper prophet-keeper-ci
+      - name: Upload production SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc4-production-sbom-${{ github.sha }}
+          path: sbom
+
+  release-security:
+    name: Release Secret Hygiene (P-07)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Release bundle secret boundary regression
+        run: python3 scripts/tests/test_release_bundle_security.py -v
+      - name: Scan tracked release/deployment material
+        run: python3 scripts/scan_release_secrets.py
+
+  supply-chain:
+    name: Dependency Vulnerability Gates
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust project toolchain
+        uses: dtolnay/rust-toolchain@1.89.0
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Fetch RustSec advisory database
+        run: |
+          git clone --depth 1 https://github.com/RustSec/advisory-db.git /tmp/rustsec-advisory-db
+          git -C /tmp/rustsec-advisory-db rev-parse HEAD
+          test -n "$(find /tmp/rustsec-advisory-db -name 'RUSTSEC-*.md' -print -quit)"
+      - name: Audit committed Cargo.lock
+        run: python3 scripts/check_cargo_audit.py --db /tmp/rustsec-advisory-db
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry and pinned pip-audit
+        run: python -m pip install "poetry==1.8.5" "pip-audit==2.10.1"
+      - name: Verify OSV service reachability
+        run: |
+          curl -fsS -X POST https://api.osv.dev/v1/query -H 'Content-Type: application/json' -d '{"package":{"name":"pip","ecosystem":"PyPI"}}' >/dev/null
+      - name: Audit locked Python environments
+        run: |
+          set -euo pipefail
+          for project in sdk/python apps/oracle-attester apps/matching-keeper; do
+            (cd "${project}" && poetry config virtualenvs.in-project true && poetry install --sync --no-interaction)
+            VENV="$(cd "${project}" && poetry env info --path)"
+            pip-audit --vulnerability-service osv --progress-spinner off --path "${VENV}/lib/python3.11/site-packages"
+          done
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.6"
+          cache: yarn
+          cache-dependency-path: yarn.lock
+      - name: Activate pinned Yarn and install frozen lock
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          test "$(yarn --version)" = "1.22.22"
+          yarn install --frozen-lockfile --non-interactive
+      - name: Verify npm registry reachability
+        run: npm ping --registry=https://registry.npmjs.org
+      - name: Audit JavaScript dependency lock
+        run: python3 scripts/check_yarn_audit.py
+
+  release-freeze-invariants:
+    name: Release/Freeze 100k Deterministic Invariant
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+      - name: Run deterministic 100k state-machine campaign
+        run: PROPHET_INVARIANT_SEQUENCE_COUNT=100000 cargo test -p prophet state_machine_preserves_economic_invariants_for_thousands_of_seeds --lib --locked
 
   sdk-python:
     name: SDK Python Tests
@@ -414,7 +685,7 @@ jobs:
 
       - name: Run SDK tests
         working-directory: sdk/python
-        run: poetry run pytest -q tests/test_smoke.py tests/test_tx_submit.py
+        run: poetry run pytest -q tests
 
   matching-keeper:
     name: Matching Keeper Tests
@@ -441,7 +712,7 @@ jobs:
 
       - name: Run keeper tests
         working-directory: apps/matching-keeper
-        run: poetry run pytest -q tests/test_engine.py tests/test_service.py tests/test_storage.py
+        run: poetry run pytest -q tests
 
   ops-drills:
     name: Ops Drill Checks
