@@ -69,6 +69,7 @@ def main():
         sig = client.initialize_market_v2(
             resolver_hash=resolver_hash,
             open_ts=open_ts,
+            market_nonce=0,
             lock_ts=lock_ts,
             resolve_ts=resolve_ts,
             notary_config=notary_config,
@@ -77,7 +78,7 @@ def main():
         )
         print(f"\nSuccess! Tx: {sig}")
         
-        market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+        market_pda, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id)
         print(f"Market Address: {market_pda}")
         print(f"Resolver Hash (Hex): {resolver_hash.hex()}")
         

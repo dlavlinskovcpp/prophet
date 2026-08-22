@@ -10,7 +10,7 @@ def main():
     resolver_hash = bytes([1]*32)
     now = int(time.time())
     open_ts = now - 100
-    market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+    market_pda, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id)
     
     print(f"Placing order on market {market_pda}...")
     try:

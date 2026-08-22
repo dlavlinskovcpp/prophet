@@ -137,13 +137,14 @@ async def test_localnet_threshold_resolve_via_attester(tmp_path, monkeypatch):
     sdk.initialize_market_v2(
         resolver_hash=resolver_hash,
         open_ts=open_ts,
+        market_nonce=0,
         lock_ts=lock_ts,
         resolve_ts=resolve_ts,
         notary_config=notary_config,
         quote_mint=NATIVE_MINT,
     )
 
-    market, _ = derive_market_pda(resolver_hash, open_ts, sdk.program_id)
+    market, _ = derive_market_pda(sdk.payer.pubkey(), resolver_hash, open_ts, 0, sdk.program_id)
 
     monkeypatch.setattr(settings, "RPC_URL", rpc_url)
     monkeypatch.setattr(settings, "PROPHET_PROGRAM_ID", program_id)
@@ -256,13 +257,14 @@ async def test_localnet_threshold_invalid_resolve_via_attester(tmp_path, monkeyp
     sdk.initialize_market_v2(
         resolver_hash=resolver_hash,
         open_ts=open_ts,
+        market_nonce=1,
         lock_ts=lock_ts,
         resolve_ts=resolve_ts,
         notary_config=notary_config,
         quote_mint=NATIVE_MINT,
     )
 
-    market, _ = derive_market_pda(resolver_hash, open_ts, sdk.program_id)
+    market, _ = derive_market_pda(sdk.payer.pubkey(), resolver_hash, open_ts, 1, sdk.program_id)
 
     monkeypatch.setattr(settings, "RPC_URL", rpc_url)
     monkeypatch.setattr(settings, "PROPHET_PROGRAM_ID", program_id)

@@ -10,7 +10,7 @@ pub struct WithdrawProtocolFees<'info> {
     #[account(
         mut,
         has_one = authority @ ErrorCode::UnauthorizedMarketAuthority,
-        seeds = [b"market", market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes()],
+        seeds = [b"market", market.creator.as_ref(), market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes(), &market.market_nonce.to_le_bytes()],
         bump = market.bump
     )]
     pub market: Account<'info, Market>,
@@ -41,10 +41,13 @@ pub(crate) fn withdraw_protocol_fees(
         .ok_or(ErrorCode::MathOverflow)?;
 
     let open_ts_bytes = market_signer_open_ts_bytes(market);
+    let market_nonce_bytes = market.market_nonce.to_le_bytes();
     let signer_seeds = &[
         b"market".as_ref(),
+        market.creator.as_ref(),
         market.resolver_hash.as_ref(),
         open_ts_bytes.as_ref(),
+        market_nonce_bytes.as_ref(),
         std::slice::from_ref(&market.bump),
     ];
     token::transfer(

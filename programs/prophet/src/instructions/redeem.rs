@@ -9,7 +9,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
 pub struct Redeem<'info> {
-    #[account(mut, seeds = [b"market", market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes()], bump = market.bump)]
+    #[account(mut, seeds = [b"market", market.creator.as_ref(), market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes(), &market.market_nonce.to_le_bytes()], bump = market.bump)]
     pub market: Account<'info, Market>,
     #[account(
         mut,
@@ -56,10 +56,13 @@ pub(crate) fn redeem(ctx: Context<Redeem>) -> Result<()> {
 
     if payout > 0 {
         let open_ts_bytes = market.open_ts.to_le_bytes();
+        let market_nonce_bytes = market.market_nonce.to_le_bytes();
         let seeds = &[
             b"market".as_ref(),
+            market.creator.as_ref(),
             market.resolver_hash.as_ref(),
             open_ts_bytes.as_ref(),
+            market_nonce_bytes.as_ref(),
             &[market.bump],
         ];
         token::transfer(

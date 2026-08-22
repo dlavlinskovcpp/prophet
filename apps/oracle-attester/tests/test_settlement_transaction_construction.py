@@ -55,7 +55,7 @@ def _setup(tmp_path, monkeypatch, *, terminal="AGREED", signing_mode="complete")
     b = _verification(definition, evidence, slot="B", outcome="NO" if terminal == "CONFLICT" else "INVALID")
     program = Pubkey.from_string(PROGRAM_ID)
     resolver_hash = bytes.fromhex(a["definition_hash"])
-    market, _ = derive_market_pda(resolver_hash, OPEN_TS, program)
+    market, _ = derive_market_pda(Pubkey.default(), resolver_hash, OPEN_TS, 0, program)
     store = ResolutionCoordinatorStore(
         tmp_path / "coordinator.sqlite",
         verifier_a=VerifierBinding("A", a["verifier"]),
@@ -64,6 +64,8 @@ def _setup(tmp_path, monkeypatch, *, terminal="AGREED", signing_mode="complete")
     job = store.register_job(market=bytes(market).hex(), resolver_definition=definition, evidence=evidence)
     context = SettlementMessageContext(
         program_id=PROGRAM_ID,
+        creator=str(Pubkey.default()),
+        market_nonce=0,
         notary_config=NOTARY_CONFIG,
         open_ts=OPEN_TS,
         resolve_ts=RESOLVE_TS,
@@ -547,7 +549,7 @@ def test_41_v2_coordinator_schema_migrates_without_retroactive_runtime_binding(t
     x["store"].close()
     db = sqlite3.connect(path)
     db.execute("DROP TABLE resolution_job_solana_bindings")
-    db.execute("DELETE FROM schema_migrations WHERE version = 3")
+    db.execute("DELETE FROM schema_migrations WHERE version IN (3, 4)")
     db.execute("PRAGMA user_version = 2")
     db.commit()
     db.close()
@@ -560,7 +562,7 @@ def test_41_v2_coordinator_schema_migrates_without_retroactive_runtime_binding(t
         verifier_a=VerifierBinding("A", a["verifier"]),
         verifier_b=VerifierBinding("B", b["verifier"]),
     )
-    assert reopened.schema_version() == 3
+    assert reopened.schema_version() == 4
     assert reopened.get_job(job_id).state == "AGREED"
     with pytest.raises(Exception, match="settlement_runtime_binding_not_found"):
         reopened.get_settlement_runtime(job_id)

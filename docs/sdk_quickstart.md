@@ -69,13 +69,14 @@ client.initialize_notary_config(1, notary_keys)
 client.initialize_market_v2(
     resolver_hash=resolver_hash,
     open_ts=open_ts,
+    market_nonce=0,
     lock_ts=lock_ts,
     resolve_ts=resolve_ts,
     notary_config=notary_config,
     quote_mint=quote_mint,
 )
 
-market, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+market, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id)
 client.set_market_fee_config(market, client.payer.pubkey(), 50)  # 50 bps before the first order only
 client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 ```

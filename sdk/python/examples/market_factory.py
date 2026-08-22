@@ -49,6 +49,7 @@ def main():
             sig = client.initialize_market_v2(
                 resolver_hash=resolver_hash,
                 open_ts=open_ts,
+                market_nonce=i,
                 lock_ts=lock_ts,
                 resolve_ts=resolve_ts,
                 notary_config=notary_config,
@@ -56,7 +57,7 @@ def main():
                 quote_mint=quote_mint,
             )
             
-            market_pda, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+            market_pda, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, i, client.program_id)
             print(f"[{i+1}/{args.count}] Created {market_pda} (Tx: {sig})")
             
             entry = {

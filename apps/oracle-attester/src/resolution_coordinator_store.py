@@ -29,7 +29,7 @@ except ModuleNotFoundError:
     from .resolver_v2_pipeline import resolver_v2
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 PENDING = "PENDING"
 A_RECORDED = "A_RECORDED"
 B_RECORDED = "B_RECORDED"
@@ -68,6 +68,8 @@ class SettlementMessageContext:
     """
 
     program_id: str
+    creator: str
+    market_nonce: int
     notary_config: str
     open_ts: int
     resolve_ts: int
@@ -76,7 +78,7 @@ class SettlementMessageContext:
     public_inputs_hash: str
 
     def __post_init__(self) -> None:
-        for name in ("program_id", "notary_config"):
+        for name in ("program_id", "creator", "notary_config"):
             value = getattr(self, name)
             try:
                 if not isinstance(value, str) or not value or str(Pubkey.from_string(value)) != value:
@@ -90,7 +92,7 @@ class SettlementMessageContext:
                     raise ValueError
             except ValueError as exc:
                 raise CoordinatorRejected(f"settlement_{name}_invalid") from exc
-        for name in ("open_ts", "resolve_ts", "notary_config_version"):
+        for name in ("open_ts", "market_nonce", "resolve_ts", "notary_config_version"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int):
                 raise CoordinatorRejected(f"settlement_{name}_invalid")
@@ -98,6 +100,8 @@ class SettlementMessageContext:
             raise CoordinatorRejected("settlement_timestamp_out_of_range")
         if not 0 <= self.notary_config_version < (1 << 64):
             raise CoordinatorRejected("settlement_notary_config_version_invalid")
+        if not 0 <= self.market_nonce < (1 << 64):
+            raise CoordinatorRejected("settlement_market_nonce_invalid")
 
 
 @dataclass(frozen=True)
@@ -241,6 +245,8 @@ class ResolutionCoordinatorStore:
                         """CREATE TABLE resolution_job_settlement_contexts (
                             job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
                             program_id TEXT NOT NULL,
+                            creator TEXT NOT NULL,
+                            market_nonce TEXT NOT NULL,
                             notary_config TEXT NOT NULL,
                             open_ts INTEGER NOT NULL,
                             resolve_ts INTEGER NOT NULL,
@@ -262,7 +268,8 @@ class ResolutionCoordinatorStore:
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (1, timestamp))
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
-                    self._db.execute("PRAGMA user_version = 3")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (4, timestamp))
+                    self._db.execute("PRAGMA user_version = 4")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
@@ -276,6 +283,8 @@ class ResolutionCoordinatorStore:
                         """CREATE TABLE resolution_job_settlement_contexts (
                             job_id TEXT PRIMARY KEY REFERENCES resolution_jobs(job_id),
                             program_id TEXT NOT NULL,
+                            creator TEXT NOT NULL,
+                            market_nonce TEXT NOT NULL,
                             notary_config TEXT NOT NULL,
                             open_ts INTEGER NOT NULL,
                             resolve_ts INTEGER NOT NULL,
@@ -296,7 +305,8 @@ class ResolutionCoordinatorStore:
                     )
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (2, timestamp))
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
-                    self._db.execute("PRAGMA user_version = 3")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (4, timestamp))
+                    self._db.execute("PRAGMA user_version = 4")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
@@ -316,11 +326,34 @@ class ResolutionCoordinatorStore:
                         )"""
                     )
                     self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (3, timestamp))
-                    self._db.execute("PRAGMA user_version = 3")
+                    columns = {row[1] for row in self._db.execute("PRAGMA table_info(resolution_job_settlement_contexts)")}
+                    if "creator" not in columns:
+                        self._db.execute("ALTER TABLE resolution_job_settlement_contexts ADD COLUMN creator TEXT NOT NULL DEFAULT ''")
+                    if "market_nonce" not in columns:
+                        self._db.execute("ALTER TABLE resolution_job_settlement_contexts ADD COLUMN market_nonce TEXT NOT NULL DEFAULT '0'")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (4, timestamp))
+                    self._db.execute("PRAGMA user_version = 4")
                     self._db.execute("COMMIT")
                 except Exception:
                     self._db.execute("ROLLBACK")
                     raise
+                return
+            if current == 3:
+                timestamp = _now_ms()
+                self._db.execute("BEGIN IMMEDIATE")
+                try:
+                    columns = {row[1] for row in self._db.execute("PRAGMA table_info(resolution_job_settlement_contexts)")}
+                    if "creator" not in columns:
+                        self._db.execute("ALTER TABLE resolution_job_settlement_contexts ADD COLUMN creator TEXT NOT NULL DEFAULT ''")
+                    if "market_nonce" not in columns:
+                        self._db.execute("ALTER TABLE resolution_job_settlement_contexts ADD COLUMN market_nonce TEXT NOT NULL DEFAULT '0'")
+                    self._db.execute("INSERT INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)", (4, timestamp))
+                    self._db.execute("PRAGMA user_version = 4")
+                    self._db.execute("COMMIT")
+                except Exception:
+                    self._db.execute("ROLLBACK")
+                    raise
+                return
 
     def register_job(self, *, market: str, resolver_definition: Mapping[str, Any], evidence: Mapping[str, Any]) -> ResolutionJob:
         try:
@@ -399,11 +432,12 @@ class ResolutionCoordinatorStore:
                     raise CoordinatorRejected("settlement_runtime_program_mismatch")
                 self._db.execute(
                     """INSERT INTO resolution_job_settlement_contexts(
-                        job_id, program_id, notary_config, open_ts, resolve_ts,
+                        job_id, program_id, creator, market_nonce, notary_config, open_ts, resolve_ts,
                         notary_config_version, proof_hash, public_inputs_hash, created_at_ms
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (job_id, context.program_id, context.notary_config, context.open_ts, context.resolve_ts,
-                     str(context.notary_config_version), context.proof_hash, context.public_inputs_hash, _now_ms()),
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (job_id, context.program_id, context.creator, str(context.market_nonce), context.notary_config,
+                     context.open_ts, context.resolve_ts, str(context.notary_config_version), context.proof_hash,
+                     context.public_inputs_hash, _now_ms()),
                 )
                 self._db.execute("COMMIT")
                 return context
@@ -423,7 +457,8 @@ class ResolutionCoordinatorStore:
     @staticmethod
     def _row_to_settlement_context(row: sqlite3.Row) -> SettlementMessageContext:
         return SettlementMessageContext(
-            program_id=row["program_id"], notary_config=row["notary_config"],
+            program_id=row["program_id"], creator=row["creator"], market_nonce=int(row["market_nonce"]),
+            notary_config=row["notary_config"],
             open_ts=int(row["open_ts"]), resolve_ts=int(row["resolve_ts"]),
             notary_config_version=int(row["notary_config_version"]),
             proof_hash=row["proof_hash"], public_inputs_hash=row["public_inputs_hash"],

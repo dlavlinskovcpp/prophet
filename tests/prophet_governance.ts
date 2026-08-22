@@ -19,9 +19,9 @@ describe("prophet-governance", () => {
   const program = anchor.workspace.Prophet as Program<Prophet>;
   const admin = (provider.wallet as anchor.Wallet).payer;
 
-  const deriveMarket = (resolver: Buffer, openTs: BN) =>
+  const deriveMarket = (creator: PublicKey, resolver: Buffer, openTs: BN, marketNonce: BN) =>
     PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), resolver, openTs.toArrayLike(Buffer, "le", 8)],
+      [Buffer.from("market"), creator.toBuffer(), resolver, openTs.toArrayLike(Buffer, "le", 8), marketNonce.toArrayLike(Buffer, "le", 8)],
       program.programId
     )[0];
 
@@ -121,6 +121,131 @@ describe("prophet-governance", () => {
     }
   };
 
+  it("binds market namespace to immutable creator and nonce", async () => {
+    const victim = Keypair.generate();
+    const attacker = Keypair.generate();
+    const otherCreator = Keypair.generate();
+    const notaryAdmin = Keypair.generate();
+    await airdrop(victim.publicKey, 2e9);
+    await airdrop(attacker.publicKey, 2e9);
+    await airdrop(otherCreator.publicKey, 2e9);
+    await airdrop(notaryAdmin.publicKey, 2e9);
+
+    const quoteMint = await createMint(provider.connection, admin, admin.publicKey, null, 6);
+    const notaryConfig = await ensureNotaryConfig(notaryAdmin, [admin.publicKey]);
+    const now = await getSafeChainNow();
+    const resolverHash = Buffer.alloc(32, 0xc1);
+    const openTs = new BN(now - 5);
+    const lockTs = new BN(now + 60);
+    const resolveTs = new BN(now + 120);
+    const nonce = new BN(17);
+    const victimMarket = deriveMarket(victim.publicKey, resolverHash, openTs, nonce);
+    const victimVault = await getAssociatedTokenAddress(quoteMint, victimMarket, true);
+
+    let rejected = false;
+    try {
+      await program.methods
+        .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+        .accounts({
+          market: victimMarket,
+          creator: victim.publicKey,
+          oracleAuthority: victim.publicKey,
+          quoteMint,
+          quoteVault: victimVault,
+          notaryConfig,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        })
+        .signers([attacker])
+        .rpc();
+    } catch {
+      rejected = true;
+    }
+    assert.equal(rejected, true, "attacker cannot occupy victim's creator-scoped PDA");
+
+    await program.methods
+      .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+      .accounts({
+        market: victimMarket,
+        creator: victim.publicKey,
+        oracleAuthority: victim.publicKey,
+        quoteMint,
+        quoteVault: victimVault,
+        notaryConfig,
+        systemProgram: SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .signers([victim])
+      .rpc();
+
+    const differentNonceMarket = deriveMarket(victim.publicKey, resolverHash, openTs, nonce.addn(1));
+    const differentCreatorMarket = deriveMarket(otherCreator.publicKey, resolverHash, openTs, nonce);
+    assert.notEqual(victimMarket.toBase58(), differentNonceMarket.toBase58());
+    assert.notEqual(victimMarket.toBase58(), differentCreatorMarket.toBase58());
+
+    for (const [market, creator, marketNonce] of [
+      [differentNonceMarket, victim, nonce.addn(1)],
+      [differentCreatorMarket, otherCreator, nonce],
+    ] as const) {
+      await program.methods
+        .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+        .accounts({
+          market,
+          creator: creator.publicKey,
+          oracleAuthority: creator.publicKey,
+          quoteMint,
+          quoteVault: await getAssociatedTokenAddress(quoteMint, market, true),
+          notaryConfig,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        })
+        .signers([creator])
+        .rpc();
+    }
+
+    rejected = false;
+    try {
+      await program.methods
+        .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+        .accounts({
+          market: victimMarket,
+          creator: victim.publicKey,
+          oracleAuthority: victim.publicKey,
+          quoteMint,
+          quoteVault: victimVault,
+          notaryConfig,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        })
+        .signers([victim])
+        .rpc();
+    } catch {
+      rejected = true;
+    }
+    assert.equal(rejected, true, "duplicate complete namespace tuple is rejected");
+
+    const account = await program.account.market.fetch(victimMarket);
+    assert.equal(account.creator.toBase58(), victim.publicKey.toBase58());
+    assert.equal(account.marketNonce.toString(), nonce.toString());
+    assert.equal(
+      deriveOrder(victimMarket, victim.publicKey, new BN(0)).toBase58(),
+      PublicKey.findProgramAddressSync(
+        [Buffer.from("order"), victimMarket.toBuffer(), victim.publicKey.toBuffer(), Buffer.alloc(8)],
+        program.programId
+      )[0].toBase58()
+    );
+    assert.equal(
+      derivePosition(victimMarket, victim.publicKey).toBase58(),
+      PublicKey.findProgramAddressSync(
+        [Buffer.from("position"), victimMarket.toBuffer(), victim.publicKey.toBuffer()], program.programId
+      )[0].toBase58()
+    );
+  });
+
   it("enforces the lock horizon while preserving pre-trading schedule updates and permissionless sync", async () => {
     const newAuthority = Keypair.generate();
     const outsider = Keypair.generate();
@@ -144,7 +269,7 @@ describe("prophet-governance", () => {
     const openTs = new BN(now - 5);
     const lockTs = new BN(now + 60);
     const resolveTs = new BN(now + 90);
-    const market = deriveMarket(resolverHash, openTs);
+    const market = deriveMarket(admin.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(newAuthority, [admin.publicKey]);
 
@@ -152,6 +277,7 @@ describe("prophet-governance", () => {
       .initializeMarketV2(
         [...resolverHash],
         openTs,
+        new BN(resolverHash[0]),
         lockTs,
         resolveTs,
         new BN(1),
@@ -161,7 +287,7 @@ describe("prophet-governance", () => {
       )
       .accounts({
         market,
-        authority: admin.publicKey,
+        creator: admin.publicKey,
         oracleAuthority: admin.publicKey,
         quoteMint,
         quoteVault,
@@ -193,6 +319,13 @@ describe("prophet-governance", () => {
 
     let marketAcc = await program.account.market.fetch(market);
     assert.equal(marketAcc.authority.toBase58(), newAuthority.publicKey.toBase58());
+    assert.equal(marketAcc.creator.toBase58(), admin.publicKey.toBase58());
+    assert.equal(marketAcc.marketNonce.toString(), resolverHash[0].toString());
+    assert.equal(
+      deriveMarket(marketAcc.creator, Buffer.from(marketAcc.resolverHash), marketAcc.openTs, marketAcc.marketNonce).toBase58(),
+      market.toBase58(),
+      "authority transfer cannot change the immutable market namespace"
+    );
 
     threw = false;
     try {
@@ -285,7 +418,7 @@ describe("prophet-governance", () => {
     const openTs = new BN(now - 5);
     const lockTs = new BN(now + 20);
     const resolveTs = new BN(now + 30);
-    const market = deriveMarket(resolverHash, openTs);
+    const market = deriveMarket(authority.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
 
@@ -293,6 +426,7 @@ describe("prophet-governance", () => {
       .initializeMarketV2(
         [...resolverHash],
         openTs,
+        new BN(resolverHash[0]),
         lockTs,
         resolveTs,
         new BN(1),
@@ -302,7 +436,7 @@ describe("prophet-governance", () => {
       )
       .accounts({
         market,
-        authority: authority.publicKey,
+        creator: authority.publicKey,
         oracleAuthority: authority.publicKey,
         quoteMint,
         quoteVault,
@@ -494,7 +628,7 @@ describe("prophet-governance", () => {
     const openTs = new BN(now - 5);
     const lockTs = new BN(now + 300);
     const resolveTs = new BN(now + 360);
-    const market = deriveMarket(resolverHash, openTs);
+    const market = deriveMarket(authority.publicKey, resolverHash, openTs, new BN(resolverHash[0]));
     const quoteVault = await getAssociatedTokenAddress(quoteMint, market, true);
     const notaryConfig = await ensureNotaryConfig(authority, [authority.publicKey]);
 
@@ -502,6 +636,7 @@ describe("prophet-governance", () => {
       .initializeMarketV2(
         [...resolverHash],
         openTs,
+        new BN(resolverHash[0]),
         lockTs,
         resolveTs,
         new BN(1),
@@ -511,7 +646,7 @@ describe("prophet-governance", () => {
       )
       .accounts({
         market,
-        authority: authority.publicKey,
+        creator: authority.publicKey,
         oracleAuthority: authority.publicKey,
         quoteMint,
         quoteVault,

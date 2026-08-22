@@ -77,6 +77,8 @@ mod tests {
             outcome: MarketOutcome::Undecided,
             bump: 0,
             invalid_payout_remainder: 0,
+            creator: Pubkey::default(),
+            market_nonce: 0,
         };
         let config = NotaryConfig {
             admin: Pubkey::default(),

@@ -47,6 +47,8 @@ mod tests {
             outcome: MarketOutcome::Undecided,
             bump: 0,
             invalid_payout_remainder: 0,
+            creator: Pubkey::default(),
+            market_nonce: u64::MAX,
         };
         let config = NotaryConfig {
             admin: Pubkey::default(),
@@ -80,7 +82,9 @@ mod tests {
             redeemed: false,
         };
 
-        assert!(borsh::to_vec(&market).unwrap().len() <= Market::LEN);
+        // The one-byte allocation margin is intentional; this deterministically
+        // proves the largest fixed-width Market encoding fits the declared space.
+        assert_eq!(borsh::to_vec(&market).unwrap().len(), Market::LEN - 1);
         assert!(borsh::to_vec(&config).unwrap().len() <= NotaryConfig::LEN);
         assert!(borsh::to_vec(&order).unwrap().len() <= Order::LEN);
         assert!(borsh::to_vec(&position).unwrap().len() <= Position::LEN);

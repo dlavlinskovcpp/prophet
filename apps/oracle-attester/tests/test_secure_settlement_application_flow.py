@@ -93,7 +93,11 @@ def _pipeline(tmp_path, monkeypatch, *, conflict=False):
     )
     resolver_hash = bytes.fromhex(a_result["definition_hash"])
     market, _ = derive_market_pda(
-        resolver_hash, OPEN_TS, __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID)
+        __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.default(),
+        resolver_hash,
+        OPEN_TS,
+        0,
+        __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID),
     )
     coordinator = ResolutionCoordinator(
         state=store, verifier_client_a=a, verifier_client_b=b
@@ -193,8 +197,10 @@ def test_partial_job_rejected_before_signing_intent_or_vault(tmp_path, monkeypat
     )
     resolver_hash = bytes.fromhex(a_result["definition_hash"])
     market, _ = derive_market_pda(
+        __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.default(),
         resolver_hash,
         OPEN_TS,
+        0,
         __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID),
     )
     job = store.register_job(
@@ -233,8 +239,10 @@ def test_real_sqlite_restart_resumes_secure_path_without_legacy_fallback(
     )
     resolver_hash = bytes.fromhex(a_result["definition_hash"])
     market, _ = derive_market_pda(
+        __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.default(),
         resolver_hash,
         OPEN_TS,
+        0,
         __import__("solders.pubkey", fromlist=["Pubkey"]).Pubkey.from_string(PROGRAM_ID),
     )
     runtime = SolanaRuntimeConfig("localnet", GENESIS_HASH, PROGRAM_ID)

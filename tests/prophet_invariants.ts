@@ -38,9 +38,9 @@ describe("prophet-invariants", () => {
 
   const asNum = (v: any): number => (typeof v === "number" ? v : v.toNumber());
 
-  const deriveMarket = (resolver: Buffer, openTs: BN) => {
+  const deriveMarket = (creator: PublicKey, resolver: Buffer, openTs: BN, marketNonce: BN) => {
     return PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), resolver, openTs.toArrayLike(Buffer, "le", 8)],
+      [Buffer.from("market"), creator.toBuffer(), resolver, openTs.toArrayLike(Buffer, "le", 8), marketNonce.toArrayLike(Buffer, "le", 8)],
       program.programId
     )[0];
   };
@@ -233,16 +233,17 @@ describe("prophet-invariants", () => {
     const lockTs = new BN(safeNow + 400);
     const resolveTs = new BN(safeNow + 400);
 
-    const marketKey = deriveMarket(resolverHash, openTs);
+    const marketNonce = new BN(1);
+    const marketKey = deriveMarket(authority.publicKey, resolverHash, openTs, marketNonce);
     const vaultKey = await getAssociatedTokenAddress(quoteMint, marketKey, true);
     const ataA = await getAssociatedTokenAddress(quoteMint, traderA.publicKey);
     const { notaryConfig } = await ensureNotaryConfig([oracle.publicKey]);
 
     await program.methods
-      .initializeMarketV2([...resolverHash], openTs, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+      .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
       .accounts({
         market: marketKey,
-        authority: authority.publicKey,
+        creator: authority.publicKey,
         oracleAuthority: oracle.publicKey,
         quoteMint,
         quoteVault: vaultKey,
@@ -389,15 +390,16 @@ describe("prophet-invariants", () => {
     const lockTs = new BN(safeNow + 5);
     const resolveTs = new BN(safeNow + 6);
 
-    const marketKey = deriveMarket(resolverHash, openTs);
+    const marketNonce = new BN(2);
+    const marketKey = deriveMarket(authority.publicKey, resolverHash, openTs, marketNonce);
     const vaultKey = await getAssociatedTokenAddress(quoteMint, marketKey, true);
     const { notaryConfig, version } = await ensureNotaryConfig([oracle.publicKey]);
 
     await program.methods
-      .initializeMarketV2([...resolverHash], openTs, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
+      .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
       .accounts({
         market: marketKey,
-        authority: authority.publicKey,
+        creator: authority.publicKey,
         oracleAuthority: oracle.publicKey,
         quoteMint,
         quoteVault: vaultKey,

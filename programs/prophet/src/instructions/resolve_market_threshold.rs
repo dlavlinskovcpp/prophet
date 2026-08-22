@@ -15,7 +15,7 @@ use anchor_lang::solana_program::sysvar::SysvarId;
 pub struct ResolveMarketThreshold<'info> {
     #[account(
         mut,
-        seeds = [b"market", market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes()],
+        seeds = [b"market", market.creator.as_ref(), market.resolver_hash.as_ref(), &market.open_ts.to_le_bytes(), &market.market_nonce.to_le_bytes()],
         bump = market.bump
     )]
     pub market: Box<Account<'info, Market>>,

@@ -33,9 +33,13 @@ pub struct Market {
     /// Carries the half-atom remainder between Invalid-outcome redemptions.
     /// Appended into the account's pre-existing zero padding for compatibility.
     pub invalid_payout_remainder: u8,
+    /// Immutable namespace identity selected by the initializing signer.
+    pub creator: Pubkey,
+    /// Immutable creator-scoped discriminator for otherwise equivalent markets.
+    pub market_nonce: u64,
 }
 
 impl Market {
-    /// Existing allocation retained verbatim for account compatibility.
-    pub const LEN: usize = 384;
+    /// Explicitly sized for the serialized fields above; no namespace fields use padding.
+    pub const LEN: usize = 416;
 }

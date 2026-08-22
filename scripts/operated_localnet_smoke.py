@@ -503,13 +503,14 @@ cfg, cfg_sig = client.initialize_notary_config(1, [notary])
 market_sig = client.initialize_market_v2(
     resolver_hash=resolver_hash,
     open_ts=open_ts,
+    market_nonce=0,
     lock_ts=lock_ts,
     resolve_ts=resolve_ts,
     notary_config=cfg,
     oracle_authority=client.payer.pubkey(),
     quote_mint=Pubkey.from_string(os.environ["QUOTE_MINT"]),
 )
-market, _ = derive_market_pda(resolver_hash, open_ts, client.program_id)
+market, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id)
 print(json.dumps({
     "market": str(market),
     "notary_config": str(cfg),
