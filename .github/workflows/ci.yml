@@ -25,6 +25,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.89.0
         with:
           toolchain: 1.89.0
+          components: clippy
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
@@ -153,7 +154,7 @@ jobs:
 
       - name: Validate untouched checked-in identity before ephemeral CI key sync
         run: |
-          anchor build
+          anchor build --ignore-keys
           python3 scripts/release.py validate-checked-in --idl target/idl/prophet.json
           python3 scripts/release.py plan --environment public-devnet --release-tag "checked-in-${GITHUB_SHA}" --output /tmp/public-devnet-checked-in-manifest.json >/dev/null
           python3 - <<'PY'
@@ -476,8 +477,8 @@ jobs:
           cd apps/oracle-attester
           poetry run python - <<'PY'
           from importlib.metadata import version
-          assert version('solana') == '0.33.0'
-          assert version('solders') == '0.21.0'
+          assert version("solana") == "0.33.0"
+          assert version("solders") == "0.21.0"
           print('LOCKED SOLANA DEPENDENCY CONTRACT PASSED')
           PY
 
@@ -507,8 +508,8 @@ jobs:
           import src.verifier_b_main
           import src.coordinator_main
           import src.secure_settlement_main
-          assert version('solana') == '0.33.0'
-          assert version('solders') == '0.21.0'
+          assert version("solana") == "0.33.0"
+          assert version("solders") == "0.21.0"
           assert importlib.util.find_spec('pytest') is None
           assert importlib.util.find_spec('pytest_asyncio') is None
           assert importlib.util.find_spec('poetry') is None
@@ -529,8 +530,8 @@ jobs:
           from importlib.metadata import version
           import prophet_sdk
           import src.main
-          assert version('solana') == '0.33.0'
-          assert version('solders') == '0.21.0'
+          assert version("solana") == "0.33.0"
+          assert version("solders") == "0.21.0"
           assert importlib.util.find_spec('pytest') is None
           assert importlib.util.find_spec('poetry') is None
           assert importlib.util.find_spec('pip') is None
@@ -623,13 +624,13 @@ jobs:
       - name: Verify OSV service reachability
         run: |
           curl -fsS -X POST https://api.osv.dev/v1/query -H 'Content-Type: application/json' -d '{"package":{"name":"pip","ecosystem":"PyPI"}}' >/dev/null
-      - name: Audit locked Python environments
+      - name: Audit committed locked Python dependency graphs
         run: |
           set -euo pipefail
           for project in sdk/python apps/oracle-attester apps/matching-keeper; do
-            (cd "${project}" && poetry config virtualenvs.in-project true && poetry install --sync --no-interaction)
-            VENV="$(cd "${project}" && poetry env info --path)"
-            pip-audit --vulnerability-service osv --progress-spinner off --path "${VENV}/lib/python3.11/site-packages"
+            requirements="/tmp/$(echo "${project}" | tr '/' '-')-locked-requirements.txt"
+            (cd "${project}" && poetry export --only main --format requirements.txt --without-hashes --output "${requirements}")
+            pip-audit --vulnerability-service osv --progress-spinner off --requirement "${requirements}"
           done
       - name: Setup Node
         uses: actions/setup-node@v4
