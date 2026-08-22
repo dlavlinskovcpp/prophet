@@ -15,6 +15,7 @@ test-ledger
 !security/
 !security/cargo-audit-exceptions.json
 !security/yarn-audit-exceptions.json
+!security/production-image-vulnerability-exceptions.json
 __pycache__
 *.pyc
 venv

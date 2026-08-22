@@ -488,6 +488,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate production image vulnerability policy input
+        run: |
+          test -f security/production-image-vulnerability-exceptions.json
+          python3 -m unittest scripts.tests.test_check_trivy_image_scan -v
       - name: Build production-shaped images from repository root
         run: |
           docker build -f apps/oracle-attester/Dockerfile --build-arg IMAGE_REVISION="${GITHUB_SHA}" --build-arg IMAGE_VERSION="ci-${GITHUB_SHA}" -t prophet-oracle-ci .
