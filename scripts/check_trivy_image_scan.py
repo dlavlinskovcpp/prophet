@@ -39,6 +39,7 @@ def _exception_key(entry: dict[str, Any], role: str) -> tuple[str, str, str, str
         "package",
         "installed_version",
         "ecosystem",
+        "roles",
         "disposition",
         "reason",
         "removal_assessment",
@@ -52,6 +53,11 @@ def _exception_key(entry: dict[str, Any], role: str) -> tuple[str, str, str, str
         raise ScanPolicyError(f"exception is missing required fields: {', '.join(missing)}")
     if entry["disposition"] != "affected_with_temporary_exception":
         raise ScanPolicyError(f"invalid disposition for {entry['vulnerability_id']}")
+    if not isinstance(entry["roles"], list) or not entry["roles"]:
+        raise ScanPolicyError(f"invalid roles for {entry['vulnerability_id']}")
+    exact_fields = ("vulnerability_id", "package", "installed_version", "ecosystem")
+    if any("*" in str(entry[field]) for field in exact_fields):
+        raise ScanPolicyError(f"wildcard exception for {entry['vulnerability_id']}")
     if role not in entry.get("roles", []):
         return None
     try:

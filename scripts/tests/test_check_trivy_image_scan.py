@@ -1,6 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from scripts.check_trivy_image_scan import ScanPolicyError, validate
+from scripts.check_trivy_image_scan import ScanPolicyError, main, validate
 
 
 def report(*vulnerabilities):
@@ -57,3 +61,32 @@ class TrivyImageScanPolicyTests(unittest.TestCase):
         validate(report(), None, "oracle")
         with self.assertRaises(ScanPolicyError):
             validate(report(finding()), None, "oracle")
+
+    def test_empty_policy_is_valid_when_no_findings_exist(self):
+        validate(report(), {"schema_version": 1, "exceptions": []}, "oracle")
+
+    def test_malformed_expired_and_wildcard_policies_fail_closed(self):
+        malformed = exception()
+        malformed["schema_version"] = 2
+        with self.assertRaises(ScanPolicyError):
+            validate(report(), malformed, "oracle")
+        expired = exception()
+        expired["exceptions"][0]["expires_on"] = "2000-01-01"
+        with self.assertRaises(ScanPolicyError):
+            validate(report(finding()), expired, "oracle")
+        wildcard = exception()
+        wildcard["exceptions"][0]["package"] = "*"
+        with self.assertRaises(ScanPolicyError):
+            validate(report(finding()), wildcard, "oracle")
+
+    def test_missing_configured_exception_file_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "report.json"
+            report_path.write_text(json.dumps(report()), encoding="utf-8")
+            with patch("sys.argv", [
+                "check_trivy_image_scan.py",
+                "--report", str(report_path),
+                "--exceptions", str(Path(directory) / "missing.json"),
+                "--role", "oracle",
+            ]):
+                self.assertEqual(main(), 1)
