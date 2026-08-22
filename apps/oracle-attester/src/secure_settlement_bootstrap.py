@@ -17,6 +17,7 @@ from .secure_settlement_service import (
 from .settlement_simulation import SettlementSimulationService
 from .settlement_submission import SettlementSubmissionService
 from .settlement_transaction_builder import SettlementTransactionBuilder
+from .runtime_clock import wall_clock_ms
 from .signing_journal import SigningJournal
 from .vault_transit_signer_identity import VaultTransitSignerClient
 from .vault_transit_threshold_signer import ThresholdResolutionSigner
@@ -54,6 +55,7 @@ def build_secure_settlement_service():
             runtime.coordinator.sqlite_path,
             verifier_a=VerifierBinding("A", _descriptor(runtime.coordinator.verifier_a)),
             verifier_b=VerifierBinding("B", _descriptor(runtime.coordinator.verifier_b)),
+            clock_ms=wall_clock_ms,
         )
         resources.append(state)
         journal = SigningJournal(runtime.signing.journal_path)
@@ -78,12 +80,14 @@ def build_secure_settlement_service():
             coordinator_state=state,
             signing_journal=journal,
             threshold_signer=threshold,
+            clock_ms=wall_clock_ms,
         )
         builder = SettlementTransactionBuilder(
             coordinator_state=state,
             signing_journal=journal,
             threshold_signer=threshold,
             solana_runtime=runtime.solana,
+            clock_ms=wall_clock_ms,
         )
         simulation = SettlementSimulationService.from_runtime_config(
             builder=builder, runtime_config=runtime

@@ -73,6 +73,10 @@ class RuntimeAdapterFactory:
     """Trusted startup wiring; selection always derives from canonical metadata."""
 
     def __init__(self, *, runtime_config: Any, verifier_descriptors: Mapping[str, Mapping[str, Any]], signed_oracle_registry: Any = None, registry: Optional[RuntimeAdapterRegistry] = None, clock_ms: Optional[Callable[[], int]] = None, metrics: Any = None, signed_oracle_replay_guard: Optional[SequenceReplayGuard] = None):
+        if getattr(runtime_config, "mode", None) == "production" and clock_ms is None:
+            raise PipelineRejected("runtime_adapter_clock_required")
+        if clock_ms is not None and not callable(clock_ms):
+            raise PipelineRejected("runtime_adapter_clock_invalid")
         self.runtime_config = runtime_config
         self._verifier_descriptors = MappingProxyType(dict(verifier_descriptors))
         self.signed_oracle_registry = signed_oracle_registry

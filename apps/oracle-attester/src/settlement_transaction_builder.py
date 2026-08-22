@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Callable, Optional
 
 from solders.hash import Hash
 from solders.instruction import Instruction
@@ -29,6 +30,7 @@ from .resolution_coordinator_store import (
     ResolutionCoordinatorStore,
 )
 from .runtime_config import SolanaRuntimeConfig
+from .runtime_clock import wall_clock_ms
 from .signing_journal import (
     BOTH_SIGNED,
     SigningJournal,
@@ -128,6 +130,7 @@ class SettlementTransactionBuilder:
         signing_journal: SigningJournal,
         threshold_signer: ThresholdResolutionSigner,
         solana_runtime: SolanaRuntimeConfig,
+        clock_ms: Optional[Callable[[], int]] = None,
     ) -> None:
         if not isinstance(solana_runtime, SolanaRuntimeConfig):
             raise SettlementTransactionBindingError("validated_solana_runtime_required")
@@ -148,6 +151,9 @@ class SettlementTransactionBuilder:
         self._runtime = solana_runtime
         self._program_id = program_id
         self._genesis_hash = genesis_hash
+        if clock_ms is not None and not callable(clock_ms):
+            raise SettlementTransactionBindingError("settlement_transaction_clock_invalid")
+        self._clock_ms = clock_ms or wall_clock_ms
 
     def build(self, request: SettlementTransactionInput) -> SettlementTransactionArtifact:
         if not isinstance(request, SettlementTransactionInput):
@@ -262,7 +268,7 @@ class SettlementTransactionBuilder:
         if job.state != AGREED:
             raise SettlementTransactionJobError("coordinator_job_not_agreed")
         try:
-            AgreedSettlementSigner._validate_agreed_binding(job)
+            AgreedSettlementSigner._validate_agreed_binding(job, now_ms=self._clock_ms())
         except CoordinatorSigningBindingError as exc:
             raise SettlementTransactionBindingError("coordinator_agreed_history_invalid") from exc
         return job

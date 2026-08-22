@@ -61,9 +61,8 @@ def evaluate_agreement(results: Sequence[Mapping[str, Any]], policy: AgreementPo
     if any(row[4] != "VERIFIED" for row in rows):
         return AgreementDecision(False, "verifier_rejected_evidence", None, ids, "invalid_vs_valid")
     if now_ms is not None:
-        freshness = {int(item["valid_until_ms"]) >= now_ms for item in results}
-        if len(freshness) != 1:
-            return AgreementDecision(False, "stale_fresh_disagreement", None, ids, "stale_vs_fresh_evidence")
+        if any(int(item["valid_until_ms"]) < now_ms for item in results):
+            return AgreementDecision(False, "stale_verification_result", None, ids, "stale_evidence")
     evidence_hashes, definitions, outcomes = {r[2] for r in rows}, {r[3] for r in rows}, {r[5] for r in rows}
     if len(definitions) != 1:
         return AgreementDecision(False, "resolver_binding_conflict", None, ids, "resolver_binding_conflict")

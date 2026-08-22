@@ -45,6 +45,10 @@ class IndependentZkTlsRuntimeFactory:
             raise PipelineRejected("independent_runtime_verifier_identity_mismatch")
         if "zktls" not in getattr(runtime_config, "allowed_adapters", ()) or getattr(runtime_config, "zktls", None) is None:
             raise PipelineRejected("independent_runtime_zktls_not_enabled")
+        if getattr(runtime_config, "mode", None) == "production" and clock_ms is None:
+            raise PipelineRejected("independent_runtime_clock_required")
+        if clock_ms is not None and not callable(clock_ms):
+            raise PipelineRejected("independent_runtime_clock_invalid")
         if isinstance(checker, BoundHttpIndependentProofChecker):
             checker = checker.with_response_limit(
                 int(runtime_config.limits.request_max_bytes)
