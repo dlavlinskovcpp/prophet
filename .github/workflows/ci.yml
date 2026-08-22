@@ -49,7 +49,7 @@ jobs:
     env:
       ANCHOR_WALLET: /home/runner/.config/solana/id.json
       ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
-      ANCHOR_VERSION: 1.0.1
+      ANCHOR_VERSION: 1.0.3
       SOLANA_VERSION: 3.1.10
       NODE_VERSION: 20.19.6
       YARN_VERSION: 1.22.22
