@@ -400,7 +400,7 @@ def test_26_builder_has_no_verifier_or_rpc_dependency_in_public_boundary(tmp_pat
     x = _setup(tmp_path, monkeypatch)
     params = list(inspect.signature(SettlementTransactionBuilder.__init__).parameters)
     assert params == [
-        "self", "coordinator_state", "signing_journal", "threshold_signer", "solana_runtime"
+        "self", "coordinator_state", "signing_journal", "threshold_signer", "solana_runtime", "clock_ms"
     ]
     assert not any("verifier" in name.lower() or "rpc" in name.lower() for name in params)
     x["builder"].build(x["request"])

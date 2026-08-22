@@ -38,7 +38,7 @@ def test_two_independent_verifiers_agree_deterministically():
     ([result("verifier-a")], "required_verifier_set_incomplete"),
     ([result("verifier-a"), result("verifier-b", outcome="NO")], "outcome_conflict"),
     ([result("verifier-a"), result("verifier-b", evidence_hash=H(9))], "evidence_hash_conflict"),
-    ([result("verifier-a", valid_until="99"), result("verifier-b", valid_until="200")], "stale_fresh_disagreement"),
+    ([result("verifier-a", valid_until="99"), result("verifier-b", valid_until="200")], "stale_verification_result"),
     ([result("verifier-a"), result("verifier-a", version="9.0.0")], "duplicate_verifier_identity"),
 ])
 def test_adversarial_agreement_rejections(rows, reason):

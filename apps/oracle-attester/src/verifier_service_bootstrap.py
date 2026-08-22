@@ -12,6 +12,7 @@ from .independent_zktls_runtime_factory import (
 )
 from .resolver_verifier_runtime import ResolverVerifierRuntime
 from .runtime_adapter_factory import RuntimeAdapterFactory
+from .runtime_clock import wall_clock_ms
 from .runtime_config import load_runtime_config
 from .signed_oracle_runtime_keys import load_trusted_oracle_key_registry
 from .verifier_service import create_verifier_service
@@ -48,7 +49,7 @@ def _build_a(config):
             make_zktls_proof_verifier(config)
     descriptor = _descriptor(VERIFIER_A_ID, 70)
     signed_registry = None if config.signed_oracle is None else load_trusted_oracle_key_registry(config.signed_oracle.registry_path)
-    factory = RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={kind: descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, signed_oracle_registry=signed_registry)
+    factory = RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={kind: descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, signed_oracle_registry=signed_registry, clock_ms=wall_clock_ms)
     return ResolverVerifierRuntime(config, factory, descriptor)
 
 
@@ -65,7 +66,7 @@ def _build_b(config):
         raise ValueError("independent verifier backend is not configured")
     descriptor = _descriptor(VERIFIER_B_ID, 71)
     factory = IndependentZkTlsRuntimeFactory(
-        runtime_config=config, verifier_descriptor=descriptor, checker=checker
+        runtime_config=config, verifier_descriptor=descriptor, checker=checker, clock_ms=wall_clock_ms
     )
     return ResolverVerifierRuntime(config, factory, descriptor)
 

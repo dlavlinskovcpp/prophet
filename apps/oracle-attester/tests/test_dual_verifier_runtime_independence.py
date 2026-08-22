@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -80,3 +81,14 @@ def test_primary_failure_does_not_mutate_or_block_independent_runtime():
     assert runtime_a.verify(resolver_definition=definition, evidence=invalid, trust_model=namespace["_trust"]())["result"] == "REJECTED"
     assert runtime_b.verify(resolver_definition=definition, evidence=evidence, trust_model=namespace["_trust"]())["result"] == "VERIFIED"
     assert independent_factory.calls == 1 and checker.calls == 1 and primary_factory.calls >= 2
+
+
+def test_independent_production_factory_requires_explicit_clock():
+    descriptor = _descriptor("prophet.verifier.runtime.b", 71)
+    config = replace(_config(descriptor["adapter_id"]), mode="production")
+    with pytest.raises(PipelineRejected, match="independent_runtime_clock_required"):
+        IndependentZkTlsRuntimeFactory(
+            runtime_config=config,
+            verifier_descriptor=descriptor,
+            checker=_CountingIndependentChecker(),
+        )

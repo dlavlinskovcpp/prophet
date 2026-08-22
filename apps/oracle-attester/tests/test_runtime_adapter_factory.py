@@ -88,3 +88,9 @@ def test_runtime_adapter_registry_is_immutable_and_rejects_duplicate_registratio
     registry = RuntimeAdapterRegistry()
     with pytest.raises(TypeError): registry._by_identity["x"] = descriptor
     with pytest.raises(AttributeError): registry._by_identity = {}
+
+
+def test_production_runtime_factory_requires_explicit_clock():
+    config = parse_runtime_config(_raw(["pyth"], mode="production"))
+    with pytest.raises(PipelineRejected, match="runtime_adapter_clock_required"):
+        RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={})

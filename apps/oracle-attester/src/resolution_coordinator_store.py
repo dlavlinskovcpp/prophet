@@ -14,13 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Optional
 
 from solders.hash import Hash
 from solders.pubkey import Pubkey
 
 from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
 from .resolver_v2_pipeline import PipelineRejected
+from .runtime_clock import wall_clock_ms
 
 try:
     from prophet_sdk import resolver_v2
@@ -167,7 +168,7 @@ def _job_id(*, market: str, definition_hash: str, evidence_hash: str, verifier_a
 class ResolutionCoordinatorStore:
     """SQLite-backed, finite-state coordination of exactly two verifier slots."""
 
-    def __init__(self, path: str | Path, *, verifier_a: VerifierBinding, verifier_b: VerifierBinding):
+    def __init__(self, path: str | Path, *, verifier_a: VerifierBinding, verifier_b: VerifierBinding, clock_ms: Optional[Callable[[], int]] = None):
         if verifier_a.slot != "A" or verifier_b.slot != "B":
             raise CoordinatorRejected("verifier_binding_slot_mismatch")
         if verifier_a.descriptor["adapter_id"] == verifier_b.descriptor["adapter_id"]:
@@ -175,6 +176,9 @@ class ResolutionCoordinatorStore:
         self.path = str(path)
         self.verifier_a = verifier_a
         self.verifier_b = verifier_b
+        if clock_ms is not None and not callable(clock_ms):
+            raise CoordinatorRejected("coordinator_clock_invalid")
+        self._clock_ms = clock_ms or wall_clock_ms
         self._lock = Lock()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
@@ -488,10 +492,13 @@ class ResolutionCoordinatorStore:
 
     def record_result(self, *, job_id: str, slot: str, result: Mapping[str, Any]) -> ResolutionJob:
         binding = self._binding(slot)
+        now = self._clock_ms()
         try:
-            canonical = resolver_v2.validate_verification_result(result)
+            canonical = resolver_v2.validate_verification_result(result, now_ms=now)
             result_hash = resolver_v2.verification_result_hash(canonical).hex()
         except resolver_v2.ResolverV2Error as exc:
+            if "stale verification result" in str(exc):
+                raise CoordinatorRejected("verification_result_expired") from exc
             raise CoordinatorRejected("invalid_canonical_verification_result") from exc
         result_json = _canonical_json(canonical)
         with self._lock:
@@ -513,7 +520,7 @@ class ResolutionCoordinatorStore:
                     raise CoordinatorRejected("verifier_slot_equivocation")
                 if row["state"] in TERMINAL_STATES:
                     raise CoordinatorRejected("completed_job_result_immutable")
-                self._store_new_result(row, slot, result_hash, result_json)
+                self._store_new_result(row, slot, result_hash, result_json, now)
                 updated = self._db.execute("SELECT * FROM resolution_jobs WHERE job_id = ?", (job_id,)).fetchone()
                 self._db.execute("COMMIT")
                 return self._row_to_job(updated)
@@ -548,9 +555,9 @@ class ResolutionCoordinatorStore:
             (CONFLICT, "verifier_slot_equivocation", timestamp, row["job_id"]),
         )
 
-    def _store_new_result(self, row: sqlite3.Row, slot: str, result_hash: str, result_json: str) -> None:
+    def _store_new_result(self, row: sqlite3.Row, slot: str, result_hash: str, result_json: str, now: int) -> None:
         column = slot.lower()
-        timestamp = _now_ms()
+        timestamp = str(now)
         self._db.execute(
             f"UPDATE resolution_jobs SET verifier_{column}_result_json = ?, verifier_{column}_result_hash = ?, updated_at_ms = ? WHERE job_id = ?",
             (result_json, result_hash, timestamp, row["job_id"]),
@@ -568,7 +575,7 @@ class ResolutionCoordinatorStore:
             exact_agreement=True,
         )
         try:
-            decision = evaluate_agreement(results, policy)
+            decision = evaluate_agreement(results, policy, now_ms=now)
         except (PipelineRejected, KeyError, ValueError) as exc:
             raise CoordinatorRejected("agreement_evaluation_rejected") from exc
         state = AGREED if decision.allowed else CONFLICT

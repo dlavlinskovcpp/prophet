@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from typing import Callable, Optional
 
 from solders.pubkey import Pubkey
 
 from .resolution_coordinator_store import AGREED, CoordinatorRejected, ResolutionCoordinatorStore, ResolutionJob
 from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
 from .resolver_v2_pipeline import PipelineRejected, build_legacy_settlement_message
+from .runtime_clock import wall_clock_ms
 from .signing_journal import (
     BOTH_SIGNED,
     SigningJournal,
@@ -27,6 +29,11 @@ from .vault_transit_threshold_signer import (
     ThresholdResolutionSignerError,
     ThresholdSignatureBundle,
 )
+
+try:
+    from prophet_sdk import resolver_v2
+except ModuleNotFoundError:
+    from .resolver_v2_pipeline import resolver_v2
 
 
 class AgreedSettlementSigningError(RuntimeError):
@@ -95,12 +102,16 @@ class AgreedSettlementSigner:
         coordinator_state: ResolutionCoordinatorStore,
         signing_journal: SigningJournal,
         threshold_signer: ThresholdResolutionSigner,
+        clock_ms: Optional[Callable[[], int]] = None,
     ) -> None:
         if threshold_signer.journal is not signing_journal:
             raise CoordinatorSigningBindingError("threshold_signer_journal_mismatch")
         self._coordinator_state = coordinator_state
         self._journal = signing_journal
         self._threshold_signer = threshold_signer
+        if clock_ms is not None and not callable(clock_ms):
+            raise CoordinatorSigningBindingError("settlement_signer_clock_invalid")
+        self._clock_ms = clock_ms or wall_clock_ms
 
     def sign_agreed_job(self, job_id: str) -> AgreedSettlementSigningResult:
         """Create/resume exactly one durable 2/2 intent for an AGREED job.
@@ -168,11 +179,11 @@ class AgreedSettlementSigner:
             raise CoordinatorSigningBindingError("coordinator_state_read_failed") from exc
         if job.state != AGREED:
             raise CoordinatorJobNotAgreed("coordinator_job_not_agreed")
-        self._validate_agreed_binding(job)
+        self._validate_agreed_binding(job, now_ms=self._clock_ms())
         return job
 
     @staticmethod
-    def _validate_agreed_binding(job: ResolutionJob) -> None:
+    def _validate_agreed_binding(job: ResolutionJob, *, now_ms: Optional[int] = None) -> None:
         if job.outcome not in ("YES", "NO", "INVALID"):
             raise CoordinatorSigningBindingError("agreed_outcome_invalid")
         if job.verifier_a_result is None or job.verifier_b_result is None:
@@ -192,7 +203,9 @@ class AgreedSettlementSigner:
                 minimum_agreeing_verifiers=2,
                 exact_agreement=True,
             )
-            decision = evaluate_agreement((job.verifier_a_result, job.verifier_b_result), policy)
+            for result in (job.verifier_a_result, job.verifier_b_result):
+                resolver_v2.validate_verification_result(dict(result), now_ms=now_ms)
+            decision = evaluate_agreement((job.verifier_a_result, job.verifier_b_result), policy, now_ms=now_ms)
         except (PipelineRejected, KeyError, TypeError, ValueError) as exc:
             raise CoordinatorSigningBindingError("agreed_historical_record_malformed") from exc
         if not decision.allowed or decision.canonical_outcome != job.outcome:
