@@ -1,0 +1,13 @@
+{
+  "exceptions": [
+    {
+      "advisory": "GHSA-3gc7-fjrx-p6mg",
+      "package": "bigint-buffer",
+      "severity": "high",
+      "path": "@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer",
+      "reason": "No upstream patched release exists for bigint-buffer 1.1.5.",
+      "risk_assessment": "Transitive dependency in the Anchor/Solana TypeScript tooling stack. All fixable Yarn advisories are required to remain closed; this exception must be removed when an upstream fix or dependency-chain replacement becomes available.",
+      "review_by": "2026-09-22"
+    }
+  ]
+}

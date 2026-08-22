@@ -1,18 +1,10 @@
+# Local validator is intentionally native, not a stale Solana v1.17 image.
+# Start scripts/localnet_start.sh; it enforces Agave/Solana CLI 3.1.10.
 services:
-  validator:
-    image: solanalabs/solana:v1.17.0
-    command: solana-test-validator --reset --rpc-port 8899 --ws-port 8900 --ledger /ledger
-    ports:
-      - "8899:8899"
-      - "8900:8900"
-      - "9900:9900" # Faucet
-    volumes:
-      - ./.anchor/test-ledger:/ledger
-
   resolver-registry:
     build:
-      context: ./apps/oracle-attester
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/oracle-attester/Dockerfile
     command: uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
     ports:
       - "8200:8200"
@@ -31,8 +23,8 @@ services:
 
   remote-signer:
     build:
-      context: ./apps/oracle-attester
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/oracle-attester/Dockerfile
     command: uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
     ports:
       - "8100:8100"
@@ -55,12 +47,12 @@ services:
 
   oracle-attester:
     build:
-      context: ./apps/oracle-attester
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/oracle-attester/Dockerfile
     ports:
       - "8000:8000"
     environment:
-      RPC_URL: http://validator:8899
+      RPC_URL: ${LOCALNET_RPC_URL:-http://host.docker.internal:8899}
       ORACLE_KEYPAIR_PATH: /app/oracle-keypair.json
       PROOF_STORE_DIR: /app/proof_store
       APP_ENV: local
@@ -83,8 +75,9 @@ services:
       - ./proof_store:/app/proof_store
       - ./audit:/app/audit
       - ./oracle-keypair.json:/app/oracle-keypair.json # Mount keypair if needed
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - validator
       - resolver-registry
       - remote-signer
 
@@ -95,8 +88,8 @@ services:
     ports:
       - "8010:8010"
     environment:
-      RPC_URL: http://validator:8899
-      WS_URL: ws://validator:8900
+      RPC_URL: ${LOCALNET_RPC_URL:-http://host.docker.internal:8899}
+      WS_URL: ${LOCALNET_WS_URL:-ws://host.docker.internal:8900}
       PROPHET_PROGRAM_ID: ${PROPHET_PROGRAM_ID:?PROPHET_PROGRAM_ID must be set explicitly}
       PAYER_KEYPAIR_PATH: /app/apps/matching-keeper/id.json
       MARKET_DISCOVERY_MODE: program_scan
@@ -111,8 +104,8 @@ services:
     volumes:
       - ./apps/matching-keeper/state:/app/apps/matching-keeper/state
       - ./id.json:/app/apps/matching-keeper/id.json:ro
-    depends_on:
-      - validator
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   prometheus:
     image: prom/prometheus:v2.54.1

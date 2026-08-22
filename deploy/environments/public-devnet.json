@@ -9,6 +9,8 @@
   "idl_path": "target/idl/prophet.json",
   "ts_types_path": "target/types/prophet.ts",
   "expected_program_id": "3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE",
+  "program_identity_policy": "match-source",
+  "deployment_authorized": false,
   "service_endpoints": {
     "verifier_a_base_url": "CONFIGURE_PUBLIC_DEVNET_VERIFIER_A_URL",
     "verifier_b_base_url": "CONFIGURE_PUBLIC_DEVNET_VERIFIER_B_URL",
@@ -49,7 +51,7 @@
   "deployment_artifacts": {
     "compose_manifest": "deploy/operated/public-devnet/docker-compose.yml",
     "stack_values_template": "deploy/operated/public-devnet/runtime.env.example",
-    "resolver_registry_env_template": "deploy/operated/devnet/resolver-registry.env.example",
+    "resolver_registry_env_template": "deploy/operated/public-devnet/resolver-registry.env.example",
     "matching_keeper_env_template": "deploy/operated/devnet/matching-keeper.env.example"
   },
   "cluster_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",

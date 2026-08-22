@@ -8,6 +8,18 @@ RPC_URL="http://127.0.0.1:8899"
 STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-60}"
 BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
 FAUCET_PORT="${FAUCET_PORT:-9900}"
+REQUIRED_SOLANA_VERSION="${SOLANA_VERSION:-3.1.10}"
+
+if ! command -v solana-test-validator >/dev/null 2>&1; then
+    echo "solana-test-validator is required. Install Agave/Solana CLI ${REQUIRED_SOLANA_VERSION}."
+    exit 1
+fi
+ACTUAL_SOLANA_VERSION="$(solana-test-validator --version | awk '{print $2}')"
+if [ "${ACTUAL_SOLANA_VERSION}" != "${REQUIRED_SOLANA_VERSION}" ]; then
+    echo "Unsupported local validator version: ${ACTUAL_SOLANA_VERSION}; required ${REQUIRED_SOLANA_VERSION}."
+    exit 1
+fi
+echo "Using authoritative local Agave/Solana validator ${ACTUAL_SOLANA_VERSION}"
 
 is_pid_alive() {
     local pid="$1"

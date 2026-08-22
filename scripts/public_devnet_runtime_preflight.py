@@ -7,6 +7,11 @@ import os
 import urllib.request
 from pathlib import Path
 
+try:
+    from release_config import ConfigValidationError, validate_checked_in_environments
+except ModuleNotFoundError:  # pragma: no cover
+    from scripts.release_config import ConfigValidationError, validate_checked_in_environments
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = (
     "RPC_URL", "EXPECTED_CLUSTER", "EXPECTED_CLUSTER_GENESIS_HASH",
@@ -116,30 +121,41 @@ def topology_errors(values: dict[str, str], *, compose_path: Path) -> tuple[list
 
 
 def main() -> int:
+    try:
+        validate_checked_in_environments(ROOT)
+    except ConfigValidationError as exc:
+        print("PUBLIC DEVNET CODE PREFLIGHT BLOCKED")
+        print(f"- CODE/CONFIG: {exc}")
+        return 2
+    print("PUBLIC DEVNET CODE PREFLIGHT PASSED")
+
     path = Path(os.getenv("RUNTIME_ENV", "/etc/prophet/public-devnet/runtime.env"))
     if not path.exists():
-        print(f"BLOCKED: runtime environment file missing: {path}")
+        print(f"- NEEDS REAL INFRA: runtime environment file missing: {path}")
         return 2
     values = load_env(path)
     code, infra = topology_errors(
         values,
         compose_path=ROOT / "deploy/operated/public-devnet/docker-compose.yml",
     )
+    live: list[str] = []
     try:
         observed = rpc(values.get("RPC_URL", ""), "getGenesisHash")
         if observed != values.get("EXPECTED_CLUSTER_GENESIS_HASH"):
-            infra.append(f"RPC genesis mismatch: {observed}")
+            live.append(f"RPC genesis mismatch: {observed}")
     except Exception as exc:
-        infra.append(f"RPC genesis query failed: {exc}")
+        live.append(f"RPC genesis query failed: {exc}")
     public = json.loads((ROOT / "deploy/environments/public-devnet.json").read_text())
     if public.get("expected_program_id") != values.get("EXPECTED_PROPHET_PROGRAM_ID"):
         code.append("runtime program ID differs from public-devnet configuration")
-    if code or infra:
+    if code or infra or live:
         print("PUBLIC DEVNET RUNTIME PREFLIGHT BLOCKED")
         for error in code:
             print(f"- CODE/CONFIG: {error}")
         for error in infra:
-            print(f"- INFRA: {error}")
+            print(f"- NEEDS REAL INFRA: {error}")
+        for error in live:
+            print(f"- NEEDS LIVE VALIDATION: {error}")
         return 2
     print("PUBLIC DEVNET RUNTIME PREFLIGHT PASSED")
     return 0

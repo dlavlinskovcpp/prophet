@@ -113,3 +113,20 @@ live operational validation:
 Local Vault, local-validator, simulated transaction, and code-freeze evidence
 must not be used to mark these live/mainnet items complete.
 <!-- RC3_MAINNET_BLOCKERS_END -->
+
+<!-- RC4_BATCH5_MAINNET_START -->
+## RC4 Batch 5 machine-readable mainnet authorization
+
+Classification date: 2026-08-21.
+
+- **CLOSED (code gate):** `deploy/environments/mainnet-beta.json` is template-valid with `program_identity_policy: future-unapproved` and `deployment_authorized: false`.
+- **CLOSED (code gate):** `scripts/release.py deploy --environment mainnet-beta` fails before any build/broadcast while authorization is false, even if `--yes` is supplied.
+- **CLOSED (code gate):** a live-authorized config containing `.example`, `replace-me`, `REPLACE_`, `CONFIGURE_`, generic placeholder text, or unresolved external-secret references fails closed.
+- **ARCHITECTURAL / ACCEPTED:** mainnet is not forced to reuse the public-devnet program identity. The currently different expected ID is a future/unapproved template identity, not evidence of a deployed or approved mainnet program.
+- **NEEDS REAL INFRA:** mainnet-specific deployment authority, program-key ceremony, Vault/signer identities, fee payer, RPC, monitoring, and secret references.
+- **NEEDS LIVE VALIDATION:** external audit closure, public-devnet lifecycle, mainnet ceremony, operational drills, rollback/recovery, and final release authorization.
+
+Audit/template bundle generation is distinct from deployment authorization. A non-authorized mainnet template may be bundled for review only when the resulting manifest remains explicitly non-deployable.
+
+**RC4 is not externally audited. RC4 does not authorize mainnet.**
+<!-- RC4_BATCH5_MAINNET_END -->

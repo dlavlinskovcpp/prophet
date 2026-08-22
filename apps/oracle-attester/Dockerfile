@@ -1,4 +1,6 @@
-ARG PYTHON_BASE_IMAGE=python:3.11.14-slim-bookworm
+# Pin the reviewed official Python 3.11/Trixie base.  Runtime packages are
+# supplied solely by this digest; do not introduce an unpinned apt upgrade.
+ARG PYTHON_BASE_IMAGE=python:3.11.15-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
 
 FROM ${PYTHON_BASE_IMAGE} AS builder
 
@@ -25,13 +27,43 @@ COPY apps/oracle-attester/pyproject.toml apps/oracle-attester/poetry.lock /app/a
 
 WORKDIR /app/apps/oracle-attester
 
+ENV PIP_DEFAULT_TIMEOUT=600 \
+    PIP_READ_TIMEOUT=600 \
+    POETRY_HTTP_TIMEOUT=600
+
 # Install exactly the committed lock contract. The service itself is source-run,
 # so --no-root avoids packaging test/build metadata into the runtime image.
 RUN poetry env use /usr/local/bin/python \
     && poetry install --sync --only main --no-root --no-interaction --no-ansi
 
+RUN .venv/bin/python -m ensurepip --upgrade \
+    && .venv/bin/python -m pip install --no-cache-dir --upgrade \
+        "pip==26.2.1" \
+        "setuptools==83.0.0" \
+        "wheel==0.46.3" \
+        "jaraco.context==6.1.0" \
+    && .venv/bin/python -m pip check
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime
+
+# DSA-6442-1 fixes CVE-2026-53612 through CVE-2026-53615 in Trixie.  Pin each
+# affected binary package explicitly rather than performing a mutable broad OS
+# upgrade.  Refresh this list only through a reviewed base/security update.
+ARG UTIL_LINUX_SECURITY_VERSION=2.41.5-0+deb13u1
+ARG BSDUTILS_SECURITY_VERSION=1:2.41.5-0+deb13u1
+ARG LOGIN_SECURITY_VERSION=1:4.16.0-2+really2.41.5-0+deb13u1
+RUN apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update \
+    && apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --only-upgrade --no-install-recommends --yes \
+        "bsdutils=${BSDUTILS_SECURITY_VERSION}" \
+        "libblkid1=${UTIL_LINUX_SECURITY_VERSION}" \
+        "liblastlog2-2=${UTIL_LINUX_SECURITY_VERSION}" \
+        "libmount1=${UTIL_LINUX_SECURITY_VERSION}" \
+        "libsmartcols1=${UTIL_LINUX_SECURITY_VERSION}" \
+        "libuuid1=${UTIL_LINUX_SECURITY_VERSION}" \
+        "login=${LOGIN_SECURITY_VERSION}" \
+        "mount=${UTIL_LINUX_SECURITY_VERSION}" \
+        "util-linux=${UTIL_LINUX_SECURITY_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG IMAGE_REVISION=unknown
 ARG IMAGE_VERSION=dev
@@ -49,6 +81,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app/apps/oracle-attester
 
 COPY --from=builder /app/apps/oracle-attester/.venv /app/apps/oracle-attester/.venv
+
+# The production service runs installed application code only.  pip,
+# setuptools, wheel, and ensurepip are build/package-management tooling, not
+# runtime dependencies.  Removing them also removes pip's vendored msgpack;
+# no production role may install or alter dependencies at runtime.
+RUN rm -rf \
+        /usr/local/bin/pip \
+        /usr/local/bin/pip3 \
+        /usr/local/bin/pip3.11 \
+        /usr/local/lib/python3.11/ensurepip \
+        /usr/local/lib/python3.11/site-packages/pip \
+        /usr/local/lib/python3.11/site-packages/pip-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/setuptools \
+        /usr/local/lib/python3.11/site-packages/setuptools-*.dist-info \
+        /usr/local/lib/python3.11/site-packages/wheel \
+        /usr/local/lib/python3.11/site-packages/wheel-*.dist-info \
+        /app/apps/oracle-attester/.venv/bin/pip \
+        /app/apps/oracle-attester/.venv/bin/pip3 \
+        /app/apps/oracle-attester/.venv/bin/pip3.11 \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/pip \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/pip-*.dist-info \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/setuptools \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/setuptools-*.dist-info \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/wheel \
+        /app/apps/oracle-attester/.venv/lib/python3.11/site-packages/wheel-*.dist-info
 COPY apps/oracle-attester/src/ /app/apps/oracle-attester/src/
 COPY apps/oracle-attester/scripts/ /app/apps/oracle-attester/scripts/
 

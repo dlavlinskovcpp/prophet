@@ -12,6 +12,9 @@ test-ledger
 !tsconfig.json
 !deploy/environments/*.json
 !resolver-v2/test-vectors/v2.json
+!security/
+!security/cargo-audit-exceptions.json
+!security/yarn-audit-exceptions.json
 __pycache__
 *.pyc
 venv

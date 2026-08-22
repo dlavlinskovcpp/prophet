@@ -66,7 +66,11 @@ class ReleaseBundleSecretBoundaryTests(unittest.TestCase):
 
     def _write_required_repo_files(self):
         self._write("programs/prophet/Cargo.toml", '[package]\nversion = "1.0.0"\n')
-        self._write("Anchor.toml", '[toolchain]\nanchor_version = "1.0.1"\n')
+        self._write(
+            "Anchor.toml",
+            f'[toolchain]\nanchor_version = "1.0.1"\n[programs.localnet]\nprophet = "{PROGRAM_ID}"\n',
+        )
+        self._write("programs/prophet/src/lib.rs", f'anchor_lang::declare_id!("{PROGRAM_ID}");\n')
         self._write("sdk/python/pyproject.toml", '[tool.poetry]\nversion = "1.0.0"\n')
         self._write(
             "apps/oracle-attester/pyproject.toml",
@@ -96,6 +100,8 @@ class ReleaseBundleSecretBoundaryTests(unittest.TestCase):
             "idl_path": "target/idl/prophet.json",
             "ts_types_path": "target/types/prophet.ts",
             "expected_program_id": PROGRAM_ID,
+            "program_identity_policy": "match-source",
+            "deployment_authorized": True,
             "service_endpoints": {
                 "attester_base_url": "http://127.0.0.1:8000",
                 "remote_signer_url": "http://127.0.0.1:8100/sign",
@@ -303,6 +309,11 @@ class ReleaseBundleSecretBoundaryTests(unittest.TestCase):
             "target/idl/prophet.json",
             json.dumps({"address": CI_PROGRAM_ID}) + "\n",
         )
+        self._write(
+            "Anchor.toml",
+            f'[toolchain]\nanchor_version = "1.0.1"\n[programs.localnet]\nprophet = "{CI_PROGRAM_ID}"\n',
+        )
+        self._write("programs/prophet/src/lib.rs", f'anchor_lang::declare_id!("{CI_PROGRAM_ID}");\n')
         config = self._config(expected_program_id=CI_PROGRAM_ID)
 
         manifest, bundle_dir = self._bundle(config, release_tag="ci-test")
