@@ -532,14 +532,14 @@ jobs:
           import src.main
           assert version("solana") == "0.33.0"
           assert version("solders") == "0.21.0"
-          assert importlib.util.find_spec('pytest') is None
-          assert importlib.util.find_spec('poetry') is None
-          assert importlib.util.find_spec('pip') is None
-          assert importlib.util.find_spec('setuptools') is None
-          assert importlib.util.find_spec('msgpack') is None
-          assert shutil.which('poetry') is None
-          assert shutil.which('pip') is None
-          print('KEEPER PRODUCTION RUNTIME CONTRACT PASSED')
+          assert importlib.util.find_spec("pytest") is None
+          assert importlib.util.find_spec("poetry") is None
+          assert importlib.util.find_spec("pip") is None
+          assert importlib.util.find_spec("setuptools") is None
+          assert importlib.util.find_spec("msgpack") is None
+          assert shutil.which("poetry") is None
+          assert shutil.which("pip") is None
+          print("KEEPER PRODUCTION RUNTIME CONTRACT PASSED")
           PY'
       - name: Prepare pinned Trivy vulnerability database
         run: |
