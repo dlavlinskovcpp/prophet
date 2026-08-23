@@ -17,7 +17,7 @@ Main instructions:
 
 - Market setup: `initialize_market_v2`
 - Notary admin: `initialize_notary_config`, `rotate_notary_config` (`update_notary_config` is retained only as a fail-closed legacy ABI)
-- Market governance: `transfer_market_authority`, `lock_market`, `unlock_market`, `sync_market_status`, `update_market_schedule`, `set_market_fee_config`, `withdraw_protocol_fees`, `emergency_resolve_invalid`
+- Market governance: `transfer_market_authority`, `lock_market`, `unlock_market`, `sync_market_status`, `update_market_schedule`, `set_market_fee_config`, `withdraw_protocol_fees`
 - Trading: `place_order`, `match_orders`, `cancel_order`
 - Funds: `claim_refunds`, `redeem`
 - Resolution: `resolve_market_threshold`
@@ -33,8 +33,7 @@ Lifecycle notes:
 - `NotaryConfig` is an immutable trust-root snapshot. Version 1 preserves the deployed legacy PDA `[b"notary_config", admin]`; successor versions use `[b"notary_config", admin, version_le_u64]` and are created only by `rotate_notary_config`.
 - `Market.notary_config` permanently pins the exact snapshot selected at market initialization. Creating a successor does not retarget, rewrite, or invalidate an older unresolved market, and zero-copy/in-place mutation through legacy `update_notary_config` is rejected.
 - `PROPHET_RESOLVE_V2` remains byte-for-byte compatible: its existing notary-config address and `version` fields bind signatures to the pinned immutable snapshot, so rotation does not require a new settlement domain or account layout.
-- Emergency governance can only force `Invalid`, not arbitrary `Yes` / `No`, and only for a locked market at or after the advertised `resolve_ts`.
-- RC3 does not add a separate post-`resolve_ts` emergency grace period because no existing on-chain grace concept is part of this protocol version. A stronger grace period remains a separate governance-hardening item.
+- `resolve_market_threshold` is the only resolution instruction. It is the sole path for `Yes`, `No`, and `Invalid`; an authority cannot settle, alter proof hashes, or bypass the pinned threshold-notary authorization after `resolve_ts`.
 
 Economics notes:
 
@@ -73,6 +72,7 @@ Responsibilities:
 - Resolver definitions should come from a canonical registry source (directory mirror or HTTP registry) and must hash back to the on-chain `resolver_hash`.
 - The bundled resolver registry service provides authenticated publish/load APIs, durable audit logs, and a canonical file-backed store that the attester can consume over HTTP.
 - Managed signer deployments should keep an explicit signer allowlist. The repo now ships a Vault Transit signer wrapper for the operated path and still supports generic command/KMS/HSM bridges plus the legacy AWS KMS backend.
+- A verifier, signer, or Vault outage is a liveness and recovery condition: without valid threshold authorization, the market remains unresolved. Market authority has no settlement fallback.
 
 ## Agent Integration
 

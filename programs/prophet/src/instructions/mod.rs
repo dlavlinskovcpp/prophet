@@ -1,7 +1,6 @@
 mod accounts;
 pub(crate) mod cancel_order;
 pub(crate) mod claim_refunds;
-pub(crate) mod emergency_resolve_invalid;
 pub(crate) mod initialize_market_v2;
 pub(crate) mod initialize_notary_config;
 pub(crate) mod lock_market;

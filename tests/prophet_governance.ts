@@ -326,6 +326,11 @@ describe("prophet-governance", () => {
       market.toBase58(),
       "authority transfer cannot change the immutable market namespace"
     );
+    assert.equal(
+      (program.methods as any).emergencyResolveInvalid,
+      undefined,
+      "a transferred authority must not gain an invalid-resolution route"
+    );
 
     threw = false;
     try {
@@ -395,13 +400,11 @@ describe("prophet-governance", () => {
     assert.equal(threw, true, "scheduled locked market should reject new orders");
   });
 
-  it("freezes schedule after first activity and rejects early lock/emergency invalid", async () => {
+  it("freezes schedule after first activity and exposes no authority invalid-resolution path", async () => {
     const authority = Keypair.generate();
-    const outsider = Keypair.generate();
     const trader = Keypair.generate();
 
     await airdrop(authority.publicKey, 2e9);
-    await airdrop(outsider.publicKey, 2e9);
     await airdrop(trader.publicKey, 2e9);
 
     const quoteMint = await createMint(provider.connection, admin, admin.publicKey, null, 6);
@@ -508,32 +511,11 @@ describe("prophet-governance", () => {
       "cancelling every order must not restore schedule mutability after first activity"
     );
 
-    const proofHash = Buffer.alloc(32, 7);
-    const publicInputsHash = Buffer.alloc(32, 8);
-
-    threw = false;
-    try {
-      await (program.methods as any)
-        .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
-        .accounts({ market, authority: outsider.publicKey })
-        .signers([outsider])
-        .rpc();
-    } catch {
-      threw = true;
-    }
-    assert.equal(threw, true, "outsider should not be able to emergency resolve");
-
-    threw = false;
-    try {
-      await (program.methods as any)
-        .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
-        .accounts({ market, authority: authority.publicKey })
-        .signers([authority])
-        .rpc();
-    } catch {
-      threw = true;
-    }
-    assert.equal(threw, true, "an actively open market cannot be emergency-invalidated");
+    assert.equal(
+      (program.methods as any).emergencyResolveInvalid,
+      undefined,
+      "the public program surface must not expose an authority invalid-resolution instruction"
+    );
 
     threw = false;
     try {
@@ -554,30 +536,10 @@ describe("prophet-governance", () => {
       .signers([authority])
       .rpc();
 
-    threw = false;
-    try {
-      await (program.methods as any)
-        .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
-        .accounts({ market, authority: authority.publicKey })
-        .signers([authority])
-        .rpc();
-    } catch {
-      threw = true;
-    }
-    assert.equal(threw, true, "locked market must not emergency-resolve before resolveTs");
-
     await waitUntilChainTimeGE(resolveTs.toNumber());
-    await (program.methods as any)
-      .emergencyResolveInvalid(Array.from(proofHash), Array.from(publicInputsHash))
-      .accounts({ market, authority: authority.publicKey })
-      .signers([authority])
-      .rpc();
-
     marketAcc = await program.account.market.fetch(market);
-    assert.equal(marketAcc.status.resolved !== undefined, true);
-    assert.equal(marketAcc.outcome.invalid !== undefined, true);
-    assert.deepEqual(marketAcc.proofHash, Array.from(proofHash));
-    assert.deepEqual(marketAcc.publicInputsHash, Array.from(publicInputsHash));
+    assert.equal(marketAcc.status.locked !== undefined, true);
+    assert.equal(marketAcc.outcome.undecided !== undefined, true);
   });
 
   it("supports protocol fee config, taker fee accrual, treasury withdrawal, and reserve refunds", async () => {
