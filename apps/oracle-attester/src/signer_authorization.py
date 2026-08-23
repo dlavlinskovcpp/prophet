@@ -13,6 +13,7 @@ AUTHORIZATION_VERSION = "1"
 MARKET_DISC = hashlib.sha256(b"account:Market").digest()[:8]
 NOTARY_DISC = hashlib.sha256(b"account:NotaryConfig").digest()[:8]
 class SignerAuthorizationError(ValueError): pass
+_JOURNAL_AUTHORIZATION_CAPABILITY = object()
 
 @dataclass(frozen=True)
 class VerifierPin: public_key: str; verifier_id: str; verifier_version: str; implementation_digest: str
@@ -39,6 +40,34 @@ class FinalizedRpc(Protocol):
 @dataclass(frozen=True)
 class AuthorizationResult:
     settlement_authorization_job_id: str; market: str; notary_config: str; outcome: str; canonical_message_bytes: bytes; canonical_message_digest: str; signer_slot: str; own_notary_public_key: str
+    cluster_genesis_hash: str = ""; program_id: str = ""; notary_config_version: int = 0
+
+class _JournalAuthorizedSettlement:
+    """P0C1-minted carrier for the independent signer journal boundary.
+
+    The private mint is API integrity rather than a sandbox against code already
+    executing inside the signer process.
+    """
+    __slots__ = ("cluster_genesis_hash", "program_id", "market", "notary_config", "notary_config_version", "settlement_authorization_job_id", "canonical_message_bytes", "canonical_message_digest")
+    def __init__(self, capability: object, authorization: AuthorizationResult):
+        if capability is not _JOURNAL_AUTHORIZATION_CAPABILITY or not isinstance(authorization, AuthorizationResult):
+            raise SignerAuthorizationError("journal_authorization_provenance_invalid")
+        object.__setattr__(self, "cluster_genesis_hash", authorization.cluster_genesis_hash)
+        object.__setattr__(self, "program_id", authorization.program_id)
+        object.__setattr__(self, "market", authorization.market)
+        object.__setattr__(self, "notary_config", authorization.notary_config)
+        object.__setattr__(self, "notary_config_version", authorization.notary_config_version)
+        object.__setattr__(self, "settlement_authorization_job_id", authorization.settlement_authorization_job_id)
+        object.__setattr__(self, "canonical_message_bytes", authorization.canonical_message_bytes)
+        object.__setattr__(self, "canonical_message_digest", authorization.canonical_message_digest)
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("journal_authorization_immutable")
+    def __copy__(self): return self
+    def __deepcopy__(self, memo): return self
+
+def authorize_for_journal(*, request: Mapping[str, Any], config: SignerAuthorizationConfig, rpc: FinalizedRpc, now_ms: int) -> _JournalAuthorizedSettlement:
+    """Run P0C1 validation and mint the opaque P0C2 input in one call."""
+    return _JournalAuthorizedSettlement(_JOURNAL_AUTHORIZATION_CAPABILITY, authorize(request=request, config=config, rpc=rpc, now_ms=now_ms))
 
 def _pk(value: Any, name: str) -> str:
     try:
@@ -120,4 +149,4 @@ def authorize(*, request: Mapping[str, Any], config: SignerAuthorizationConfig, 
     block_time=_slot(rpc.block_time(snapshot.context_slot), "finalized_block_time")
     if block_time<m["resolve_ts"]: raise SignerAuthorizationError("market_not_resolvable")
     message=build_resolution_message_v2(program_id=config.expected_program_id,market=r["market"],notary_config=m["notary_config"],resolver_hash=m["resolver_hash"],open_ts=m["open_ts"],resolve_ts=m["resolve_ts"],notary_config_version=n["version"],outcome=a["outcome"],proof_hash=bytes.fromhex(a["proof_hash"]),public_inputs_hash=bytes.fromhex(a["public_inputs_hash"]))
-    return AuthorizationResult(a["job_id"],r["market"],m["notary_config"],a["outcome"],message,hashlib.sha256(message).hexdigest(),config.signer_slot,config.own_notary_public_key)
+    return AuthorizationResult(a["job_id"],r["market"],m["notary_config"],a["outcome"],message,hashlib.sha256(message).hexdigest(),config.signer_slot,config.own_notary_public_key,r["cluster_genesis_hash"],config.expected_program_id,n["version"])
