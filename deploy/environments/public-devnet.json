@@ -23,9 +23,9 @@
     "resolution_mode": "secure-coordinator",
     "direct_attester_settlement_enabled": false,
     "generic_remote_signer_settlement_enabled": false,
-    "coordinator_sqlite_path": "/var/lib/prophet/public-devnet/coordinator.sqlite",
-    "signing_journal_path": "/var/lib/prophet/public-devnet/signing-journal.sqlite",
-    "submission_journal_path": "/var/lib/prophet/public-devnet/submission-journal.sqlite",
+    "coordinator_sqlite_path": "/var/lib/prophet/public-devnet/coordinator/coordinator.sqlite",
+    "signing_journal_path": "/var/lib/prophet/public-devnet/signing/signing-journal.sqlite",
+    "submission_journal_path": "/var/lib/prophet/public-devnet/submission/submission-journal.sqlite",
     "required_signer_count": 2,
     "verifier_a": {
       "identity": "prophet.verifier.runtime.a",

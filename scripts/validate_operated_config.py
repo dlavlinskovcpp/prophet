@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENTS = ("devnet", "public-devnet", "mainnet-beta")
+SANDBOXED_ENVIRONMENTS = ("public-devnet", "mainnet-beta")
 REQUIRED_SERVICES = {
     "resolver-registry",
     "verifier-a",
@@ -15,6 +16,18 @@ REQUIRED_SERVICES = {
     "secure-settlement",
     "matching-keeper",
 }
+APPLICATION_SERVICES = tuple(sorted(REQUIRED_SERVICES))
+SANDBOX_LINES = (
+    'user: "10001:10001"',
+    "read_only: true",
+    "cap_drop: [ALL]",
+    "security_opt: [no-new-privileges:true]",
+    "pids_limit: 256",
+    "mem_limit: 512m",
+    'cpus: "1.0"',
+    'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]',
+    "restart: on-failure:5",
+)
 
 
 def _service_names(text: str) -> set[str]:
@@ -64,8 +77,63 @@ def validate_environment(name: str) -> list[str]:
     for service in ("coordinator", "secure-settlement"):
         try:
             block = _block(text, service)
-            if f"/state:/var/lib/prophet/{name}" not in block:
+            if name in SANDBOXED_ENVIRONMENTS:
+                coordinator_mount = f"/coordinator:/var/lib/prophet/{name}/coordinator"
+                if coordinator_mount not in block:
+                    errors.append(f"{name}: {service} coordinator SQLite/WAL mount missing")
+                if service == "secure-settlement":
+                    for state_name in ("signing", "submission"):
+                        if f"/{state_name}:/var/lib/prophet/{name}/{state_name}" not in block:
+                            errors.append(f"{name}: secure-settlement {state_name} journal/WAL mount missing")
+            elif f"/state:/var/lib/prophet/{name}" not in block:
                 errors.append(f"{name}: {service} durable state mount missing")
+        except ValueError:
+            pass
+
+    if name in SANDBOXED_ENVIRONMENTS:
+        for service in APPLICATION_SERVICES:
+            try:
+                block = _block(text, service)
+            except ValueError:
+                continue
+            for line in SANDBOX_LINES:
+                if line not in block:
+                    errors.append(f"{name}: {service} sandbox control missing {line}")
+            if "ports:" in block:
+                errors.append(f"{name}: {service} must not publish a host port")
+
+        for service, expected_networks in {
+            "vault": "networks: [control]",
+            "resolver-registry": "networks: [control]",
+            "verifier-a": "networks: [control, egress]",
+            "verifier-b": "networks: [control, egress]",
+            "coordinator": "networks: [control]",
+            "secure-settlement": "networks: [control, egress]",
+            "matching-keeper": "networks: [egress]",
+        }.items():
+            try:
+                if expected_networks not in _block(text, service):
+                    errors.append(f"{name}: {service} network separation missing")
+            except ValueError:
+                pass
+        if "control:\n    internal: true" not in text or "egress: {}" not in text:
+            errors.append(f"{name}: explicit control/egress networks missing")
+        try:
+            settlement = _block(text, "secure-settlement")
+            if "/run/secrets/settlement-fee-payer.json:ro" not in settlement:
+                errors.append(f"{name}: secure-settlement read-only fee-payer mount missing")
+            if "PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH: /run/secrets/settlement-fee-payer.json" not in settlement:
+                errors.append(f"{name}: secure-settlement fee-payer path must be explicit")
+            keeper = _block(text, "matching-keeper")
+            if "/run/secrets/keeper-id.json:ro" not in keeper:
+                errors.append(f"{name}: matching-keeper read-only key mount missing")
+            if "PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json" not in keeper:
+                errors.append(f"{name}: matching-keeper key path must be explicit")
+            for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator"):
+                if "/run/secrets/settlement-fee-payer.json" in _block(text, service):
+                    errors.append(f"{name}: {service} must not receive the settlement fee payer")
+                if "/run/secrets/keeper-id.json" in _block(text, service):
+                    errors.append(f"{name}: {service} must not receive the keeper key")
         except ValueError:
             pass
 

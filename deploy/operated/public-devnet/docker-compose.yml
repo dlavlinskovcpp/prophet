@@ -12,6 +12,7 @@ services:
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/vault.hcl:/vault/config/vault.hcl:ro
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/tls:/vault/tls:ro
     restart: unless-stopped
+    networks: [control]
 
   resolver-registry:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
@@ -21,7 +22,16 @@ services:
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver_store:/app/resolver_store
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/resolver_audit:/app/audit
-    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [control]
 
   verifier-a:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
@@ -32,7 +42,16 @@ services:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/verifier-a.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/verifier-a.yaml:/app/runtime/verifier-a.yaml:ro
-    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [control, egress]
 
   verifier-b:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
@@ -43,7 +62,16 @@ services:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/verifier-b.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/verifier-b.yaml:/app/runtime/verifier-b.yaml:ro
-    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [control, egress]
 
   coordinator:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
@@ -54,32 +82,64 @@ services:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/coordinator.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/state:/var/lib/prophet/public-devnet
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator:/var/lib/prophet/public-devnet/coordinator
     depends_on: [verifier-a, verifier-b]
-    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [control]
 
   secure-settlement:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
     command: uvicorn src.secure_settlement_main:app --host 0.0.0.0 --port 8500
     environment:
       PROPHET_SETTLEMENT_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+      PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH: /run/secrets/settlement-fee-payer.json
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/secure-settlement.env"
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/state:/var/lib/prophet/public-devnet
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator:/var/lib/prophet/public-devnet/coordinator
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/signing:/var/lib/prophet/public-devnet/signing
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/submission:/var/lib/prophet/public-devnet/submission
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/settlement-fee-payer.json:/run/secrets/settlement-fee-payer.json:ro
     depends_on: [coordinator]
-    restart: unless-stopped
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [control, egress]
 
   matching-keeper:
     build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/matching-keeper.env"
+    environment:
+      PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/matching-keeper:/app/apps/matching-keeper/state
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-id.json:/app/keeper-id.json:ro
-    restart: unless-stopped
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-id.json:/run/secrets/keeper-id.json:ro
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+    restart: on-failure:5
+    networks: [egress]
 
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -89,6 +149,7 @@ services:
       - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/prometheus:/prometheus
     restart: unless-stopped
+    networks: [control, egress]
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
@@ -97,6 +158,7 @@ services:
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/alertmanager.yml:/run/secrets/alertmanager.yml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/alertmanager:/alertmanager
     restart: unless-stopped
+    networks: [control, egress]
 
   grafana:
     image: grafana/grafana:11.1.4
@@ -106,7 +168,9 @@ services:
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/grafana:/var/lib/grafana
     restart: unless-stopped
+    networks: [control]
 
 networks:
-  default:
+  control:
     internal: true
+  egress: {}
