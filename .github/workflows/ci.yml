@@ -545,6 +545,10 @@ jobs:
           assert shutil.which("pip") is None
           print("KEEPER PRODUCTION RUNTIME CONTRACT PASSED")
           PY'
+      - name: Run P0C1 non-root production runtime regression
+        run: python3 -m unittest scripts.tests.test_production_image_nonroot -v
+      - name: Run P0C2 production compose sandbox regression
+        run: python3 -m unittest scripts.tests.test_production_compose_sandbox -v
       - name: Prepare pinned Trivy vulnerability database
         run: |
           mkdir -p /tmp/trivy-cache
