@@ -26,7 +26,7 @@ coordinator:
     expected_verifier_version: 2.0.0
     expected_verifier_implementation_digest: "4747474747474747474747474747474747474747474747474747474747474747"
     request_timeout_seconds: 10
-  sqlite_path: /var/lib/prophet/public-devnet/coordinator.sqlite
+  sqlite_path: /var/lib/prophet/public-devnet/coordinator/coordinator.sqlite
   internal_auth: {token_env: PROPHET_COORDINATOR_INTERNAL_TOKEN}
   request_timeout_seconds: 25
 signing:
@@ -36,7 +36,7 @@ signing:
     transit_mount: transit
     request_timeout_seconds: 5
     backend: vault-transit
-  journal_path: /var/lib/prophet/public-devnet/signing-journal.sqlite
+  journal_path: /var/lib/prophet/public-devnet/signing/signing-journal.sqlite
   signers:
     a:
       signer_id: public-devnet-settlement-a
@@ -54,7 +54,7 @@ settlement_execution:
   expected_genesis_hash: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
   fee_payer: {keypair_path_env: PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH}
   rpc: {timeout_seconds: 10, commitment: confirmed}
-  journal_path: /var/lib/prophet/public-devnet/submission-journal.sqlite
+  journal_path: /var/lib/prophet/public-devnet/submission/submission-journal.sqlite
 secure_settlement:
   resolution_mode: secure-coordinator
   direct_attester_settlement_enabled: false
