@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 
 import pytest
+from solders.keypair import Keypair
 
 from src.resolver_v2_adapters import ZkTlsMaterial
 from src.resolver_v2_pipeline import PipelineRejected, normalize_evidence
@@ -10,6 +11,7 @@ from src.resolver_verifier_runtime import ResolverVerifierRuntime
 from src.runtime_adapter_factory import RuntimeAdapterFactory
 from src.runtime_config import parse_runtime_config
 from src.signed_oracle_runtime_keys import load_trusted_oracle_key_registry
+from src.verifier_attestation import VerifierAttestationSigner, verify_attestation
 
 
 H = lambda byte: f"{byte:02x}" * 32
@@ -92,3 +94,50 @@ def test_runtime_verify_backend_failure_is_canonical_rejection_and_identity_is_s
     result = runtime.verify(resolver_definition=definition, evidence=evidence, trust_model=adapters["_trust"]())
     assert result["result"] == "REJECTED" and result["verifier"] == _runtime_descriptor()
     with pytest.raises(PipelineRejected): ResolverVerifierRuntime(config, runtime.adapter_factory, _runtime_descriptor("prophet.verifier.runtime.b"))
+
+
+def test_runtime_emits_distinct_signed_attestations_from_trusted_verifier_identity():
+    adapters, _ = _helpers(); definition, _, evidence = adapters["_zktls_evidence"]()
+    config = parse_runtime_config(_raw(["zktls"], zktls={"provider_id": "deterministic-provider", "verifier_backend": "deterministic-test", "allowed_proof_versions": ["1"]}))
+    a_descriptor, b_descriptor = _runtime_descriptor(), {**_runtime_descriptor("prophet.verifier.runtime.b"), "implementation_digest": H(71)}
+    a_key, b_key = Keypair.from_seed(bytes(range(32))), Keypair.from_seed(bytes(range(32, 64)))
+    a = ResolverVerifierRuntime(config, RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={kind: a_descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, clock_ms=lambda: 100), a_descriptor, VerifierAttestationSigner(a_descriptor["adapter_id"], "2.0.0", H(70), a_key), lambda: 100)
+    config_b = replace(config, verifier=replace(config.verifier, implementation_id="prophet.verifier.runtime.b"))
+    b = ResolverVerifierRuntime(config_b, RuntimeAdapterFactory(runtime_config=config_b, verifier_descriptors={kind: b_descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, clock_ms=lambda: 100), b_descriptor, VerifierAttestationSigner(b_descriptor["adapter_id"], "2.0.0", H(71), b_key), lambda: 100)
+    context = {"cluster_genesis_hash": H(4), "program_id": "11111111111111111111111111111111", "market": "Stake11111111111111111111111111111111111111", "proof_hash": H(5), "public_inputs_hash": H(6)}
+    signed_a = a.verify_attested(resolver_definition=definition, evidence=evidence, trust_model=adapters["_trust"](), attestation_context=context)
+    signed_b = b.verify_attested(resolver_definition=definition, evidence=evidence, trust_model=adapters["_trust"](), attestation_context=context)
+    assert a_key.pubkey() != b_key.pubkey()
+    verify_attestation(signed_a["attestation"], expected_verifier_id=a_descriptor["adapter_id"], expected_verifier_version="2.0.0", expected_verifier_implementation_digest=H(70), expected_public_key=str(a_key.pubkey()))
+    verify_attestation(signed_b["attestation"], expected_verifier_id=b_descriptor["adapter_id"], expected_verifier_version="2.0.0", expected_verifier_implementation_digest=H(71), expected_public_key=str(b_key.pubkey()))
+    with pytest.raises(Exception): verify_attestation(signed_a["attestation"], expected_verifier_id=b_descriptor["adapter_id"], expected_verifier_version="2.0.0", expected_verifier_implementation_digest=H(71), expected_public_key=str(b_key.pubkey()))
+
+
+def test_attested_runtime_rejects_expired_result_before_signing_and_requires_production_clock():
+    class CountingSigner:
+        def __init__(self): self.calls = 0
+        def sign(self, payload, *, now_ms):
+            self.calls += 1
+            raise AssertionError("expired result reached Ed25519 signing")
+
+    class ExpiredRuntime(ResolverVerifierRuntime):
+        def verify(self, **kwargs):
+            return {
+                "schema": "prophet.verification-result.v2", "schema_version": "2.0.0",
+                "definition_hash": H(1), "evidence_hash": H(2), "verifier": _runtime_descriptor(),
+                "result": "VERIFIED", "checks": [],
+                "verified_facts_hex": "7b22636f6e666964656e6365223a2268696768222c226661696c7572655f636f6465223a6e756c6c2c226f7574636f6d65223a22594553222c22737461747573223a225645524946494544222c2276657269666965645f6661637473223a7b7d7d",
+                "verified_facts_hash": "35102761430d3fb318a7ce8892e1465d0ef949e14483155b3df52d22c6d63802",
+                "observed_at_ms": "100", "valid_from_ms": "100", "valid_until_ms": "200", "finality": None,
+            }
+
+    config = parse_runtime_config(_raw(["pyth"], mode="production"))
+    factory = RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={"pyth": _runtime_descriptor()}, clock_ms=lambda: 100)
+    signer = CountingSigner()
+    with pytest.raises(PipelineRejected):
+        ExpiredRuntime(config, factory, _runtime_descriptor(), signer)
+    runtime = ExpiredRuntime(config, factory, _runtime_descriptor(), signer, lambda: 201)
+    context = {"cluster_genesis_hash": H(4), "program_id": "11111111111111111111111111111111", "market": "Stake11111111111111111111111111111111111111", "proof_hash": H(5), "public_inputs_hash": H(6)}
+    with pytest.raises(Exception):
+        runtime.verify_attested(resolver_definition={}, evidence={}, trust_model={}, attestation_context=context)
+    assert signer.calls == 0

@@ -41,6 +41,8 @@ def _client(slot):
         expected_verifier_version="2.0.0",
         expected_verifier_implementation_digest=("46" if slot == "A" else "47") * 32,
         request_timeout_seconds=5,
+        attestation_public_key=A_PK if slot == "A" else B_PK,
+        attestation_private_key_env=f"VERIFIER_{slot}_ATTESTATION_KEY",
     )
 
 
@@ -116,6 +118,39 @@ def _policy(**changes):
 
 def test_secure_topology_is_accepted_structurally(tmp_path):
     validate_secure_settlement_topology(_runtime(tmp_path), _policy())
+
+
+@pytest.mark.parametrize("environment", ["public-devnet", "mainnet"])
+def test_secure_topology_rejects_collapsed_verifier_attestation_identities(tmp_path, environment):
+    runtime = replace(_runtime(tmp_path), environment=environment)
+    collapsed = replace(
+        runtime,
+        coordinator=replace(
+            runtime.coordinator,
+            verifier_b=replace(
+                runtime.coordinator.verifier_b,
+                attestation_public_key=runtime.coordinator.verifier_a.attestation_public_key,
+            ),
+        ),
+    )
+    with pytest.raises(SecureSettlementRuntimeError, match="verifier_attestation_public_keys_must_be_distinct"):
+        validate_secure_settlement_topology(collapsed, _policy())
+
+
+def test_secure_topology_rejects_collapsed_verifier_attestation_key_reference(tmp_path):
+    runtime = _runtime(tmp_path)
+    collapsed = replace(
+        runtime,
+        coordinator=replace(
+            runtime.coordinator,
+            verifier_b=replace(
+                runtime.coordinator.verifier_b,
+                attestation_private_key_env=runtime.coordinator.verifier_a.attestation_private_key_env,
+            ),
+        ),
+    )
+    with pytest.raises(SecureSettlementRuntimeError, match="verifier_attestation_key_refs_must_be_distinct"):
+        validate_secure_settlement_topology(collapsed, _policy())
 
 
 @pytest.mark.parametrize(

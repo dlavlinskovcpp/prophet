@@ -93,13 +93,20 @@ def create_verifier_service(*, runtime: Any = None, auth_token: str = "", expect
             if len(body) > app.state.request_max_bytes: status, category = 413, "too_large"; return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
             try:
                 payload = json.loads(body)
-                if not isinstance(payload, dict) or set(payload) != {"resolver_definition", "evidence", "trust_model"}: raise ValueError
+                allowed = {"resolver_definition", "evidence", "trust_model", "attestation_context"}
+                if not isinstance(payload, dict) or not {"resolver_definition", "evidence", "trust_model"}.issubset(payload) or set(payload) - allowed: raise ValueError
                 definition, evidence, trust_model = payload["resolver_definition"], payload["evidence"], payload["trust_model"]
                 resolver_type = definition.get("resolver_type") if isinstance(definition, dict) else None
                 adapter = resolver_type if resolver_type in {"zktls", "signed_oracle", "pyth", "chainlink"} else "unknown"
             except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError):
                 status, category = 400, "malformed"; return JSONResponse(status_code=status, content={"error": "invalid_request", "request_id": request_id})
             try:
+                if getattr(app.state.runtime, "attestation_signer", None) is not None:
+                    if "attestation_context" not in payload:
+                        raise PipelineRejected("attestation_context_required")
+                    result = await asyncio.wait_for(asyncio.to_thread(app.state.runtime.verify_attested, resolver_definition=definition, evidence=evidence, trust_model=trust_model, attestation_context=payload["attestation_context"]), timeout=app.state.request_timeout_seconds)
+                    status, category = 200, "verified"
+                    response = JSONResponse(status_code=status, content=result); response.headers["X-Request-ID"] = request_id; return response
                 result = await asyncio.wait_for(asyncio.to_thread(app.state.runtime.verify, resolver_definition=definition, evidence=evidence, trust_model=trust_model), timeout=app.state.request_timeout_seconds)
             except asyncio.TimeoutError:
                 status, category = 503, "timeout"; return JSONResponse(status_code=status, content={"error": "verification_timeout", "request_id": request_id})

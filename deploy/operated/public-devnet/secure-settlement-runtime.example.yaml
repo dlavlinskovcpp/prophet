@@ -18,6 +18,8 @@ coordinator:
     expected_verifier_id: prophet.verifier.runtime.a
     expected_verifier_version: 2.0.0
     expected_verifier_implementation_digest: "4646464646464646464646464646464646464646464646464646464646464646"
+    attestation_public_key: REPLACE_WITH_VERIFIER_A_ATTESTATION_PUBLIC_KEY
+    attestation_private_key_env: PROPHET_VERIFIER_A_ATTESTATION_PRIVATE_KEY
     request_timeout_seconds: 10
   verifier_b:
     base_url: http://verifier-b:8302
@@ -25,6 +27,8 @@ coordinator:
     expected_verifier_id: prophet.verifier.runtime.b
     expected_verifier_version: 2.0.0
     expected_verifier_implementation_digest: "4747474747474747474747474747474747474747474747474747474747474747"
+    attestation_public_key: REPLACE_WITH_VERIFIER_B_ATTESTATION_PUBLIC_KEY
+    attestation_private_key_env: PROPHET_VERIFIER_B_ATTESTATION_PRIVATE_KEY
     request_timeout_seconds: 10
   sqlite_path: /var/lib/prophet/public-devnet/coordinator/coordinator.sqlite
   internal_auth: {token_env: PROPHET_COORDINATOR_INTERNAL_TOKEN}

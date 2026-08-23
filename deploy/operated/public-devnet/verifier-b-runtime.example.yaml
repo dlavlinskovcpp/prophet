@@ -7,6 +7,9 @@ solana:
   prophet_program_id: 3AUW4eLPigqyHmQNapcmv3JSYw6s8Aa5PPf87ayGT8kE
 resolver_v2: {schema_version: 2}
 verifier: {implementation_id: prophet.verifier.runtime.b, version: 2.0.0}
+verifier_attestation:
+  public_key: REPLACE_WITH_VERIFIER_B_ATTESTATION_PUBLIC_KEY
+  private_key_env: PROPHET_VERIFIER_B_ATTESTATION_PRIVATE_KEY
 allowed_adapters: [zktls]
 zktls:
   provider_id: public-devnet-secondary-zktls

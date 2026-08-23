@@ -16,6 +16,7 @@ from .runtime_clock import wall_clock_ms
 from .runtime_config import load_runtime_config
 from .signed_oracle_runtime_keys import load_trusted_oracle_key_registry
 from .verifier_service import create_verifier_service
+from .verifier_attestation import VerifierAttestationSigner
 
 
 VERIFIER_A_ID, VERIFIER_B_ID, VERIFIER_VERSION = "prophet.verifier.runtime.a", "prophet.verifier.runtime.b", "2.0.0"
@@ -37,6 +38,19 @@ def _token(config) -> str:
     return token
 
 
+def _attestation_signer(config, descriptor):
+    settings = config.verifier_attestation
+    if settings is None:
+        raise ValueError("verifier attestation configuration is required")
+    return VerifierAttestationSigner.from_environment(
+        verifier_id=descriptor["adapter_id"],
+        verifier_version=descriptor["adapter_version"],
+        verifier_implementation_digest=descriptor["implementation_digest"],
+        expected_public_key=settings.public_key,
+        private_key_env=settings.private_key_env,
+    )
+
+
 def _build_a(config):
     if config.zktls is not None:
         if config.zktls.verifier_backend == INDEPENDENT_BOUND_HTTP_BACKEND:
@@ -50,7 +64,7 @@ def _build_a(config):
     descriptor = _descriptor(VERIFIER_A_ID, 70)
     signed_registry = None if config.signed_oracle is None else load_trusted_oracle_key_registry(config.signed_oracle.registry_path)
     factory = RuntimeAdapterFactory(runtime_config=config, verifier_descriptors={kind: descriptor for kind in ("zktls", "signed_oracle", "pyth", "chainlink")}, signed_oracle_registry=signed_registry, clock_ms=wall_clock_ms)
-    return ResolverVerifierRuntime(config, factory, descriptor)
+    return ResolverVerifierRuntime(config, factory, descriptor, _attestation_signer(config, descriptor), wall_clock_ms)
 
 
 def _build_b(config):
@@ -68,7 +82,7 @@ def _build_b(config):
     factory = IndependentZkTlsRuntimeFactory(
         runtime_config=config, verifier_descriptor=descriptor, checker=checker, clock_ms=wall_clock_ms
     )
-    return ResolverVerifierRuntime(config, factory, descriptor)
+    return ResolverVerifierRuntime(config, factory, descriptor, _attestation_signer(config, descriptor), wall_clock_ms)
 
 
 def build_service(kind: str):
