@@ -7,6 +7,7 @@ test-ledger
 .env*
 !apps/matching-keeper/.env.example
 *.json
+!apps/oracle-attester/tests/fixtures/verifier_attestation_v1.json
 !docs/migration/anchor_0_30_protocol_snapshot.json
 !package.json
 !tsconfig.json

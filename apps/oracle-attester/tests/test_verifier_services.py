@@ -2,6 +2,7 @@ import time
 
 from fastapi.testclient import TestClient
 import yaml
+from solders.keypair import Keypair
 
 from src.verifier_service import create_verifier_service
 from src.verifier_service_bootstrap import build_service
@@ -78,14 +79,15 @@ def test_verifier_service_timeout_fails_closed():
 
 
 def test_service_bootstrap_constructs_only_its_expected_runtime(tmp_path, monkeypatch):
-    def config(identity):
+    def config(identity, public_key):
         return {
             "schema_version": 1,
             "environment": "localtest",
             "mode": "test",
             "solana": {"cluster": "localnet", "genesis_hash": "genesis", "prophet_program_id": "program"},
             "resolver_v2": {"schema_version": 2},
-            "verifier": {"implementation_id": identity, "version": "2.0.0"},
+                "verifier": {"implementation_id": identity, "version": "2.0.0"},
+                "verifier_attestation": {"public_key": public_key, "private_key_env": "PROPHET_VERIFIER_ATTESTATION_KEY"},
             "allowed_adapters": ["zktls"],
             "zktls": {"provider_id": "deterministic-test-provider", "verifier_backend": "deterministic-test", "allowed_proof_versions": ["1"]},
             "limits": {"request_max_bytes": 1024, "request_timeout_seconds": 1},
@@ -96,11 +98,13 @@ def test_service_bootstrap_constructs_only_its_expected_runtime(tmp_path, monkey
     path = tmp_path / "runtime.yaml"
     monkeypatch.setenv("PROPHET_VERIFIER_RUNTIME_CONFIG", str(path))
     monkeypatch.setenv("PROPHET_VERIFIER_INTERNAL_TOKEN", "secret")
-    for kind, identity in (("a", "prophet.verifier.runtime.a"), ("b", "prophet.verifier.runtime.b")):
-        path.write_text(yaml.safe_dump(config(identity)), encoding="utf-8")
+    for offset, (kind, identity) in enumerate((("a", "prophet.verifier.runtime.a"), ("b", "prophet.verifier.runtime.b"))):
+        keypair = Keypair.from_seed(bytes(range(offset * 32, offset * 32 + 32)))
+        monkeypatch.setenv("PROPHET_VERIFIER_ATTESTATION_KEY", str(keypair))
+        path.write_text(yaml.safe_dump(config(identity, str(keypair.pubkey()))), encoding="utf-8")
         app = build_service(kind)
         assert TestClient(app).get("/ready").status_code == 200
         assert app.state.runtime.verifier_descriptor["adapter_id"] == identity
 
-    path.write_text(yaml.safe_dump(config("prophet.verifier.runtime.b")), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config("prophet.verifier.runtime.b", str(Keypair.from_seed(bytes(range(32))).pubkey()))), encoding="utf-8")
     assert TestClient(build_service("a")).get("/ready").status_code == 503

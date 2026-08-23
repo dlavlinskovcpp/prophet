@@ -114,6 +114,14 @@ def validate_secure_settlement_topology(
         raise SecureSettlementRuntimeError("verifier_service_urls_must_be_distinct")
     if coordinator.verifier_a.auth_token_env == coordinator.verifier_b.auth_token_env:
         raise SecureSettlementRuntimeError("verifier_auth_refs_must_be_distinct")
+    if not coordinator.verifier_a.attestation_public_key or not coordinator.verifier_b.attestation_public_key:
+        raise SecureSettlementRuntimeError("verifier_attestation_public_keys_required")
+    if not coordinator.verifier_a.attestation_private_key_env or not coordinator.verifier_b.attestation_private_key_env:
+        raise SecureSettlementRuntimeError("verifier_attestation_key_refs_required")
+    if coordinator.verifier_a.attestation_public_key == coordinator.verifier_b.attestation_public_key:
+        raise SecureSettlementRuntimeError("verifier_attestation_public_keys_must_be_distinct")
+    if coordinator.verifier_a.attestation_private_key_env == coordinator.verifier_b.attestation_private_key_env:
+        raise SecureSettlementRuntimeError("verifier_attestation_key_refs_must_be_distinct")
     _persistent(coordinator.sqlite_path, "coordinator_sqlite_path")
 
     signing = runtime.signing

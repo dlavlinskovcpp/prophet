@@ -4,6 +4,9 @@ mode: test
 solana: {cluster: localnet, genesis_hash: "localtest-genesis", prophet_program_id: "localtest-program"}
 resolver_v2: {schema_version: 2}
 verifier: {implementation_id: "prophet.verifier.test", version: "2.0.0"}
+verifier_attestation:
+  public_key: FAe4sisG95oZ42w7buUn5qEE4TAnfTTFPiguZUHmhiF
+  private_key_env: PROPHET_VERIFIER_TEST_ATTESTATION_PRIVATE_KEY
 allowed_adapters: [zktls, pyth, chainlink]
 zktls:
   provider_id: "deterministic-test-provider"

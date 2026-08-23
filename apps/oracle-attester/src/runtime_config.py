@@ -47,6 +47,8 @@ class SolanaRuntimeConfig: cluster: str; genesis_hash: str; prophet_program_id: 
 @dataclass(frozen=True)
 class VerifierRuntimeIdentity: implementation_id: str; version: str
 @dataclass(frozen=True)
+class VerifierAttestationRuntimeConfig: public_key: str; private_key_env: str
+@dataclass(frozen=True)
 class Limits: request_max_bytes: int; request_timeout_seconds: int
 @dataclass(frozen=True)
 class Freshness: default_max_evidence_age_seconds: int; default_max_verification_age_seconds: int
@@ -54,7 +56,7 @@ class Freshness: default_max_evidence_age_seconds: int; default_max_verification
 class InternalAuth: token_env: str
 @dataclass(frozen=True)
 class CoordinatorVerifierServiceConfig:
-    base_url: str; auth_token_env: str; expected_verifier_id: str; expected_verifier_version: str; expected_verifier_implementation_digest: str; request_timeout_seconds: int
+    base_url: str; auth_token_env: str; expected_verifier_id: str; expected_verifier_version: str; expected_verifier_implementation_digest: str; request_timeout_seconds: int; attestation_public_key: str|None = None; attestation_private_key_env: str|None = None
 @dataclass(frozen=True)
 class CoordinatorRuntimeConfig:
     verifier_a: CoordinatorVerifierServiceConfig; verifier_b: CoordinatorVerifierServiceConfig; sqlite_path: str; internal_auth: InternalAuth; request_timeout_seconds: int
@@ -85,17 +87,36 @@ class ResolverRuntimeConfig:
     schema_version: int; environment: str; mode: str; solana: SolanaRuntimeConfig
     resolver_v2_schema_version: int; verifier: VerifierRuntimeIdentity; allowed_adapters: tuple[str, ...]
     limits: Limits; freshness: Freshness; internal_auth: InternalAuth; signed_oracle: SignedOracleRuntimeConfig|None; zktls: ZkTlsRuntimeConfig|None; coordinator: CoordinatorRuntimeConfig|None; signing: VaultSigningConfig|None; settlement_execution: SettlementExecutionRuntimeConfig|None = None
+    verifier_attestation: VerifierAttestationRuntimeConfig|None = None
     def fingerprint(self) -> str:
-        client = lambda value: {"base_url":value.base_url,"auth_token_env":value.auth_token_env,"expected_verifier_id":value.expected_verifier_id,"expected_verifier_version":value.expected_verifier_version,"expected_verifier_implementation_digest":value.expected_verifier_implementation_digest,"request_timeout_seconds":str(value.request_timeout_seconds)}
+        client = lambda value: {"base_url":value.base_url,"auth_token_env":value.auth_token_env,"expected_verifier_id":value.expected_verifier_id,"expected_verifier_version":value.expected_verifier_version,"expected_verifier_implementation_digest":value.expected_verifier_implementation_digest,"request_timeout_seconds":str(value.request_timeout_seconds),"attestation_public_key":value.attestation_public_key or "","attestation_private_key_env":value.attestation_private_key_env or ""}
         signer = lambda value: {"signer_id":value.signer_id,"key_name":value.key_name,"expected_public_key":value.expected_public_key,"expected_key_version":str(value.expected_key_version),"key_epochs":[{"key_version":str(epoch.key_version),"public_key":epoch.public_key,"activation_time_ms":str(epoch.activation_time_ms),"retirement_time_ms":"" if epoch.retirement_time_ms is None else str(epoch.retirement_time_ms)} for epoch in value.key_epochs]}
-        payload = {"environment":self.environment,"solana":{"cluster":self.solana.cluster,"genesis_hash":self.solana.genesis_hash,"prophet_program_id":self.solana.prophet_program_id},"resolver_v2":{"schema_version":str(self.resolver_v2_schema_version)},"verifier":{"implementation_id":self.verifier.implementation_id,"version":self.verifier.version},"allowed_adapters":list(self.allowed_adapters),"limits":{"request_max_bytes":str(self.limits.request_max_bytes),"request_timeout_seconds":str(self.limits.request_timeout_seconds)},"freshness":{"default_max_evidence_age_seconds":str(self.freshness.default_max_evidence_age_seconds),"default_max_verification_age_seconds":str(self.freshness.default_max_verification_age_seconds)},"mode":self.mode,"signed_oracle_registry_fingerprint":"" if self.signed_oracle is None else self.signed_oracle.registry_fingerprint,"signed_oracle_bindings":[] if self.signed_oracle is None else [{"key_id":b.key_id,"key_set_version":b.key_set_version,"oracle_identity":b.oracle_identity} for b in self.signed_oracle.key_bindings],"zktls":None if self.zktls is None else {"provider_id":self.zktls.provider_id,"verifier_backend":self.zktls.verifier_backend,"allowed_proof_versions":list(self.zktls.allowed_proof_versions)},"coordinator":None if self.coordinator is None else {"verifier_a":client(self.coordinator.verifier_a),"verifier_b":client(self.coordinator.verifier_b),"sqlite_path":self.coordinator.sqlite_path,"internal_auth":{"token_env":self.coordinator.internal_auth.token_env},"request_timeout_seconds":str(self.coordinator.request_timeout_seconds)},"signing":None if self.signing is None else {"vault":{"address":self.signing.address,"auth":{"token_env":self.signing.token_env},"transit_mount":self.signing.transit_mount,"request_timeout_seconds":str(self.signing.request_timeout_seconds),"backend":self.signing.backend},"journal_path":self.signing.journal_path or "","signers":{"a":signer(self.signing.signer_a),"b":signer(self.signing.signer_b)}}}
+        payload = {
+            "environment": self.environment,
+            "solana": {"cluster": self.solana.cluster, "genesis_hash": self.solana.genesis_hash, "prophet_program_id": self.solana.prophet_program_id},
+            "resolver_v2": {"schema_version": str(self.resolver_v2_schema_version)},
+            "verifier": {"implementation_id": self.verifier.implementation_id, "version": self.verifier.version},
+            "verifier_attestation": None if self.verifier_attestation is None else {"public_key": self.verifier_attestation.public_key, "private_key_env": self.verifier_attestation.private_key_env},
+            "allowed_adapters": list(self.allowed_adapters),
+            "limits": {"request_max_bytes": str(self.limits.request_max_bytes), "request_timeout_seconds": str(self.limits.request_timeout_seconds)},
+            "freshness": {"default_max_evidence_age_seconds": str(self.freshness.default_max_evidence_age_seconds), "default_max_verification_age_seconds": str(self.freshness.default_max_verification_age_seconds)},
+            "mode": self.mode,
+            "signed_oracle_registry_fingerprint": "" if self.signed_oracle is None else self.signed_oracle.registry_fingerprint,
+            "signed_oracle_bindings": [] if self.signed_oracle is None else [{"key_id": b.key_id, "key_set_version": b.key_set_version, "oracle_identity": b.oracle_identity} for b in self.signed_oracle.key_bindings],
+            "zktls": None if self.zktls is None else {"provider_id": self.zktls.provider_id, "verifier_backend": self.zktls.verifier_backend, "allowed_proof_versions": list(self.zktls.allowed_proof_versions)},
+            "coordinator": None if self.coordinator is None else {"verifier_a": client(self.coordinator.verifier_a), "verifier_b": client(self.coordinator.verifier_b), "sqlite_path": self.coordinator.sqlite_path, "internal_auth": {"token_env": self.coordinator.internal_auth.token_env}, "request_timeout_seconds": str(self.coordinator.request_timeout_seconds)},
+            "signing": None if self.signing is None else {"vault": {"address": self.signing.address, "auth": {"token_env": self.signing.token_env}, "transit_mount": self.signing.transit_mount, "request_timeout_seconds": str(self.signing.request_timeout_seconds), "backend": self.signing.backend}, "journal_path": self.signing.journal_path or "", "signers": {"a": signer(self.signing.signer_a), "b": signer(self.signing.signer_b)}},
+        }
         if self.settlement_execution is not None:
             execution = self.settlement_execution
             payload["settlement_execution"] = {"rpc_url_env":execution.rpc_url_env,"expected_cluster":execution.expected_cluster,"expected_genesis_hash":execution.expected_genesis_hash,"fee_payer":{"keypair_path_env":execution.fee_payer.keypair_path_env},"rpc":{"timeout_seconds":str(execution.rpc.timeout_seconds),"commitment":execution.rpc.commitment},"journal_path":execution.journal_path or ""}
         return hashlib.sha256(b"PROPHET_RESOLVER_RUNTIME_CONFIG_V1\0" + resolver_v2.canonical_json_bytes(payload)).hexdigest()
 
 def _coordinator_client(value: Any, name: str) -> CoordinatorVerifierServiceConfig:
-    row = _obj(value, {"base_url","auth_token_env","expected_verifier_id","expected_verifier_version","expected_verifier_implementation_digest","request_timeout_seconds"}, name)
+    required = {"base_url","auth_token_env","expected_verifier_id","expected_verifier_version","expected_verifier_implementation_digest","request_timeout_seconds"}
+    if not isinstance(value, dict) or not required.issubset(value) or set(value) - required - {"attestation_public_key", "attestation_private_key_env"}:
+        raise RuntimeConfigError(f"{name} has unknown or missing fields")
+    row = value
     base_url = _text(row["base_url"], f"{name}.base_url")
     try:
         parsed = urlsplit(base_url)
@@ -112,7 +133,17 @@ def _coordinator_client(value: Any, name: str) -> CoordinatorVerifierServiceConf
         resolver_v2._validate_adapter(identity)
     except resolver_v2.ResolverV2Error as exc:
         raise RuntimeConfigError(f"{name}.expected verifier identity is invalid") from exc
-    return CoordinatorVerifierServiceConfig(base_url, _text(row["auth_token_env"], f"{name}.auth_token_env"), identity["adapter_id"], identity["adapter_version"], digest, _positive(row["request_timeout_seconds"], f"{name}.request_timeout_seconds"))
+    public_key = private_key_env = None
+    if "attestation_public_key" in row or "attestation_private_key_env" in row:
+        if "attestation_public_key" not in row or "attestation_private_key_env" not in row:
+            raise RuntimeConfigError(f"{name}.attestation identity is incomplete")
+        try:
+            public_key = _text(row["attestation_public_key"], f"{name}.attestation_public_key")
+            if str(Pubkey.from_string(public_key)) != public_key: raise ValueError
+        except Exception as exc:
+            raise RuntimeConfigError(f"{name}.attestation_public_key is invalid") from exc
+        private_key_env = _env_name(row["attestation_private_key_env"], f"{name}.attestation_private_key_env")
+    return CoordinatorVerifierServiceConfig(base_url, _text(row["auth_token_env"], f"{name}.auth_token_env"), identity["adapter_id"], identity["adapter_version"], digest, _positive(row["request_timeout_seconds"], f"{name}.request_timeout_seconds"), public_key, private_key_env)
 
 def parse_settlement_execution_config(
     value: Any,
@@ -162,7 +193,7 @@ def parse_settlement_execution_config(
 
 def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverRuntimeConfig:
     required={"schema_version","environment","mode","solana","resolver_v2","verifier","allowed_adapters","limits","freshness","internal_auth"}
-    if not isinstance(raw,dict) or not required.issubset(raw) or set(raw)-required-{"signed_oracle","zktls","coordinator","signing","settlement_execution"}: raise RuntimeConfigError("runtime config has unknown or missing fields")
+    if not isinstance(raw,dict) or not required.issubset(raw) or set(raw)-required-{"signed_oracle","zktls","coordinator","signing","settlement_execution","verifier_attestation"}: raise RuntimeConfigError("runtime config has unknown or missing fields")
     top=raw
     if top["schema_version"] != 1: raise RuntimeConfigError("unsupported schema_version")
     environment, mode = _text(top["environment"],"environment"), _text(top["mode"],"mode")
@@ -179,7 +210,15 @@ def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverR
     if not isinstance(adapters,list) or not adapters or any(not isinstance(a,str) or a not in _ADAPTERS for a in adapters) or len(adapters) != len(set(adapters)): raise RuntimeConfigError("allowed_adapters invalid")
     l = _obj(top["limits"], {"request_max_bytes","request_timeout_seconds"}, "limits"); f = _obj(top["freshness"], {"default_max_evidence_age_seconds","default_max_verification_age_seconds"}, "freshness")
     a = _obj(top["internal_auth"], {"token_env"}, "internal_auth")
-    signed=None; zktls=None; coordinator=None; signing=None; settlement_execution=None
+    signed=None; zktls=None; coordinator=None; signing=None; settlement_execution=None; verifier_attestation=None
+    if "verifier_attestation" in top:
+        row=_obj(top["verifier_attestation"], {"public_key", "private_key_env"}, "verifier_attestation")
+        try:
+            public_key = _text(row["public_key"], "verifier_attestation.public_key")
+            if str(Pubkey.from_string(public_key)) != public_key: raise ValueError
+        except Exception as exc:
+            raise RuntimeConfigError("verifier_attestation.public_key is invalid") from exc
+        verifier_attestation=VerifierAttestationRuntimeConfig(public_key, _env_name(row["private_key_env"], "verifier_attestation.private_key_env"))
     if "zktls" in adapters:
         if "zktls" not in top: raise RuntimeConfigError("zktls requires runtime configuration")
         zk=_obj(top["zktls"],{"provider_id","verifier_backend","allowed_proof_versions"},"zktls")
@@ -275,7 +314,7 @@ def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverR
         settlement_execution = parse_settlement_execution_config(
             top["settlement_execution"], solana=solana
         )
-    return ResolverRuntimeConfig(1,environment,mode,solana,2,VerifierRuntimeIdentity(_text(v["implementation_id"],"verifier.implementation_id"),_text(v["version"],"verifier.version")),tuple(sorted(adapters)),Limits(_positive(l["request_max_bytes"],"limits.request_max_bytes"),_positive(l["request_timeout_seconds"],"limits.request_timeout_seconds")),Freshness(_positive(f["default_max_evidence_age_seconds"],"freshness.default_max_evidence_age_seconds"),_positive(f["default_max_verification_age_seconds"],"freshness.default_max_verification_age_seconds")),InternalAuth(_text(a["token_env"],"internal_auth.token_env")),signed,zktls,coordinator,signing,settlement_execution)
+    return ResolverRuntimeConfig(1,environment,mode,solana,2,VerifierRuntimeIdentity(_text(v["implementation_id"],"verifier.implementation_id"),_text(v["version"],"verifier.version")),tuple(sorted(adapters)),Limits(_positive(l["request_max_bytes"],"limits.request_max_bytes"),_positive(l["request_timeout_seconds"],"limits.request_timeout_seconds")),Freshness(_positive(f["default_max_evidence_age_seconds"],"freshness.default_max_evidence_age_seconds"),_positive(f["default_max_verification_age_seconds"],"freshness.default_max_verification_age_seconds")),InternalAuth(_text(a["token_env"],"internal_auth.token_env")),signed,zktls,coordinator,signing,settlement_execution,verifier_attestation)
 
 def load_runtime_config(path: str | Path) -> ResolverRuntimeConfig:
     try: raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
