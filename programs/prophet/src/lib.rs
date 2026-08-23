@@ -163,16 +163,4 @@ pub mod prophet {
     pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
         instructions::redeem(ctx)
     }
-
-    pub fn emergency_resolve_invalid(
-        ctx: Context<UpdateMarketAuthority>,
-        proof_hash: [u8; 32],
-        public_inputs_hash: [u8; 32],
-    ) -> Result<()> {
-        instructions::emergency_resolve_invalid::emergency_resolve_invalid(
-            ctx,
-            proof_hash,
-            public_inputs_hash,
-        )
-    }
 }

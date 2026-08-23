@@ -376,8 +376,9 @@ At timeout, the policy may permit one of these explicit actions:
 1. **Continue pending:** market remains unresolved; operational escalation only.
 2. **Threshold Invalid:** an independently verified timeout condition plus the
    configured signer threshold produces `INVALID`.
-3. **Governed emergency Invalid:** retain the current authority emergency path
-   for legacy markets, with an evidence/audit bundle required operationally.
+3. **Threshold Invalid:** an explicit policy-approved `INVALID` outcome still
+   requires the market's pinned on-chain threshold authorization; there is no
+   authority settlement fallback.
 
 There is no automatic `YES` or `NO` on timeout.
 

@@ -35,7 +35,6 @@ export QUOTE_MINT="<your_quote_mint>"
 - `lock_market(...)` / `unlock_market(...)` / `sync_market_status(...)`
 - `update_market_schedule(...)`
 - `set_market_fee_config(...)` / `withdraw_protocol_fees(...)`
-- `emergency_resolve_invalid(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
 

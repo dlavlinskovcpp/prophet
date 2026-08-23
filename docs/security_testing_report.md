@@ -34,7 +34,7 @@ is in `tests/security_regression_seeds.md`.
 | STATE-02 | Locked and Resolved are terminal for matching and new orders; resolved markets cannot be lock/unlocked/resolved again. | instruction guards; state machine terminal no-op checks. |
 | STATE-03 | Cancellation, bounded refund, redemption, and bounded fee withdrawal preserve accounting after resolution. | instruction handlers; state machine after every operation. |
 | STATE-04 | Open-order counters are consistent with live order accounts and cannot underflow. | placement/match/cancel handlers; `prophet_invariants.ts` and state machine. |
-| STATE-05 | A resolved outcome is non-Undecided and is set once; payout liability changes only according to that outcome. | threshold/emergency resolution and payout tests. |
+| STATE-05 | A resolved outcome is non-Undecided and is set once; payout liability changes only according to that outcome. | threshold resolution and payout tests. |
 | STATE-06 | Market configuration, probability bounds, order sequence, account ownership/PDA binding, fee-recipient binding, and notary threshold/message validation fail closed. | existing Rust validation tests plus Anchor threshold/governance integration suites. |
 
 ## Added test assets

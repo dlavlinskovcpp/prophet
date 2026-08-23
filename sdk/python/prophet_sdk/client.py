@@ -695,27 +695,6 @@ class ProphetClient:
         ix = Instruction(self.program_id, data, keys)
         return submit_and_confirm(self.client, [ix], self.payer)
 
-    def emergency_resolve_invalid(
-        self,
-        market: Pubkey,
-        proof_hash: bytes,
-        public_inputs_hash: bytes,
-    ) -> str:
-        if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
-            raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
-
-        data = self._get_discriminator("emergency_resolve_invalid")
-        data += proof_hash
-        data += public_inputs_hash
-
-        keys = [
-            AccountMeta(market, False, True),
-            AccountMeta(self.payer.pubkey(), True, False),
-        ]
-
-        ix = Instruction(self.program_id, data, keys)
-        return submit_and_confirm(self.client, [ix], self.payer)
-
     # -------------------------------------------------------------------------
     # Resolution Flow
     # -------------------------------------------------------------------------

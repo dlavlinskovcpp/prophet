@@ -119,12 +119,14 @@ Fee config freezes after the first order.
 
 No.
 
-The normal path is threshold resolution. Governance can only force `Invalid` through the narrow emergency path when the market is already locked.
+Threshold resolution is the only path. `Invalid`, like `Yes` and `No`, requires
+the market's pinned notary threshold; a governance or signer outage does not
+create an authority fallback.
 
 ### What is the difference between `Open`, `Locked`, and `Resolved`?
 
 - `Open`: trading is allowed
-- `Locked`: trading is no longer allowed; market waits for final resolution or emergency invalidation
+- `Locked`: trading is no longer allowed; market waits for threshold-authorized final resolution
 - `Resolved`: outcome is final and redemption is enabled
 
 ### What does the devnet quickstart prove, and what does it not prove?

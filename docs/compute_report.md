@@ -28,7 +28,6 @@ are based on the requested limit rather than actual use. See the official
 |---|---:|---:|---:|---:|
 | `cancel_order` | 11,748 | 11,748 | 0 | 0.0% |
 | `claim_refunds` | 16,300 | 15,012 | 1,288 | 7.9% |
-| `emergency_resolve_invalid` | 5,270 | 5,260 | 10 | 0.2% |
 | `initialize_market_v2` | 42,995 | 42,782 | 213 | 0.5% |
 | `initialize_notary_config` | 12,825 | 9,765 | 3,060 | 23.9% |
 | `lock_market` | 5,177 | 5,167 | 10 | 0.2% |
@@ -43,7 +42,7 @@ are based on the requested limit rather than actual use. See the official
 | `update_market_schedule` | 5,239 | 5,231 | 8 | 0.2% |
 | `update_notary_config` | 6,188 | 6,101 | 87 | 1.4% |
 | `withdraw_protocol_fees` | 13,629 | 13,627 | 2 | <0.1% |
-| **Sum of instruction medians** | **218,925** | **210,580** | **8,345** | **3.8%** |
+| **Sum of instruction medians** | **213,655** | **205,320** | **8,335** | **3.9%** |
 
 The summed row is an equal-weight comparison of instruction medians, not the cost
 of a single transaction or a production workload forecast.

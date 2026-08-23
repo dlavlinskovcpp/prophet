@@ -148,7 +148,9 @@ Mitigation:
 - durable audit logs
 - on-chain rejection of retroactive schedule updates and schedule mutation after first economic activity
 - immutable notary snapshots prevent later administrator rotation from rewriting the trust root of an already-created market
-- authority emergency `Invalid` resolution is unavailable before the market's advertised `resolve_ts`
+- no authority-controlled instruction can resolve a market or set `Invalid`; verifier,
+  signer, and Vault failures leave the market unresolved until the pinned threshold
+  authorization is satisfied
 - on-chain rejection of zero market limits, unusable notary keys, and threshold
   configurations that cannot fit in the canonical V2 resolution transaction
 
