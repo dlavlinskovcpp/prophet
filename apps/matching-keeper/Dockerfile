@@ -66,6 +66,9 @@ LABEL org.opencontainers.image.revision="${IMAGE_REVISION}" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    HOME="/nonexistent" \
+    TMPDIR="/tmp" \
+    XDG_CACHE_HOME="/tmp/.cache" \
     PATH="/app/apps/matching-keeper/.venv/bin:${PATH}" \
     PYTHONPATH="/app/apps/matching-keeper"
 
@@ -100,7 +103,14 @@ RUN rm -rf \
 COPY sdk/python/prophet_sdk/ /app/sdk/python/prophet_sdk/
 COPY apps/matching-keeper/src/ /app/apps/matching-keeper/src/
 
-RUN mkdir -p /app/apps/matching-keeper/state
+# Fixed application identity. The application source, SDK code, and virtualenv
+# remain root-owned; the keeper state directory is the only writable image path.
+RUN groupadd --system --gid 10001 prophet \
+    && useradd --system --uid 10001 --gid prophet --home-dir /nonexistent --shell /usr/sbin/nologin prophet \
+    && mkdir -p /app/apps/matching-keeper/state \
+    && chown prophet:prophet /app/apps/matching-keeper/state
+
+USER 10001:10001
 
 EXPOSE 8010
 

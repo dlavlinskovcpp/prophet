@@ -75,6 +75,9 @@ LABEL org.opencontainers.image.revision="${IMAGE_REVISION}" \
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    HOME="/nonexistent" \
+    TMPDIR="/tmp" \
+    XDG_CACHE_HOME="/tmp/.cache" \
     PATH="/app/apps/oracle-attester/.venv/bin:${PATH}" \
     PYTHONPATH="/app/apps/oracle-attester"
 
@@ -109,8 +112,14 @@ RUN rm -rf \
 COPY apps/oracle-attester/src/ /app/apps/oracle-attester/src/
 COPY apps/oracle-attester/scripts/ /app/apps/oracle-attester/scripts/
 
-# Preserve existing operational script path without duplicating source.
-RUN mkdir -p /app/resolver_store /app/proof_store /app/audit /app/runtime \
+# Fixed application identity. Application source, SDK code, and the virtualenv
+# remain root-owned; only explicit runtime-state mountpoints are writable.
+RUN groupadd --system --gid 10001 prophet \
+    && useradd --system --uid 10001 --gid prophet --home-dir /nonexistent --shell /usr/sbin/nologin prophet \
+    && mkdir -p /app/resolver_store /app/proof_store /app/audit /app/runtime /var/lib/prophet \
+    && chown prophet:prophet /app/resolver_store /app/proof_store /app/audit /var/lib/prophet \
     && ln -s /app/apps/oracle-attester/scripts /app/scripts
+
+USER 10001:10001
 
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
