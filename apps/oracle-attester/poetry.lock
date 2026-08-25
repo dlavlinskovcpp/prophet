@@ -1336,6 +1336,23 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<8)"]
 
 [[package]]
+name = "rfc8785"
+version = "0.1.4"
+description = "A pure-Python implementation of RFC 8785 (JSON Canonicalization Scheme)"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "rfc8785-0.1.4-py3-none-any.whl", hash = "sha256:520d690b448ecf0703691c76e1a34a24ddcd4fc5bc41d589cb7c58ec651bcd48"},
+    {file = "rfc8785-0.1.4.tar.gz", hash = "sha256:e545841329fe0eee4f6a3b44e7034343100c12b4ec566dc06ca9735681deb4da"},
+]
+
+[package.extras]
+dev = ["build", "rfc8785[doc,lint,test]"]
+doc = ["pdoc"]
+lint = ["interrogate", "mypy (>=1.0)", "ruff (>=0.3,<1.0)"]
+test = ["coverage", "pytest", "pytest-cov"]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
@@ -1863,4 +1880,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "0d4b89f8c55500a63a38ad78ec17273af3d29d8f73ac9ae59dda30c268e04f0e"
+content-hash = "a24f9d44272c7f9041c9b8dbbc54635cf8a96fde8c8f2ea9d25eda5162fb8039"
