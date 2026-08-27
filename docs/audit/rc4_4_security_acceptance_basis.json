@@ -1,0 +1,48 @@
+{
+  "schema": "PROPHET_RC44_SECURITY_ACCEPTANCE_BASIS_V1",
+  "version": 1,
+  "acceptance_basis_revision": 3,
+  "purpose": "Reproducible RC4.4 security acceptance evidence.",
+  "supersession": {
+    "previous_acceptance_basis": "POST-I5",
+    "previous_manifest_sha256": "439ff97be38b52a7c5ac05de19ae8167d20d38660fd9b5815feee80e13647840",
+    "current_acceptance_basis": "POST-R5",
+    "reason": "20 permanent R5 signed-package temporal-authority regressions",
+    "lane_reconciliations": {
+      "p0c3e1": {"previous_passed": 295, "current_passed": 315, "delta_passed": 20},
+      "oracle_attester": {"previous_passed": 1300, "current_passed": 1320, "delta_passed": 20, "previous_skipped": 3, "current_skipped": 3, "delta_skipped": 0}
+    }
+  },
+  "historical_metric": {
+    "name": "frozen signer/security 386",
+    "status": "UNVERIFIABLE / RETIRED AS ACCEPTANCE EVIDENCE",
+    "acceptance_authority": "NONE",
+    "recovery_attempt": "complete reachable git history searched",
+    "persisted_selector_found": false,
+    "replacement": "repository-backed RC4.4 security acceptance basis",
+    "arbitrary_numerical_reconstruction": "FORBIDDEN"
+  },
+  "acceptance_semantics": {
+    "authority_root": "FRESH VERIFIED SIGNED PACKAGE + RAW EVIDENCE + TRUSTED CONTEXT ONLY",
+    "package_deadline_source": "VERIFIED SIGNED PACKAGE.valid_until ONLY",
+    "caller_package_deadline_authority": "NONE",
+    "one_trusted_now_per_decision": true,
+    "subordinate_containment_deadline": "SIGNED PACKAGE DEADLINE"
+  },
+  "lanes": [
+    {"id":"i4_r4","purpose":"signed-package-bound R3C authority boundary","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_effective_authority.py"],"expected_passed":42,"expected_skipped":0},
+    {"id":"i5_i2b","purpose":"frozen V2 production verification, adversarial R3C evidence binding, failed V1 semantics, and historical R1 supersession","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_v2_production_verification.py"],"expected_passed":39,"expected_skipped":0},
+    {"id":"r5","purpose":"signed-package freshness, signed-package deadline authority, signature-envelope temporal validity, subordinate containment binding, and active-facade temporal boundary regressions","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_package_freshness.py"],"expected_passed":20,"expected_skipped":0},
+    {"id":"i1","purpose":"strict 28-item R3C inventory policy","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_operational_evidence_r3c_i1.py"],"expected_passed":46,"expected_skipped":0},
+    {"id":"i2","purpose":"Provider Result V2 verifier-origin evidence","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_provider_result_v2.py"],"expected_passed":21,"expected_skipped":0},
+    {"id":"i3","purpose":"Vault-admin package provenance bridge","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_vault_admin_package_bridge.py"],"expected_passed":13,"expected_skipped":0},
+    {"id":"d2","purpose":"Vault-admin attestation primitive and immutable vectors","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_vault_admin_attestation.py"],"expected_passed":33,"expected_skipped":0},
+    {"id":"mr_i1","purpose":"manual-review permit canonical contract","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_manual_review_permit.py"],"expected_passed":66,"expected_skipped":0},
+    {"id":"mr_i2","purpose":"verified manual-review permit authority","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_verified_manual_review_permit.py"],"expected_passed":24,"expected_skipped":0},
+    {"id":"p0c3e1","purpose":"complete operational-evidence acceptance lane; selector includes the persisted R5 signed-package temporal-authority regressions","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_effective_authority.py","tests/test_r3c_v2_production_verification.py","tests/test_r3c_package_freshness.py","tests/test_operational_evidence_r3c_i1.py","tests/test_provider_result_v2.py","tests/test_vault_admin_package_bridge.py","tests/test_vault_admin_attestation.py","tests/test_manual_review_permit.py","tests/test_verified_manual_review_permit.py","tests/test_rfc8785_dependency.py"],"expected_passed":315,"expected_skipped":0},
+    {"id":"rfc8785","purpose":"pinned RFC 8785 dependency conformance","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_rfc8785_dependency.py"],"expected_passed":11,"expected_skipped":0},
+    {"id":"oracle_attester","purpose":"complete current oracle-attester suite","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests"],"expected_passed":1320,"expected_skipped":3},
+    {"id":"resolver_v2","purpose":"frozen Resolver V2 compatibility","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_resolver_v2_adapters.py","tests/test_resolver_v2_multi_verifier.py","tests/test_resolver_v2_oracle_adapters.py","tests/test_resolver_v2_pipeline.py"],"expected_passed":64,"expected_skipped":0},
+    {"id":"rust_frozen_layout","purpose":"frozen 235-byte settlement layout","workdir":".","command":["cargo","test","-p","prophet","--lib","utils::attestation::tests::legacy_resolution_message_layout_is_byte_for_byte_stable"],"expected_passed":1,"expected_skipped":0}
+  ]
+}

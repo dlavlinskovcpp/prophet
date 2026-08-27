@@ -1,0 +1,64 @@
+{
+  "provenance": {
+    "generator": "literal P0C3A static runtime inputs",
+    "independent_of": [
+      "src.r3c_effective_authority"
+    ]
+  },
+  "trusted_static_facts": {
+    "environment": "public-devnet",
+    "evidence_set_id": "evidence-set-001",
+    "facts": [
+      {
+        "artifact_id": "r3c-a-worker-reload-concurrency",
+        "evidence_category": "worker_reload_concurrency",
+        "execution_concurrency": 1,
+        "fact_type": "worker_runtime",
+        "raw_artifact_sha256": "de4db3d65e00132bd37c8ced369d779281e41cfd4a806b802d9031375b3c98b0",
+        "redacted_artifact_sha256": "a53e19dac466fe0506450079c657e8307bd8311454406295895fc98ade80ceac",
+        "reload": false,
+        "signer_role": "A",
+        "workers": 1
+      },
+      {
+        "artifact_id": "artifact-a",
+        "evidence_category": "vault_key_identity_version",
+        "fact_type": "vault_key_identity",
+        "raw_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "redacted_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signer_key_version": 1,
+        "signer_public_key": "66fEp6X3QADW85WJ5CLDFzJvMrC44xUjPdanizFxJSC",
+        "signer_role": "A",
+        "vault_key_name": "prophet-signer-a"
+      },
+      {
+        "artifact_id": "r3c-b-worker-reload-concurrency",
+        "evidence_category": "worker_reload_concurrency",
+        "execution_concurrency": 1,
+        "fact_type": "worker_runtime",
+        "raw_artifact_sha256": "dcc082e053a264508112ab5707844f250f812fd9d34678fab4a3ab619d109396",
+        "redacted_artifact_sha256": "68dc70c4c8a7e254eb02e64042d1c53a4c27c8a7aa6ee36ed97f6d75fbed7227",
+        "reload": false,
+        "signer_role": "B",
+        "workers": 1
+      },
+      {
+        "artifact_id": "r3c-b-vault-key-identity-version",
+        "evidence_category": "vault_key_identity_version",
+        "fact_type": "vault_key_identity",
+        "raw_artifact_sha256": "e8f5cbc0e3dd9000f810cb436120545869f6208338f64cdff65da507068a0092",
+        "redacted_artifact_sha256": "0d159c263ce0b5c488a464b0616b15941cbc110ef7841a7d26721718686a90e0",
+        "signer_key_version": 1,
+        "signer_public_key": "EVNwqfgkUnJoMqBqiHgDfa3TLZPQocX1hpcbAXbpcSLv",
+        "signer_role": "B",
+        "vault_key_name": "prophet-signer-b"
+      }
+    ],
+    "git_sha": "af50c01f562b6cb1a0851fa0f59c45d820d595f8",
+    "schema": "PROPHET_R3C_TRUSTED_STATIC_FACTS_V1",
+    "version": 1
+  },
+  "vector_id": "trusted-static-facts",
+  "vector_schema": "PROPHET_R3C_TRUSTED_STATIC_FACTS_VECTOR_V1",
+  "vector_version": 1
+}
