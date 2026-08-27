@@ -1,0 +1,551 @@
+{
+  "binding_table": [
+    {
+      "artifact_id": "r3c-v2-a-host-vm",
+      "evidence_category": "host_vm",
+      "expected_evidence_source": "provider-a-host_vm",
+      "package_item_id": "A:host_vm",
+      "raw_artifact_sha256": "0b7c955ce97acbe096b31bdef76d5ce1b41093b4a173dec4818161a19b7b07bd",
+      "redacted_artifact_sha256": "44185d5bf087dff84aafcb504ecec8797a4ceeac11b6b8f42fb506d5bbefd808",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-runtime-principal",
+      "evidence_category": "runtime_principal",
+      "expected_evidence_source": "provider-a-runtime_principal",
+      "package_item_id": "A:runtime_principal",
+      "raw_artifact_sha256": "d0b18ee80f8b843911db0451e5e1b9819578d5e62eabfc196a69b38c172cd050",
+      "redacted_artifact_sha256": "3016c9279c370c09c94d393181555ab256988670591e9f7f8674d422a1d84937",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-runtime-admin-domain",
+      "evidence_category": "runtime_admin_domain",
+      "expected_evidence_source": "provider-a-runtime_admin_domain",
+      "package_item_id": "A:runtime_admin_domain",
+      "raw_artifact_sha256": "915a0289bf2a999320195f55c4a9a2c38f0d6f07e55ea1229c7c4548c6006aee",
+      "redacted_artifact_sha256": "d97cf07ae1ec6810eeb0addcd63df29edd40aa0e870f4cec0e4ae787bb650434",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-vault-auth-principal",
+      "evidence_category": "vault_auth_principal",
+      "expected_evidence_source": "vault-admin-a-vault_auth_principal",
+      "package_item_id": "A:vault_auth_principal",
+      "raw_artifact_sha256": "37a5d592f2e972bc02acb219b8aeb0fc46470d6aa93ae8bd9e7c98ececb77ffb",
+      "redacted_artifact_sha256": "149f5b869213d6f0b6d52eb5718f707aba800236587688cb764a42b24adff814",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-vault-admin-domain",
+      "evidence_category": "vault_admin_domain",
+      "expected_evidence_source": "vault-admin-a-vault_admin_domain",
+      "package_item_id": "A:vault_admin_domain",
+      "raw_artifact_sha256": "5b7efe5bceac2b6d32d8ed7aadd2e615983ab1d4580d2826dcbd7b9c4f8743bb",
+      "redacted_artifact_sha256": "83145b497c616a3119609e8243b8f7cd0db8ab2f76df97e31b804387045deaa5",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-vault-account-tenant",
+      "evidence_category": "vault_account_tenant",
+      "expected_evidence_source": "vault-admin-a-vault_account_tenant",
+      "package_item_id": "A:vault_account_tenant",
+      "raw_artifact_sha256": "b01975e0f22ae17e0d2d77834cfc05fc0c719aa5eeac0096c6ca25839efeb4cd",
+      "redacted_artifact_sha256": "5abad78e45b5997b1fa90187bc62235e0c2797a80f030b32d021c1f7fd284b8f",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-vault-key-identity-version",
+      "evidence_category": "vault_key_identity_version",
+      "expected_evidence_source": "vault-admin-a-vault_key_identity_version",
+      "package_item_id": "A:vault_key_identity_version",
+      "raw_artifact_sha256": "a90816519f1281635d4d6875f5ceb72ec920ef97a73b032cfaf818aea77991d9",
+      "redacted_artifact_sha256": "4f8e244e5dd76fce6cc4dd4b40d242f8c9a9d4fa9ea1d7b9fcdef9a0bb85e354",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-rpc-credential-principal",
+      "evidence_category": "rpc_credential_principal",
+      "expected_evidence_source": "provider-a-rpc_credential_principal",
+      "package_item_id": "A:rpc_credential_principal",
+      "raw_artifact_sha256": "62271d6abfea0c3d8e5be2e0be53963afc0cee04716312ea8cd5a971322a051b",
+      "redacted_artifact_sha256": "6520c2e15bc080b966a16733f2d99f21f0ea3647bf3655cbe75a832535a8e100",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-rpc-provider",
+      "evidence_category": "rpc_provider",
+      "expected_evidence_source": "provider-a-rpc_provider",
+      "package_item_id": "A:rpc_provider",
+      "raw_artifact_sha256": "5f2d95c461111625ea5504a6ef126fc3b31de7ff9dd61b9dcbf5142725d1b95e",
+      "redacted_artifact_sha256": "0ddf7a2dc4df310ab419a038b14140159f14ab7b9011ccbce0dcf880832d5317",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-rpc-account-project",
+      "evidence_category": "rpc_account_project",
+      "expected_evidence_source": "provider-a-rpc_account_project",
+      "package_item_id": "A:rpc_account_project",
+      "raw_artifact_sha256": "37657ec279ea70cfae899232f9ae9a3e5925f8c68743a6380b96c21689e6e7c3",
+      "redacted_artifact_sha256": "2bcdee285649d8f5c2f5d7ea9d6d259f366aa260b5a2e009676c5e2a50455be1",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "artifact-a-journal-001",
+      "evidence_category": "journal_storage",
+      "expected_evidence_source": "provider-a-journal_storage",
+      "package_item_id": "A:journal_storage",
+      "raw_artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "redacted_artifact_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-audit-domain",
+      "evidence_category": "audit_domain",
+      "expected_evidence_source": "provider-a-audit_domain",
+      "package_item_id": "A:audit_domain",
+      "raw_artifact_sha256": "7ba4127a81b7ca167867052e9a7c2912675f88dd74baff02d21992427f20b55d",
+      "redacted_artifact_sha256": "6172062e3a3cd24e0260bfa9d539a0a9ed630d15095f236b9326279b9bbf23dc",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-tls-ingress",
+      "evidence_category": "tls_ingress",
+      "expected_evidence_source": "provider-a-tls_ingress",
+      "package_item_id": "A:tls_ingress",
+      "raw_artifact_sha256": "1a4d226777a76314505a189da8b2529e91c315a47389d453fda3e77f28515791",
+      "redacted_artifact_sha256": "fd6bed9d2d0b63c611087c6a7d4e0562032526489bad0179c0ec4509883e598e",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-a-worker-reload-concurrency",
+      "evidence_category": "worker_reload_concurrency",
+      "expected_evidence_source": "trusted-static",
+      "package_item_id": "A:worker_reload_concurrency",
+      "raw_artifact_sha256": "31902756192d1db672d2f4b256b92d6d1202d578b33415deb6f028ffed277bb7",
+      "redacted_artifact_sha256": "1c3fe1a196ac482b9f0e538500f272a1481c45673fccac37b75f0eeb6972e18d",
+      "signer_role": "A"
+    },
+    {
+      "artifact_id": "r3c-v2-b-host-vm",
+      "evidence_category": "host_vm",
+      "expected_evidence_source": "provider-b-host_vm",
+      "package_item_id": "B:host_vm",
+      "raw_artifact_sha256": "41722a826e5bd7375351581dd8cf6f1709bd16460a7980d5b88c7e981a6231aa",
+      "redacted_artifact_sha256": "8e04b46a036b5b677a97a28d3d6d7a28b9a5839bdba048d4f1aca7f709de14d2",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-runtime-principal",
+      "evidence_category": "runtime_principal",
+      "expected_evidence_source": "provider-b-runtime_principal",
+      "package_item_id": "B:runtime_principal",
+      "raw_artifact_sha256": "c4cf774dc84f8593543b3e5697f393fb0d51b2515f53d0bcd0e2ec0b2c3731a3",
+      "redacted_artifact_sha256": "662536d0febe88cb67ef8de6342722021c90196d06a36e9f923e7e95bb96c288",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-runtime-admin-domain",
+      "evidence_category": "runtime_admin_domain",
+      "expected_evidence_source": "provider-b-runtime_admin_domain",
+      "package_item_id": "B:runtime_admin_domain",
+      "raw_artifact_sha256": "a0c4ec8e286dcd96d6ed9a74b0deeb570f8b24809291abff65bad69b1f152269",
+      "redacted_artifact_sha256": "7789b5261dd2d78661c3006805c7dc81dddff9abaeeda2626cff36e75c2107a6",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-vault-auth-principal",
+      "evidence_category": "vault_auth_principal",
+      "expected_evidence_source": "vault-admin-b-vault_auth_principal",
+      "package_item_id": "B:vault_auth_principal",
+      "raw_artifact_sha256": "ebf736b31c25915a5158ab10731031a99f97452d58a394d472db2f4b0570798a",
+      "redacted_artifact_sha256": "c798427f1f9c23a9db3e0a3c96f591a6ef18de27a74000969113fc6b5e032371",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-vault-admin-domain",
+      "evidence_category": "vault_admin_domain",
+      "expected_evidence_source": "vault-admin-b-vault_admin_domain",
+      "package_item_id": "B:vault_admin_domain",
+      "raw_artifact_sha256": "0ca3b9dee6d703849d07517014abf0b5791581d68b10ac2de97c900f485f6b9e",
+      "redacted_artifact_sha256": "beac20df0ef14e78df278686aa3fc1e8ab379c3481ab430e782afc095105d13d",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-vault-account-tenant",
+      "evidence_category": "vault_account_tenant",
+      "expected_evidence_source": "vault-admin-b-vault_account_tenant",
+      "package_item_id": "B:vault_account_tenant",
+      "raw_artifact_sha256": "723a5773682fdf332c4d62ffdd2b28f6ec7156621285bfb3a8bb322e05a27fc2",
+      "redacted_artifact_sha256": "074485e3cdebbbf9e0e65a3fe7b4062e5780de9119639668abb2755b8d29ff81",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-vault-key-identity-version",
+      "evidence_category": "vault_key_identity_version",
+      "expected_evidence_source": "vault-admin-b-vault_key_identity_version",
+      "package_item_id": "B:vault_key_identity_version",
+      "raw_artifact_sha256": "d7754a4da14b40ad6164a3794bf754ba893f473485d593f87200107d47d767bf",
+      "redacted_artifact_sha256": "2c1ca4961f0a2e03d48376b3f227c5d6f208684c504a14ea339414af1d961f28",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-rpc-credential-principal",
+      "evidence_category": "rpc_credential_principal",
+      "expected_evidence_source": "provider-b-rpc_credential_principal",
+      "package_item_id": "B:rpc_credential_principal",
+      "raw_artifact_sha256": "f0ce3c8f901e760f2481d15d5a4d4568022cfdf5908f00c9d9bb5efa4f09272e",
+      "redacted_artifact_sha256": "8081f444a0742d60002c471250f6a8cc95a821b6c5142f5128c01c6e76dafa57",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-rpc-provider",
+      "evidence_category": "rpc_provider",
+      "expected_evidence_source": "provider-b-rpc_provider",
+      "package_item_id": "B:rpc_provider",
+      "raw_artifact_sha256": "845a1f8a459d7644d0939342b9e0a7d44e8a51c062cc6ba8b36ab72e988e8426",
+      "redacted_artifact_sha256": "fe3d20d48ccc519dd4665092f38cea8c55b5b265792ae0dbced8dcc57d89d23e",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-rpc-account-project",
+      "evidence_category": "rpc_account_project",
+      "expected_evidence_source": "provider-b-rpc_account_project",
+      "package_item_id": "B:rpc_account_project",
+      "raw_artifact_sha256": "4bfc26f7fc6574b6eee1d6e7bf4d04563893d71dc4936f675b7b2ed9f9b9ae7d",
+      "redacted_artifact_sha256": "eb0989a1f463f06b4639b81fbb7179450a10220e64ff766af1286d8734c017c7",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-journal-storage",
+      "evidence_category": "journal_storage",
+      "expected_evidence_source": "provider-b-journal_storage",
+      "package_item_id": "B:journal_storage",
+      "raw_artifact_sha256": "de5e5ed5314d6db94fcf17aca37074e4354a98a188b9e08be4351f150d3ab137",
+      "redacted_artifact_sha256": "72e22fe6bb5e5649e4bfa504da46894a58236e791724355f61660197b9e13536",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-audit-domain",
+      "evidence_category": "audit_domain",
+      "expected_evidence_source": "provider-b-audit_domain",
+      "package_item_id": "B:audit_domain",
+      "raw_artifact_sha256": "c79101a299e4080fe462edc31337a5785832e0d0af5988d7ea3cb1f78426819d",
+      "redacted_artifact_sha256": "c5c53a986b7574307e55684e6287ad7a6e436c848bc0e2ddaa2606837e9fcbf1",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-tls-ingress",
+      "evidence_category": "tls_ingress",
+      "expected_evidence_source": "provider-b-tls_ingress",
+      "package_item_id": "B:tls_ingress",
+      "raw_artifact_sha256": "c46ab1323afde4ee06937a3d47828cc0b6a88285c921441e5eac26aaca9a6d68",
+      "redacted_artifact_sha256": "1012ba98795158202acbc92c09717acf8c8b6d7cba32c0d3d68ef78b59de6dfb",
+      "signer_role": "B"
+    },
+    {
+      "artifact_id": "r3c-v2-b-worker-reload-concurrency",
+      "evidence_category": "worker_reload_concurrency",
+      "expected_evidence_source": "trusted-static",
+      "package_item_id": "B:worker_reload_concurrency",
+      "raw_artifact_sha256": "cdcd930723a4d4772ff3b9f612b529ac81be8ac2eb74b06aa57d7d1d727118ac",
+      "redacted_artifact_sha256": "21d47cd6fd4dfa5e1e7444ef09fbd28c8ba851bc274e6f864c77e69fbbc045f3",
+      "signer_role": "B"
+    }
+  ],
+  "constituent_count": 33,
+  "constituents": [
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/manual-review/a-audit_domain.json",
+      "schema": "PROPHET_R3C_V2_MANUAL_REVIEW_VECTOR_V1",
+      "sha256": "b5031935b9a93b553a977d10ef9f66fca9623cbe36d03cb717857bbd53c98602",
+      "vector_id": "manual-a-audit_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/manual-review/b-audit_domain.json",
+      "schema": "PROPHET_R3C_V2_MANUAL_REVIEW_VECTOR_V1",
+      "sha256": "00047c80c1cc3c307fc75d150663386ecd1244d804506828f2f79a8ffe4f617b",
+      "vector_id": "manual-b-audit_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/manual-review/b-journal_storage.json",
+      "schema": "PROPHET_R3C_V2_MANUAL_REVIEW_VECTOR_V1",
+      "sha256": "bfe634848145eb494c8183ebe83897ecf269b6fcc81ba82af8aba14e8b9d503b",
+      "vector_id": "manual-b-journal_storage"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/packages/manual-review-alternative.json",
+      "schema": "PROPHET_R3C_V2_PACKAGE_VECTOR_V1",
+      "sha256": "3ba8b15f0616d41cf42500d58af3d0e2fe56054002d966904f6cda4e6940adbf",
+      "vector_id": "package-manual-review-alternative"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/packages/provider-primary.json",
+      "schema": "PROPHET_R3C_V2_PACKAGE_VECTOR_V1",
+      "sha256": "e554c4158cf430494ea386967f356f275fc55b840d05ec19e4a032c1c239686b",
+      "vector_id": "package-provider-primary"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-audit_domain.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "f4a4b4fb92b95cd6acfcbd28fe6b429a6a8ca397b95e7731d38fbea0c4e81fce",
+      "vector_id": "provider-a-audit_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-host_vm.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "25731bd0f7760cf0e4eb6ed04b65a692fbbbea4909835b4251e81c0066f501f5",
+      "vector_id": "provider-a-host_vm"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-journal_storage.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "cdaaa05a871de895b0be0ea0742215cc82d66717fea7180fe2670838cfac3e1d",
+      "vector_id": "provider-a-journal_storage"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-rpc_account_project.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "0090770a98bf8204fbe7dd8e058641bca2b244e9c5baf016ef26791cc87876dc",
+      "vector_id": "provider-a-rpc_account_project"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-rpc_credential_principal.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "2551748e8fd394f8394d3b585296c73821a1318904d4f0b200a9f6e7ceb4db6c",
+      "vector_id": "provider-a-rpc_credential_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-rpc_provider.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "4ee28cf0957752be67b03d976ba88fe569e9a15ac7e842fbc2079d4ad431538a",
+      "vector_id": "provider-a-rpc_provider"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-runtime_admin_domain.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "b1a5040972dcc595450b1d4783f4ae4ea0b1e04e4fc2576c6ef3ab23717eda56",
+      "vector_id": "provider-a-runtime_admin_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-runtime_principal.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "2d80fdb23c7165ac895c23431396a55fa15ea0f0ba6c67b08218d8daa6d6f56f",
+      "vector_id": "provider-a-runtime_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/a-tls_ingress.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "f8717560116842d2f9262fb1fad8c79839f124421ff201892f34e5efea75bfe1",
+      "vector_id": "provider-a-tls_ingress"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-audit_domain.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "231de3a16a3581e793d0cde36d515bc8a7c6d8cc51e86fafbb444245ad7f8256",
+      "vector_id": "provider-b-audit_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-host_vm.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "12b81fff520f70544f4a0fe58eb724856c9c6578910b9228708baaa8eb042526",
+      "vector_id": "provider-b-host_vm"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-journal_storage.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "74d3b7529736957cbe2c78c498e3602365663c2f4e1df4b0ddcb39514638b850",
+      "vector_id": "provider-b-journal_storage"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-rpc_account_project.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "f30e0c16661f171eb5171e1cf2c2825264b91d9755661928859e95a20b4cd261",
+      "vector_id": "provider-b-rpc_account_project"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-rpc_credential_principal.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "92e56e5512ac590a679838182f8bec9b5aee0dcdad205ab965d8310d32e95437",
+      "vector_id": "provider-b-rpc_credential_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-rpc_provider.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "3df67d64ae9726020476beb97b8f471fb236c988a86a094505a488729ee3c174",
+      "vector_id": "provider-b-rpc_provider"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-runtime_admin_domain.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "88cd9aced3e768346b575a763fd81e4a4f852c5cd65f17716ce2c91c93e2ba34",
+      "vector_id": "provider-b-runtime_admin_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-runtime_principal.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "d0123c7b8288b45f6151903249c575e653c40a19c992656c52e94cbb71c1cb41",
+      "vector_id": "provider-b-runtime_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/provider-results/b-tls_ingress.json",
+      "schema": "PROPHET_R3C_V2_PROVIDER_RESULT_VECTOR_V1",
+      "sha256": "0e173354bf402ac4b5bd63c1eccf67a06aa27e3e1696484d9b86920d34d1e48b",
+      "vector_id": "provider-b-tls_ingress"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/trust-policy.json",
+      "schema": "PROPHET_R3C_V2_TRUST_POLICY_VECTOR_V1",
+      "sha256": "1f28f61c05963f2cfdb4419becae45f55e42e07eebf7252b0e41b10f17bfc6f4",
+      "vector_id": "trust-policy"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/trusted-static.json",
+      "schema": "PROPHET_R3C_V2_TRUSTED_STATIC_VECTOR_V1",
+      "sha256": "a9a56593a268b24a10902a056f8db0103f9522146f04cb7e9f35dc49004b0ac8",
+      "vector_id": "trusted-static"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/a-vault_account_tenant.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "897812e98eb4ef9f177e527ae9e93a1dbc818d1599b846690184faf29c63fb0e",
+      "vector_id": "vault-a-vault_account_tenant"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/a-vault_admin_domain.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "84410d610f6b6ad589d6677691c7c211c02f62e5c78c8653a99416d2b71bfae8",
+      "vector_id": "vault-a-vault_admin_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/a-vault_auth_principal.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "6bea0be42d95075929ccc4f9ed652cc215bea0ec203100d3459bb52fd263e6b3",
+      "vector_id": "vault-a-vault_auth_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/a-vault_key_identity_version.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "62229b1609a54906102a2aedadbbba5e4c47c86695e622c8f643eccb7451dcbe",
+      "vector_id": "vault-a-vault_key_identity_version"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/b-vault_account_tenant.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "056c0113a8a97246c5e815126743c91373c95956417638c8c9457afd746e1bb7",
+      "vector_id": "vault-b-vault_account_tenant"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/b-vault_admin_domain.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "74437e38165118f5967ceb6b5cd75e3642dd3b93b87d87466acf7f845deecdce",
+      "vector_id": "vault-b-vault_admin_domain"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/b-vault_auth_principal.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "3c31d48637c28a60cafecfdec6082bf8996a0514981082f2300970dfc2185436",
+      "vector_id": "vault-b-vault_auth_principal"
+    },
+    {
+      "generation_mechanism": "standalone RFC8785 + generic Ed25519/SHA-256",
+      "positive_purpose": "raw category-bound V2 input",
+      "relative_path": "apps/oracle-attester/tests/vectors/r3c_category_bound_v2/vault-admin/b-vault_key_identity_version.json",
+      "schema": "PROPHET_R3C_V2_VAULT_ADMIN_VECTOR_V1",
+      "sha256": "60961a2c02e6d83e39291d935e567fdcdc532afa0cbfd8d2d857bbf674baffc1",
+      "vector_id": "vault-b-vault_key_identity_version"
+    }
+  ],
+  "failed_candidate_supersession": {
+    "manifest_sha256": "d1ec055d779e90db8b782827957a77dd4de4918643d4db5e01292fdd6c86666d",
+    "reasons": [
+      "invalid unsigned package shape",
+      "incompatible D2 positive release-context linkage"
+    ],
+    "status": "FAILED IMMUTABLE CANDIDATE \u2014 SUPERSEDED BEFORE ACCEPTANCE",
+    "vector_set_id": "PROPHET_R3C_CATEGORY_BOUND_CRYPTOGRAPHIC_VECTOR_SET_V1"
+  },
+  "historical_supersession": {
+    "historical_fixture": "apps/oracle-attester/tests/vectors/operational_evidence_v1.fixture",
+    "marker": "SUPERSEDED BY R3C CATEGORY-BOUND CRYPTOGRAPHIC VECTOR SET",
+    "sha256": "b6af60807f19e145422865fa4750d3fd6646fef4bee32b3bd13ef2eb9353dfc8"
+  },
+  "still_active_unchanged": {
+    "d2": {
+      "path": "apps/oracle-attester/tests/vectors/vault_admin_attestation_v1.json",
+      "sha256": "3e27c7439733ec322398e2cea85c8438cf9bfab4e0c770bfd8f84d329140bb28",
+      "state": "STILL_ACTIVE_UNCHANGED / REGRESSION REFERENCE / NOT POSITIVE V2 PACKAGE EVIDENCE"
+    },
+    "mr_i1": {
+      "identifier": "MR-I1 literal canonical manual-review permit vector",
+      "provenance_ref": "bb9845b7099ba1620ce6ca09c2a3853c4c475f1b8776eb5cd1b84a205e7dd7ee",
+      "state": "STILL_ACTIVE_UNCHANGED / POSITIVE V2 A/JOURNAL LINKAGE"
+    }
+  },
+  "vector_set_id": "PROPHET_R3C_CATEGORY_BOUND_CRYPTOGRAPHIC_VECTOR_SET_V2",
+  "version": 1
+}
