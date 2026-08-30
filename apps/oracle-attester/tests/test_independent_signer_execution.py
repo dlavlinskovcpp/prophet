@@ -217,11 +217,11 @@ def test_startup_cross_bindings_and_counterpart_secret_boundary(tmp_path, monkey
     actual = execution.os.getenv
     monkeypatch.setattr(execution.os, "getenv", lambda name, default="": calls.append(name) or actual(name, default))
     IndependentSignerVaultAdapter(service, transport=vault)
-    assert calls == ["SIGNER_A_VAULT_TOKEN"] and "SIGNER_B_VAULT_TOKEN" not in calls
+    assert calls == []
     key_b = Keypair.from_seed(bytes([33]) * 32); service_b = _service(key_b, role="B")
     monkeypatch.setenv("SIGNER_B_VAULT_TOKEN", "b-token"); calls.clear()
     IndependentSignerVaultAdapter(service_b, transport=_Vault(key_b))
-    assert calls == ["SIGNER_B_VAULT_TOKEN"] and "SIGNER_A_VAULT_TOKEN" not in calls
+    assert calls == []
     journal.close()
 
 

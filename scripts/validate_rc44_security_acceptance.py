@@ -20,7 +20,7 @@ def load_manifest() -> dict:
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if data.get("schema") != "PROPHET_RC44_SECURITY_ACCEPTANCE_BASIS_V1" or data.get("version") != 1:
         raise SystemExit("invalid RC4.4 acceptance manifest schema")
-    if data.get("acceptance_basis_revision") != 3:
+    if data.get("acceptance_basis_revision") != 4:
         raise SystemExit("invalid RC4.4 acceptance manifest revision")
     supersession = data.get("supersession")
     if not isinstance(supersession, dict) or set(supersession) != {
@@ -28,18 +28,18 @@ def load_manifest() -> dict:
         "current_acceptance_basis", "reason", "lane_reconciliations",
     }:
         raise SystemExit("invalid RC4.4 acceptance manifest supersession")
-    if (supersession["previous_acceptance_basis"], supersession["current_acceptance_basis"]) != ("POST-I5", "POST-R5"):
+    if (supersession["previous_acceptance_basis"], supersession["current_acceptance_basis"]) != ("POST-R5", "POST-P0C4"):
         raise SystemExit("invalid RC4.4 acceptance basis transition")
     if not re.fullmatch(r"[0-9a-f]{64}", supersession["previous_manifest_sha256"]):
         raise SystemExit("invalid RC4.4 previous manifest digest")
-    if supersession["previous_manifest_sha256"] != "439ff97be38b52a7c5ac05de19ae8167d20d38660fd9b5815feee80e13647840":
-        raise SystemExit("invalid RC4.4 revision-2 predecessor digest")
-    if supersession["reason"] != "20 permanent R5 signed-package temporal-authority regressions":
+    if supersession["previous_manifest_sha256"] != "2838481f58ea99c9c658dd59dac030984c4ea72b4b65d7b8c4938f3500bfcc89":
+        raise SystemExit("invalid RC4.4 revision-3 predecessor digest")
+    if supersession["reason"] != "P0C4 fixed-role A/B production boundary and real localnet settlement":
         raise SystemExit("invalid RC4.4 post-R5 supersession reason")
     reconciliations = supersession["lane_reconciliations"]
-    if not isinstance(reconciliations, dict) or set(reconciliations) != {"p0c3e1", "oracle_attester"}:
+    if not isinstance(reconciliations, dict) or set(reconciliations) != {"p0c3e1", "oracle_attester", "p0c4_fixed_role"}:
         raise SystemExit("invalid RC4.4 lane reconciliation")
-    for lane_id, expected in (("p0c3e1", (295, 315, 20)), ("oracle_attester", (1300, 1320, 20))):
+    for lane_id, expected in (("p0c3e1", (315, 315, 0)), ("oracle_attester", (1320, 1442, 122)), ("p0c4_fixed_role", (0, 105, 105))):
         row = reconciliations[lane_id]
         if not isinstance(row, dict) or (row.get("previous_passed"), row.get("current_passed"), row.get("delta_passed")) != expected:
             raise SystemExit(f"invalid RC4.4 {lane_id} reconciliation")
@@ -67,8 +67,10 @@ def load_manifest() -> dict:
         raise SystemExit("RC4.4 I5 acceptance lane is invalid")
     if by_id.get("r5", {}).get("expected_passed") != 20:
         raise SystemExit("RC4.4 R5 acceptance lane is invalid")
-    if by_id.get("p0c3e1", {}).get("expected_passed") != 315 or by_id.get("oracle_attester", {}).get("expected_passed") != 1320:
-        raise SystemExit("RC4.4 post-R5 acceptance counts are invalid")
+    if by_id.get("p0c3e1", {}).get("expected_passed") != 315 or by_id.get("oracle_attester", {}).get("expected_passed") != 1442:
+        raise SystemExit("RC4.4 P0C4 acceptance counts are invalid")
+    if by_id.get("p0c4_fixed_role", {}).get("expected_passed") != 105:
+        raise SystemExit("RC4.4 P0C4 fixed-role acceptance count is invalid")
     return data
 
 
@@ -99,6 +101,12 @@ def verify_collection(data: dict) -> None:
 
 def verify_execution(data: dict) -> None:
     for lane in data["lanes"]:
+        if lane.get("kind") == "audit":
+            output = run(lane, collect_only=False)
+            if '"status": "PASS"' not in output:
+                raise SystemExit(f"{lane['id']}: launch-surface audit did not pass")
+            print(f"{lane['id']}: PASS")
+            continue
         output = run(lane, collect_only=False)
         matcher = RUST_RESULT if lane["command"][0] == "cargo" else PYTEST_RESULT
         match = matcher.search(output)

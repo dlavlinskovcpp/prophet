@@ -37,15 +37,13 @@
       "backend_ref": "devnet:zktls-independent",
       "auth_ref": "devnet:verifier-b-auth"
     },
-    "signer_a": {
-      "identity": "devnet-settlement-a",
-      "vault_key_ref": "devnet:vault:settlement-a",
-      "auth_ref": "devnet:vault-policy-a"
+  "signer_a": {
+    "identity": "devnet-settlement-a",
+    "vault_key_ref": "devnet:vault:settlement-a"
     },
-    "signer_b": {
-      "identity": "devnet-settlement-b",
-      "vault_key_ref": "devnet:vault:settlement-b",
-      "auth_ref": "devnet:vault-policy-b"
+  "signer_b": {
+    "identity": "devnet-settlement-b",
+    "vault_key_ref": "devnet:vault:settlement-b"
     }
   },
   "deployment_artifacts": {

@@ -52,6 +52,15 @@ def _env(value: Any, name: str) -> str:
     return value
 
 
+def _role_local_env(value: Any, name: str, signer_role: str) -> str:
+    """Accept one role-local secret reference, never the peer role's reference."""
+    result = _env(value, name)
+    peer_marker = "SIGNER_B_" if signer_role == "A" else "SIGNER_A_"
+    if peer_marker in result.upper():
+        raise IndependentSignerRuntimeConfigError(f"{name}_opposite_role_reference")
+    return result
+
+
 def _positive(value: Any, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise IndependentSignerRuntimeConfigError(f"{name}_invalid")
@@ -200,14 +209,14 @@ class IndependentSignerServiceConfig:
             _pubkey(signer["public_key"], "signer.public_key"), _positive(signer["key_version"], "signer.key_version"),
             _url(vault["address"], "vault.address", require_https=row["environment"] in ("public-devnet", "mainnet")),
             _text(vault["transit_mount"], "vault.transit_mount"), _text(vault["key_name"], "vault.key_name"),
-            _env(vault["token_env"], "vault.token_env"), _text(vault["admin_domain_id"], "vault.admin_domain_id"),
+            _role_local_env(vault["token_env"], "vault.token_env", _text(signer["role"], "signer.role")), _text(vault["admin_domain_id"], "vault.admin_domain_id"),
             _text(vault["account_or_tenant_id"], "vault.account_or_tenant_id"), _text(vault["auth_principal_id"], "vault.auth_principal_id"),
-            _positive(vault["timeout_seconds"], "vault.timeout_seconds"), _env(rpc["url_env"], "rpc.url_env"),
+            _positive(vault["timeout_seconds"], "vault.timeout_seconds"), _role_local_env(rpc["url_env"], "rpc.url_env", _text(signer["role"], "signer.role")),
             _text(rpc["provider_domain_id"], "rpc.provider_domain_id"), _text(rpc["account_or_project_id"], "rpc.account_or_project_id"),
             _text(rpc["credential_principal_id"], "rpc.credential_principal_id"),
             _hash(solana["expected_genesis_hash"], "solana.expected_genesis_hash"),
             _pubkey(solana["expected_program_id"], "solana.expected_program_id"),
-            _text(row["journal_path"], "journal_path", 4096), _env(row["admission_token_env"], "admission_token_env"),
+            _text(row["journal_path"], "journal_path", 4096), _role_local_env(row["admission_token_env"], "admission_token_env", _text(signer["role"], "signer.role")),
         )
 
     def fingerprint(self) -> str:

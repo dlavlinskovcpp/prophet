@@ -1,16 +1,17 @@
 {
   "schema": "PROPHET_RC44_SECURITY_ACCEPTANCE_BASIS_V1",
   "version": 1,
-  "acceptance_basis_revision": 3,
+  "acceptance_basis_revision": 4,
   "purpose": "Reproducible RC4.4 security acceptance evidence.",
   "supersession": {
-    "previous_acceptance_basis": "POST-I5",
-    "previous_manifest_sha256": "439ff97be38b52a7c5ac05de19ae8167d20d38660fd9b5815feee80e13647840",
-    "current_acceptance_basis": "POST-R5",
-    "reason": "20 permanent R5 signed-package temporal-authority regressions",
+    "previous_acceptance_basis": "POST-R5",
+    "previous_manifest_sha256": "2838481f58ea99c9c658dd59dac030984c4ea72b4b65d7b8c4938f3500bfcc89",
+    "current_acceptance_basis": "POST-P0C4",
+    "reason": "P0C4 fixed-role A/B production boundary and real localnet settlement",
     "lane_reconciliations": {
-      "p0c3e1": {"previous_passed": 295, "current_passed": 315, "delta_passed": 20},
-      "oracle_attester": {"previous_passed": 1300, "current_passed": 1320, "delta_passed": 20, "previous_skipped": 3, "current_skipped": 3, "delta_skipped": 0}
+      "p0c3e1": {"previous_passed": 315, "current_passed": 315, "delta_passed": 0},
+      "oracle_attester": {"previous_passed": 1320, "current_passed": 1442, "delta_passed": 122, "previous_skipped": 3, "current_skipped": 3, "delta_skipped": 0},
+      "p0c4_fixed_role": {"previous_passed": 0, "current_passed": 105, "delta_passed": 105}
     }
   },
   "historical_metric": {
@@ -41,7 +42,9 @@
     {"id":"mr_i2","purpose":"verified manual-review permit authority","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_verified_manual_review_permit.py"],"expected_passed":24,"expected_skipped":0},
     {"id":"p0c3e1","purpose":"complete operational-evidence acceptance lane; selector includes the persisted R5 signed-package temporal-authority regressions","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_effective_authority.py","tests/test_r3c_v2_production_verification.py","tests/test_r3c_package_freshness.py","tests/test_operational_evidence_r3c_i1.py","tests/test_provider_result_v2.py","tests/test_vault_admin_package_bridge.py","tests/test_vault_admin_attestation.py","tests/test_manual_review_permit.py","tests/test_verified_manual_review_permit.py","tests/test_rfc8785_dependency.py"],"expected_passed":315,"expected_skipped":0},
     {"id":"rfc8785","purpose":"pinned RFC 8785 dependency conformance","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_rfc8785_dependency.py"],"expected_passed":11,"expected_skipped":0},
-    {"id":"oracle_attester","purpose":"complete current oracle-attester suite","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests"],"expected_passed":1320,"expected_skipped":3},
+    {"id":"oracle_attester","purpose":"complete current oracle-attester suite","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests"],"expected_passed":1442,"expected_skipped":3},
+    {"id":"p0c4_fixed_role","purpose":"fixed-role admission, worker isolation, raw A/B settlement bridge, and localtest controller regressions","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_admission_grant_replay_journal.py","tests/test_fixed_role_signer_applications.py","tests/test_localtest_file_vault_transport.py","tests/test_localtest_settlement_bridge.py","tests/test_localtest_signer_bootstrap.py","tests/test_operated_devnet_external_signers.py","tests/test_operated_localnet_fixed_role_controller.py","tests/test_p0c4_i2_config_retirement.py","tests/test_p0c4_i3_fixed_role.py","tests/test_signer_admission_grant.py","tests/test_signer_admission_runtime.py","tests/test_signer_admission_vectors.py"],"expected_passed":105,"expected_skipped":0},
+    {"id":"p0c4_launch_surface","purpose":"whole production/localnet launch-surface and recovery retirement audit","workdir":".","command":["python3","scripts/p0c4_launch_surface_audit.py"],"kind":"audit","expected_status":"PASS"},
     {"id":"resolver_v2","purpose":"frozen Resolver V2 compatibility","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_resolver_v2_adapters.py","tests/test_resolver_v2_multi_verifier.py","tests/test_resolver_v2_oracle_adapters.py","tests/test_resolver_v2_pipeline.py"],"expected_passed":64,"expected_skipped":0},
     {"id":"rust_frozen_layout","purpose":"frozen 235-byte settlement layout","workdir":".","command":["cargo","test","-p","prophet","--lib","utils::attestation::tests::legacy_resolution_message_layout_is_byte_for_byte_stable"],"expected_passed":1,"expected_skipped":0}
   ]

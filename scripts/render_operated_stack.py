@@ -36,8 +36,6 @@ COMMON_REQUIRED_VALUES = (
     "SIGNER_B_IDENTITY",
     "SIGNER_A_VAULT_KEY",
     "SIGNER_B_VAULT_KEY",
-    "SIGNER_A_AUTH_REF",
-    "SIGNER_B_AUTH_REF",
 )
 SECRET_VALUE_KEYS = ("RESOLVER_REGISTRY_SERVICE_API_KEY",)
 LEGACY_SETTLEMENT_KEYS = (
@@ -184,8 +182,6 @@ def _final_values(
         "SIGNER_B_IDENTITY": str(signer_b.get("identity", "")),
         "SIGNER_A_VAULT_KEY": str(signer_a.get("vault_key_ref", "")),
         "SIGNER_B_VAULT_KEY": str(signer_b.get("vault_key_ref", "")),
-        "SIGNER_A_AUTH_REF": str(signer_a.get("auth_ref", "")),
-        "SIGNER_B_AUTH_REF": str(signer_b.get("auth_ref", "")),
         "RESOLVER_REGISTRY_SERVICE_API_KEY": "",
         "MARKET_DISCOVERY_MODE": "program_scan",
         "MARKETS": "",
@@ -235,8 +231,6 @@ def _final_values(
         raise RenderError("Signer A/B identities must be distinct.")
     if values["SIGNER_A_VAULT_KEY"] == values["SIGNER_B_VAULT_KEY"]:
         raise RenderError("Signer A/B Vault key references must be distinct.")
-    if values["SIGNER_A_AUTH_REF"] == values["SIGNER_B_AUTH_REF"]:
-        raise RenderError("Signer A/B auth references must be distinct.")
 
     _require_https(
         values,
@@ -317,12 +311,10 @@ def _sync_environment_json(env_path: Path, env_config: Dict[str, object], values
         "signer_a": {
             "identity": values["SIGNER_A_IDENTITY"],
             "vault_key_ref": values["SIGNER_A_VAULT_KEY"],
-            "auth_ref": values["SIGNER_A_AUTH_REF"],
         },
         "signer_b": {
             "identity": values["SIGNER_B_IDENTITY"],
             "vault_key_ref": values["SIGNER_B_VAULT_KEY"],
-            "auth_ref": values["SIGNER_B_AUTH_REF"],
         },
     }
     env_config["expected_program_id"] = values["PROPHET_PROGRAM_ID"]

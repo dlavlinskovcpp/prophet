@@ -27,8 +27,6 @@ _REQUIRED_SECURE_ENDPOINTS = (
     "matching_keeper_base_url",
 )
 _REQUIRED_LOCAL_ENDPOINTS = (
-    "attester_base_url",
-    "remote_signer_url",
     "resolver_registry_url",
     "matching_keeper_base_url",
 )
@@ -166,12 +164,12 @@ def _secure_topology(config: Mapping[str, Any], env_name: str) -> None:
 
     verifier_a = row("verifier_a", ("identity", "backend_ref", "auth_ref"))
     verifier_b = row("verifier_b", ("identity", "backend_ref", "auth_ref"))
-    signer_a = row("signer_a", ("identity", "vault_key_ref", "auth_ref"))
-    signer_b = row("signer_b", ("identity", "vault_key_ref", "auth_ref"))
+    signer_a = row("signer_a", ("identity", "vault_key_ref"))
+    signer_b = row("signer_b", ("identity", "vault_key_ref"))
     if any(a == b for a, b in zip(verifier_a, verifier_b)):
         raise ConfigValidationError("verifier A/B identity/backend/auth must be distinct")
     if any(a == b for a, b in zip(signer_a, signer_b)):
-        raise ConfigValidationError("signer A/B identity/key/auth must be distinct")
+        raise ConfigValidationError("signer A/B identity/key must be distinct")
 
 
 def validate_environment_config(

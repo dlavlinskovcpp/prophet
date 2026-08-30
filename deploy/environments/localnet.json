@@ -12,8 +12,6 @@
   "program_identity_policy": "match-source",
   "deployment_authorized": true,
   "service_endpoints": {
-    "attester_base_url": "http://127.0.0.1:8000",
-    "remote_signer_url": "http://127.0.0.1:8100/sign",
     "resolver_registry_url": "http://127.0.0.1:8200/resolvers",
     "matching_keeper_base_url": "http://127.0.0.1:8010"
   }

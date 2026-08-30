@@ -480,6 +480,18 @@ def test_raw_json_duplicate_keys_fail_closed(raw):
 
 
 @pytest.mark.parametrize("mutation", (
+    lambda package: package["unsigned_package"]["signers"][0].pop("host"),
+    lambda package: package["unsigned_package"]["signers"][0].__setitem__("unknown", "x"),
+))
+def test_signer_shape_rejects_missing_or_unknown_fields(mutation):
+    policy_value, package, static, results = package_fixture()
+    package = copy.deepcopy(package)
+    mutation(package)
+    with pytest.raises(OperationalEvidenceError, match="signer_shape_invalid"):
+        accept(policy_value, package, static, results)
+
+
+@pytest.mark.parametrize("mutation", (
     lambda p, q, r: p["unsigned_package"].__setitem__("unknown", "x"),
     lambda p, q, r: p["unsigned_package"].pop("evidence_set_id"),
     lambda p, q, r: p["unsigned_package"].__setitem__("version", 2),

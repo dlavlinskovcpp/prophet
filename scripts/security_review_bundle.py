@@ -47,8 +47,6 @@ PATH_KEYS = {
 OPTIONAL_OPERATED_CONFIG_NAMES = (
     "stack.env",
     ".env",
-    "oracle-attester.env",
-    "remote-signer.env",
     "resolver-registry.env",
     "matching-keeper.env",
 )

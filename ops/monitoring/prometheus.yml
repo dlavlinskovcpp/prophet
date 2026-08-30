@@ -6,18 +6,6 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  - job_name: prophet-oracle-attester
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - oracle-attester:8000
-
-  - job_name: prophet-remote-signer
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - remote-signer:8100
-
   - job_name: prophet-resolver-registry
     metrics_path: /metrics
     static_configs:

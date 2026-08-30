@@ -164,13 +164,11 @@ For the actual release flow, rollback expectations, monitoring, and recovery pro
 
 ## Security Notes
 
-- Use `NOTARY_SIGNER_MODE=remote` in production.
-- The bundled operated signer path uses `REMOTE_SIGNER_BACKEND=command` with `python /app/scripts/vault_transit_signer.py` against HashiCorp Vault Transit.
-- `REMOTE_SIGNER_BACKEND=aws_kms` remains available for compatibility, and generic command-backed signers still work for other KMS/HSM wrappers.
-- Command-backed signers should set `REMOTE_SIGNER_COMMAND_PUBLIC_KEYS`; that is how `/health` and the dry-run tooling discover the served notary pubkeys.
-- Use `docs/signer_vault_ops.md` for Vault bootstrap, dry-run signer checks, allowlist rotation, and compromised-key response.
+- Production settlement uses separate fixed-role signer A and signer B processes. No production process, coordinator, submitter, or recovery command may receive both role credentials.
+- The generic remote signer, legacy bearer admission, and same-process A+B quorum paths are retired. The retired compatibility module fails closed if launched.
+- Use `docs/signer_vault_ops.md` for role-local Vault operations and compromised-key response.
 - Resolver definitions are always re-hashed before use and can be loaded from a local directory or HTTP registry.
-- The attester, remote signer, and resolver registry persist append-only JSONL audit logs by default.
+- The resolver registry persists append-only JSONL audit logs by default.
 - Market authorities can set a fee recipient and protocol fee bps before the first order only.
 - Do not commit private keys.
 

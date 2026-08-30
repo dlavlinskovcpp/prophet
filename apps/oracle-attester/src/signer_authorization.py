@@ -7,6 +7,7 @@ from solders.pubkey import Pubkey
 from prophet_sdk.pdas import derive_market_pda, derive_notary_config_snapshot_pda
 from prophet_sdk.settlement_message import build_resolution_message_v2
 from .verifier_attestation import VerifierAttestationError, settlement_authorization_job_id, verify_attestation
+from .signer_admission_grant import StrictSignerAuthorizationRequestV1, AdmissionGrantError
 
 AUTHORIZATION_SCHEMA = "PROPHET_SETTLEMENT_AUTHORIZATION_V1"
 AUTHORIZATION_VERSION = "1"
@@ -77,24 +78,28 @@ def _pk(value: Any, name: str) -> str:
 def _hex(value: Any, name: str) -> str:
     if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value): raise SignerAuthorizationError(f"{name}_invalid")
     return value
-def parse_request(value: Mapping[str, Any]) -> dict[str, Any]:
-    required={"schema","version","cluster_genesis_hash","program_id","market","verifier_a_attestation","verifier_b_attestation"}
-    if not isinstance(value, Mapping) or set(value) != required or value["schema"] != AUTHORIZATION_SCHEMA or value["version"] != AUTHORIZATION_VERSION: raise SignerAuthorizationError("authorization_request_invalid")
-    return {**dict(value), "cluster_genesis_hash": _hex(value["cluster_genesis_hash"], "request_genesis"), "program_id": _pk(value["program_id"], "request_program"), "market": _pk(value["market"], "request_market")}
+def parse_request(value: Mapping[str, Any]) -> StrictSignerAuthorizationRequestV1:
+    try:
+        if isinstance(value, StrictSignerAuthorizationRequestV1):
+            return value
+        return StrictSignerAuthorizationRequestV1.from_mapping(value)
+    except AdmissionGrantError as exc:
+        raise SignerAuthorizationError("authorization_request_invalid") from exc
 def _market(raw: bytes) -> dict[str, Any]:
     if len(raw) != 8 + 416 or raw[:8] != MARKET_DISC: raise SignerAuthorizationError("market_malformed")
-    d=raw[8:]; p=0
-    keys=[]
-    for _ in range(6): keys.append(str(Pubkey.from_bytes(d[p:p+32]))); p+=32
-    resolver=d[p:p+32]; p+=96
-    open_ts,lock_ts,resolve_ts,resolved_ts=struct.unpack_from("<qqqq",d,p); p+=32
-    p+=8*4+4*2+2*2+6+1; status,outcome,bump,remainder=struct.unpack_from("<BBBB",d,p); p+=4
+    d=raw[8:]
+    keys=[str(Pubkey.from_bytes(d[index:index+32])) for index in range(0, 192, 32)]
+    resolver=d[192:224]
+    proof=d[224:256]
+    inputs=d[256:288]
+    open_ts,lock_ts,resolve_ts,resolved_ts=struct.unpack_from("<qqqq",d,288)
+    status, outcome, bump, remainder = d[371], d[372], d[373], d[374]
     # Anchor's enums have no catch-all variant.  Never treat an unknown raw
     # discriminant as a non-resolved/pre-resolution state.
     if status not in (0, 1, 2) or outcome not in (0, 1, 2, 3):
         raise SignerAuthorizationError("market_malformed")
-    creator=str(Pubkey.from_bytes(d[p:p+32])); nonce=struct.unpack_from("<Q",d,p+32)[0]
-    return {"notary_config":keys[5],"resolver_hash":resolver,"open_ts":open_ts,"lock_ts":lock_ts,"resolve_ts":resolve_ts,"resolved_ts":resolved_ts,"status":status,"outcome":outcome,"bump":bump,"remainder":remainder,"creator":creator,"nonce":nonce,"proof":d[224:256],"inputs":d[256:288]}
+    creator=str(Pubkey.from_bytes(d[375:407])); nonce=struct.unpack_from("<Q",d,407)[0]
+    return {"notary_config":keys[5],"resolver_hash":resolver,"open_ts":open_ts,"lock_ts":lock_ts,"resolve_ts":resolve_ts,"resolved_ts":resolved_ts,"status":status,"outcome":outcome,"bump":bump,"remainder":remainder,"creator":creator,"nonce":nonce,"proof":proof,"inputs":inputs}
 def _notary(raw: bytes) -> dict[str, Any]:
     if len(raw) < 8+48 or raw[:8] != NOTARY_DISC: raise SignerAuthorizationError("notary_malformed")
     d=raw[8:]; admin=str(Pubkey.from_bytes(d[:32])); threshold,count,bump=d[32],d[33],d[34]; version=struct.unpack_from("<Q",d,40)[0]
@@ -117,7 +122,9 @@ def _finalized_accounts_read(value: Any, *, market: str, notary_config: str, min
     return value
 def authorize(*, request: Mapping[str, Any], config: SignerAuthorizationConfig, rpc: FinalizedRpc, now_ms: int) -> AuthorizationResult:
     if config.signer_slot not in {"A","B"} or config.verifier_a.public_key == config.verifier_b.public_key: raise SignerAuthorizationError("signer_config_invalid")
-    r=parse_request(request)
+    # P0C1 receives only the deterministic lossless projection of the strict
+    # request type, never the original transport mapping.
+    r=parse_request(request).as_mapping()
     if r["cluster_genesis_hash"] != config.expected_cluster_genesis_hash or r["program_id"] != config.expected_program_id or rpc.genesis_hash() != config.expected_cluster_genesis_hash: raise SignerAuthorizationError("genesis_or_program_mismatch")
     try:
         a=verify_attestation(r["verifier_a_attestation"], expected_public_key=config.verifier_a.public_key, expected_verifier_id=config.verifier_a.verifier_id, expected_verifier_version=config.verifier_a.verifier_version, expected_verifier_implementation_digest=config.verifier_a.implementation_digest, now_ms=now_ms)

@@ -1,26 +1,6 @@
 groups:
   - name: prophet-services
     rules:
-      - alert: ProphetOracleAttesterDown
-        expr: up{job="prophet-oracle-attester"} == 0
-        for: 1m
-        labels:
-          severity: critical
-          service: oracle-attester
-        annotations:
-          summary: Prophet oracle attester is down
-          description: Prometheus cannot scrape the oracle attester /metrics endpoint.
-
-      - alert: ProphetRemoteSignerDown
-        expr: up{job="prophet-remote-signer"} == 0
-        for: 1m
-        labels:
-          severity: critical
-          service: remote-signer
-        annotations:
-          summary: Prophet remote signer is down
-          description: Prometheus cannot scrape the remote signer /metrics endpoint.
-
       - alert: ProphetResolverRegistryDown
         expr: up{job="prophet-resolver-registry"} == 0
         for: 1m
@@ -30,26 +10,6 @@ groups:
         annotations:
           summary: Prophet resolver registry is down
           description: Prometheus cannot scrape the resolver registry /metrics endpoint.
-
-      - alert: ProphetAttesterResolveErrors
-        expr: increase(prophet_attester_resolve_total{result=~"runtime_error|internal_error"}[10m]) > 0
-        for: 0m
-        labels:
-          severity: warning
-          service: oracle-attester
-        annotations:
-          summary: Prophet attester returned runtime or internal resolve errors
-          description: The attester emitted failing resolve results in the last 10 minutes.
-
-      - alert: ProphetRemoteSignerBackendErrors
-        expr: increase(prophet_remote_signer_sign_total{result="backend_error"}[10m]) > 0
-        for: 0m
-        labels:
-          severity: warning
-          service: remote-signer
-        annotations:
-          summary: Prophet remote signer backend errors detected
-          description: The remote signer backend returned signing failures in the last 10 minutes.
 
   - name: prophet-matching-keeper
     rules:

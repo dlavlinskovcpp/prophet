@@ -58,12 +58,10 @@ def _config():
             "signer_a": {
                 "identity": "signer-a",
                 "vault_key_ref": "key-a",
-                "auth_ref": "vault-auth-a",
             },
             "signer_b": {
                 "identity": "signer-b",
                 "vault_key_ref": "key-b",
-                "auth_ref": "vault-auth-b",
             },
         },
     }
@@ -144,8 +142,6 @@ def _values():
         "SIGNER_B_IDENTITY": "signer-b",
         "SIGNER_A_VAULT_KEY": "key-a",
         "SIGNER_B_VAULT_KEY": "key-b",
-        "SIGNER_A_AUTH_REF": "vault-a",
-        "SIGNER_B_AUTH_REF": "vault-b",
         "COORDINATOR_SQLITE_PATH": "/var/lib/prophet/coordinator.sqlite",
         "SIGNING_JOURNAL_PATH": "/var/lib/prophet/signing.sqlite",
         "SUBMISSION_JOURNAL_PATH": "/var/lib/prophet/submission.sqlite",
@@ -160,7 +156,6 @@ def _compose(tmp_path):
         "  verifier-a:\n    image: test\n"
         "  verifier-b:\n    image: test\n"
         "  coordinator:\n    image: test\n"
-        "  secure-settlement:\n    image: test\n"
     )
     return path
 
@@ -182,7 +177,6 @@ def test_preflight_secure_topology_is_structurally_accepted(tmp_path):
         ("VERIFIER_B_URL", "http://verifier-a:8301", "URLs"),
         ("VERIFIER_B_IDENTITY", "a", "identities"),
         ("SIGNER_B_IDENTITY", "signer-a", "signer identities"),
-        ("SIGNER_B_AUTH_REF", "vault-a", "auth references"),
         ("COORDINATOR_SQLITE_PATH", ":memory:", "persistent"),
         ("SIGNING_JOURNAL_PATH", ":memory:", "persistent"),
     ],

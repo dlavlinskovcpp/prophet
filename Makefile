@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test secure-settlement-run remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down rc44-security-acceptance
+.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down rc44-security-acceptance
 
 validator:
 	SOLANA_VERSION=3.1.10 bash scripts/localnet_start.sh
@@ -32,12 +32,13 @@ render-operated:
 	python3 scripts/render_operated_stack.py --environment $(ENV) $(if $(VALUES),--values-file $(VALUES),) $(if $(OUT),--output-dir $(OUT),) $(if $(NO_SYNC_ENV_JSON),--skip-sync-env-json,) $(if $(GENERATE_SECRETS),--generate-secrets,)
 
 operated-smoke:
-	# Usage: make operated-smoke [RPC_URL=http://127.0.0.1:8899] [PROPHET_PROGRAM_ID=<program id>] [SIGNER_BACKEND=vault_transit VAULT_ADDR=http://127.0.0.1:18200 VAULT_TOKEN=root VAULT_KEY_NAME=prophet-ci-notary VAULT_NEXT_KEY_NAME=prophet-ci-notary-rotated]
-	python3 scripts/operated_localnet_smoke.py $(if $(RPC_URL),--rpc-url $(RPC_URL),) $(if $(PROPHET_PROGRAM_ID),--program-id $(PROPHET_PROGRAM_ID),) $(if $(QUOTE_MINT),--quote-mint $(QUOTE_MINT),) $(if $(SIGNER_BACKEND),--signer-backend $(SIGNER_BACKEND),) $(if $(VAULT_ADDR),--vault-addr $(VAULT_ADDR),) $(if $(VAULT_NAMESPACE),--vault-namespace $(VAULT_NAMESPACE),) $(if $(VAULT_TOKEN),--vault-token $(VAULT_TOKEN),) $(if $(VAULT_TOKEN_FILE),--vault-token-file $(VAULT_TOKEN_FILE),) $(if $(VAULT_CACERT),--vault-cacert $(VAULT_CACERT),) $(if $(VAULT_SKIP_VERIFY),--vault-skip-verify,) $(if $(VAULT_TRANSIT_MOUNT),--vault-transit-mount $(VAULT_TRANSIT_MOUNT),) $(if $(VAULT_TRANSIT_TIMEOUT_S),--vault-transit-timeout-s $(VAULT_TRANSIT_TIMEOUT_S),) $(if $(VAULT_KEY_NAME),--vault-key-name $(VAULT_KEY_NAME),) $(if $(VAULT_NEXT_KEY_NAME),--vault-next-key-name $(VAULT_NEXT_KEY_NAME),) $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
+	# Localtest-only fixed-role signer A/B proof; no generic signer or Vault credential inputs.
+	cd apps/oracle-attester && poetry run python ../../scripts/operated_localnet_smoke.py $(if $(KEEP_ARTIFACTS),--keep-artifacts,)
 
 operated-devnet:
-	# Usage: make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json [--signer-backend vault_transit --vault-addr https://vault.example --vault-key-name prophet-devnet-notary-01 --vault-token-file /path/to/vault-token]"
-	python3 scripts/operated_devnet_smoke.py $(ARGS)
+	# Prerequisites: external fixed-role signer A/B services and externally issued role-local grants. This target never starts signers or reads signer/Vault/issuer credentials.
+	# Usage: make operated-devnet ARGS="--authorization-request-file <request.json> --canonical-message-file <message.bin> --signer-a-endpoint <url> --signer-b-endpoint <url> --signer-a-id <id> --signer-b-id <id> --signer-a-public-key <pubkey> --signer-b-public-key <pubkey> --signer-a-grant-file <grant.json> --signer-b-grant-file <grant.json> --acceptance-run-id <32-lowercase-hex>"
+	cd apps/oracle-attester && poetry run python ../../scripts/operated_devnet_smoke.py $(ARGS)
 
 signer-vault-bootstrap:
 	# Usage: make signer-vault-bootstrap ARGS="--vault-addr https://vault.example --key-name prophet-devnet-notary-01 --output-allowlist /tmp/signer_allowlist.txt --output-key-map /tmp/vault-transit-key-map.json"
@@ -91,11 +92,9 @@ coordinator-run:
 coordinator-service-test:
 	cd apps/oracle-attester && poetry run pytest -q tests/test_coordinator_service.py
 
-secure-settlement-run:
-	cd apps/oracle-attester && poetry run uvicorn src.secure_settlement_main:app --host $${SETTLEMENT_HOST:-127.0.0.1} --port $${SETTLEMENT_PORT:-8500}
-
 remote-signer:
-	cd apps/oracle-attester && poetry install && poetry run uvicorn src.remote_signer_main:app --host 0.0.0.0 --port 8100
+	@echo "remote-signer is retired for production; use independent fixed-role signer services."
+	@false
 
 resolver-registry:
 	cd apps/oracle-attester && poetry install && poetry run uvicorn src.resolver_registry_main:app --host 0.0.0.0 --port 8200
@@ -151,7 +150,7 @@ keeper-example:
 
 localnet-up:
 	SOLANA_VERSION=3.1.10 BIND_ADDRESS=$${BIND_ADDRESS:-0.0.0.0} bash scripts/localnet_start.sh
-	docker compose -f docker-compose.localnet.yml up -d resolver-registry remote-signer oracle-attester matching-keeper prometheus grafana
+	docker compose -f docker-compose.localnet.yml up -d resolver-registry matching-keeper prometheus grafana
 
 localnet-down:
 	docker compose -f docker-compose.localnet.yml down
