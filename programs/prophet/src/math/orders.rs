@@ -480,4 +480,35 @@ mod tests {
         assert_eq!(total_fee, protocol_fee_floor(50, fee_bps).unwrap());
         assert_eq!(no.protocol_fee_paid_atoms, total_fee);
     }
+
+    #[test]
+    fn pair_local_crossing_does_not_require_global_best_prices() {
+        let yes = MatchOrderState {
+            side: OrderSide::BuyYes,
+            seq: 90,
+            limit_p_yes_e8: 60_000_000,
+            qty_remaining_atoms: 10,
+            escrow_remaining_atoms: required_escrow_atoms(OrderSide::BuyYes, 10, 60_000_000)
+                .unwrap(),
+            fee_remaining_atoms: 0,
+            taker_cost_basis_atoms: 0,
+            protocol_fee_paid_atoms: 0,
+        };
+        let no = MatchOrderState {
+            side: OrderSide::BuyNo,
+            seq: 91,
+            limit_p_yes_e8: 40_000_000,
+            qty_remaining_atoms: 10,
+            escrow_remaining_atoms: required_escrow_atoms(OrderSide::BuyNo, 10, 40_000_000)
+                .unwrap(),
+            fee_remaining_atoms: 0,
+            taker_cost_basis_atoms: 0,
+            protocol_fee_paid_atoms: 0,
+        };
+
+        let (_, _, settlement) = settle_crossing_orders(yes, no, 0, 10).unwrap();
+        assert_eq!(settlement.qty_atoms, 10);
+        assert_eq!(settlement.maker_seq, 90);
+        assert_eq!(settlement.p_exec_e8, 60_000_000);
+    }
 }

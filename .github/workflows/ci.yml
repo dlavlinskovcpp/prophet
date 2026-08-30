@@ -713,8 +713,8 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
 
-      - name: Validate RC4.4 reproducible security acceptance basis
-        run: make rc44-security-acceptance
+      - name: Validate RC4.6 reproducible protocol and operations acceptance basis
+        run: make rc46-security-acceptance
 
       - name: Run deterministic agent E2E demo
         working-directory: apps/oracle-attester

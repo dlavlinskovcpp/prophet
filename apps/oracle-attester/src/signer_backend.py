@@ -1,3 +1,5 @@
+"""Legacy/test signer adapters; production launch surfaces use fixed-role Vault signers."""
+
 import base64
 import json
 import logging

@@ -330,7 +330,7 @@ def test_engine_rejections_and_ambiguity_are_generic_and_do_not_leak_internals(t
 
 def test_health_ready_and_documentation_endpoints_do_not_expose_signing_surface(tmp_path, monkeypatch):
     client, engine, request, journal, vault = _service_app(tmp_path, monkeypatch)
-    assert client.get("/health").json() == {"ok": True}
+    assert client.get("/health").json() == {"ok": True, "live": True, "ready": True}
     assert client.get("/ready").json() == {"ready": True}
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404

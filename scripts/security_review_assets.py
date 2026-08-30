@@ -123,10 +123,9 @@ INVARIANT_MAP = [
     },
     {
         "id": "INV-005",
-        "statement": "The remote signer only signs for loaded, allowlisted notary keys and exposes auditable failure modes when backends or allowlists are wrong.",
-        "components": ["remote-signer"],
+        "statement": "Fixed-role A/B signers authorize only their bound notary identity; generic signer backends are legacy/test-only and unreachable from production launch surfaces.",
+        "components": ["fixed-role-signers", "legacy-signer-tooling"],
         "code_refs": [
-            "apps/oracle-attester/src/remote_signer_main.py",
             "apps/oracle-attester/src/signer_backend.py",
             "apps/oracle-attester/src/signer_allowlist.py",
             "apps/oracle-attester/src/signer_ops.py",

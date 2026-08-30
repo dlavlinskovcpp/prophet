@@ -13,7 +13,7 @@ The packaging workflow and remediation loop are documented in `docs/security_rev
 ## Components In Scope
 - on-chain program `prophet` (v2 threshold-only surface)
 - attester service (resolver load, zkTLS verification, resolve assembly)
-- remote signer service (KMS/command backend, allowlist, audit)
+- fixed-role A/B signer services, Vault identity binding, allowlists, and audit; generic signer tooling is legacy/test-only
 - resolver registry service (publish/load/list APIs)
 - matching keeper (order discovery, matching submissions)
 

@@ -85,6 +85,18 @@ pub(crate) fn validate_stored_notary_config(config: &NotaryConfig) -> Result<()>
     validate_notary_set(config.threshold, &config.notary_keys[..count])
 }
 
+/// Market V2 is deliberately narrower than the future-facing NotaryConfig
+/// account.  The operated resolution stack has exactly two independent roles.
+pub(crate) fn validate_market_v2_notary_config(config: &NotaryConfig) -> Result<()> {
+    validate_stored_notary_config(config)?;
+    require!(config.threshold == 2, ErrorCode::UnsupportedNotaryTopology);
+    require!(
+        config.notary_count == 2,
+        ErrorCode::UnsupportedNotaryTopology
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +127,37 @@ mod tests {
         assert_ne!(v1, v2);
         assert_ne!(v2, v3);
         assert!(notary_config_snapshot_pda(&admin, 0, &program_id).is_err());
+    }
+
+    #[test]
+    fn market_v2_accepts_only_exact_two_of_two() {
+        let mut config = NotaryConfig {
+            admin: Pubkey::new_unique(),
+            threshold: 2,
+            notary_count: 2,
+            bump: 1,
+            _reserved0: [0; 5],
+            version: 1,
+            notary_keys: [Pubkey::default(); MAX_NOTARIES],
+        };
+        config.notary_keys[0] = Pubkey::new_unique();
+        config.notary_keys[1] = Pubkey::new_unique();
+        assert!(validate_market_v2_notary_config(&config).is_ok());
+        for (threshold, count) in [(1, 2), (1, 3), (2, 3), (3, 3)] {
+            config.threshold = threshold;
+            config.notary_count = count;
+            if count == 3 {
+                config.notary_keys[2] = Pubkey::new_unique();
+            }
+            assert!(validate_market_v2_notary_config(&config).is_err());
+        }
+        config.threshold = 2;
+        config.notary_count = 2;
+        config.notary_keys[1] = config.notary_keys[0];
+        assert!(validate_market_v2_notary_config(&config).is_err());
+        config.notary_keys[1] = Pubkey::default();
+        assert!(validate_market_v2_notary_config(&config).is_err());
+        config.notary_count = (MAX_NOTARIES as u8) + 1;
+        assert!(validate_market_v2_notary_config(&config).is_err());
     }
 }

@@ -100,6 +100,7 @@ services:
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/matching-keeper.env"
     environment:
+      ENVIRONMENT: public-devnet
       PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/matching-keeper:/app/apps/matching-keeper/state

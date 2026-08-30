@@ -2,8 +2,8 @@ use crate::{
     errors::ErrorCode,
     state::{Market, MarketOutcome, MarketStatus, NotaryConfig},
     validation::{
-        validate_market_configuration, validate_notary_config_snapshot_address,
-        validate_stored_notary_config,
+        validate_market_configuration, validate_market_v2_notary_config,
+        validate_notary_config_snapshot_address,
     },
 };
 use anchor_lang::prelude::*;
@@ -60,6 +60,7 @@ pub(crate) fn initialize_market_v2(
     max_open_orders_per_user: u16,
     max_open_orders_total: u32,
 ) -> Result<()> {
+    require!(resolver_hash != [0u8; 32], ErrorCode::InvalidResolverHash);
     require!(lock_ts >= open_ts, ErrorCode::InvalidTimeRange);
     require!(resolve_ts >= lock_ts, ErrorCode::InvalidTimeRange);
     validate_market_configuration(
@@ -73,7 +74,7 @@ pub(crate) fn initialize_market_v2(
         &ctx.accounts.notary_config,
         &crate::ID,
     )?;
-    validate_stored_notary_config(&ctx.accounts.notary_config)?;
+    validate_market_v2_notary_config(&ctx.accounts.notary_config)?;
 
     let creator_key = ctx.accounts.creator.key();
     let market = &mut ctx.accounts.market;

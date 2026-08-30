@@ -50,6 +50,8 @@ services:
     build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/matching-keeper.env"
+    environment:
+      ENVIRONMENT: public-devnet
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/keeper-id.json:/app/keeper-id.json:ro

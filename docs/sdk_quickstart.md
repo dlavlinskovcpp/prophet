@@ -82,7 +82,7 @@ client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
 
 ## Resolution Notes
 
-- `resolve_market_threshold` is the primary permissionless t-of-n notary flow for v2 markets.
+- `resolve_market_threshold` is the primary threshold-notary flow. New Market V2 creation is currently exact 2-of-2; permissionless resolver hashes are not automatically operated-supported.
 - The attester only supports threshold-notary v2 markets.
 - `initialize_notary_config(...)` is only idempotent when the existing PDA already matches the requested threshold and notary set. Use `update_notary_config(...)` when intentionally changing the config.
 - Fee config is frozen after the first order. Orders prefund a fee reserve, only taker executions accrue protocol fees, and unused reserve returns through `claim_refunds(...)`.

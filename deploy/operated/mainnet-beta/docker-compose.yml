@@ -87,6 +87,7 @@ services:
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/mainnet-beta}/matching-keeper.env"
     environment:
+      ENVIRONMENT: mainnet
       PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/mainnet-beta}/matching-keeper:/app/apps/matching-keeper/state

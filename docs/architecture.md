@@ -10,7 +10,7 @@ Prophet splits responsibility across an on-chain market program and several off-
 - the SDK is the user and agent entrypoint for market creation, trading, governance, and resolution
 - the attester evaluates resolver logic, verifies zkTLS payloads, and assembles canonical resolve transactions
 - the resolver registry stores canonical resolver definitions keyed by `resolver_hash`
-- the remote signer manages notary keys outside the attester process
+- the fixed-role A/B signer services manage notary keys outside the attester process; legacy generic signer tooling is not a production launch surface
 - the matching keeper discovers open orders and submits `match_orders` for crossed books
 
 ## Component Diagram

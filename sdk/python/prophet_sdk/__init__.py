@@ -10,6 +10,7 @@ from .pdas import (
 from .resolver_hash import compute_resolver_hash_hex, load_resolver_definition
 from .types import MarketOutcome, MarketStatus, OrderSide
 from .agent import ProphetAgent, ResolverConfig, MarketHandle
+from .resolver_support import ResolverSupport, classify_resolver_support
 
 __all__ = [
     "ProphetClient",
@@ -27,4 +28,6 @@ __all__ = [
     "ProphetAgent",
     "ResolverConfig",
     "MarketHandle",
+    "ResolverSupport",
+    "classify_resolver_support",
 ]

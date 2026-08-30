@@ -152,7 +152,9 @@ class MatchingEngine:
         if top_yes.owner != top_no.owner:
             selected = (top_yes_pubkey, top_yes, top_no_pubkey, top_no)
         else:
-            # Let the shared top owner be O. For any valid later pair (Yi, Nj):
+            # Let the shared top owner be O. The keeper chooses a deterministic
+            # policy pair; this is not an on-chain best-execution guarantee.
+            # For any valid later pair (Yi, Nj):
             # if Yi.owner != O then (Yi, N0) is also distinct-owner and at least
             # as crossed because N0 has no worse NO price; otherwise Nj.owner != O
             # and (Y0, Nj) is distinct-owner and at least as crossed because Y0

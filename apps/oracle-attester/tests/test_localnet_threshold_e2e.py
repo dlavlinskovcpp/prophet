@@ -132,7 +132,7 @@ async def test_localnet_threshold_resolve_via_attester(tmp_path, monkeypatch):
 
     notary_config, _ = sdk.initialize_notary_config(
         2,
-        [notary1.pubkey(), notary2.pubkey(), notary3.pubkey()],
+        [notary1.pubkey(), notary2.pubkey()],
     )
     sdk.initialize_market_v2(
         resolver_hash=resolver_hash,
@@ -252,7 +252,7 @@ async def test_localnet_threshold_invalid_resolve_via_attester(tmp_path, monkeyp
 
     notary_config, _ = sdk.initialize_notary_config(
         2,
-        [notary1.pubkey(), notary2.pubkey(), notary3.pubkey()],
+        [notary1.pubkey(), notary2.pubkey()],
     )
     sdk.initialize_market_v2(
         resolver_hash=resolver_hash,

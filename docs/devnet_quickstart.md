@@ -12,7 +12,7 @@ It intentionally uses a demo `1-of-1` notary configuration so you can validate t
 4. Create a market from a resolver definition.
 5. Resolve the market directly with the SDK threshold flow.
 
-If you want the full operated path with registry, attester, remote signer, and monitoring, use this guide first and then move to `docs/ops_runbook.md` and `docs/release_runbook.md`.
+If you want the full operated path with registry, fixed-role signers, and monitoring, use this guide first and then move to `docs/ops_runbook.md` and `docs/release_runbook.md`.
 
 ## Prerequisites
 

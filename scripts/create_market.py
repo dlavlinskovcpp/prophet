@@ -8,11 +8,10 @@ from solders.pubkey import Pubkey
 
 # Ensure we can import the SDK from root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../sdk/python")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../apps/oracle-attester")))
 from prophet_sdk import ProphetClient, derive_market_pda
-
-def compute_resolver_hash(definition: dict) -> bytes:
-    canonical_json = json.dumps(definition, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical_json.encode("utf-8")).digest()
+from prophet_sdk import resolver_v2
+from src.resolver_support import preflight_operated_resolver
 
 def load_resolver_definition(path: str) -> dict:
     if not os.path.exists(path):
@@ -43,7 +42,17 @@ def main():
     
     try:
         resolver_def = load_resolver_definition(args.resolver_file)
-        resolver_hash = compute_resolver_hash(resolver_def)
+        resolver_hash = resolver_v2.resolver_definition_hash(resolver_def)
+        enabled = tuple(item.strip() for item in os.getenv("OPERATED_RESOLVER_TYPES", "").split(",") if item.strip())
+        verifier_types = tuple(item.strip() for item in os.getenv("OPERATED_VERIFIER_TYPES", "").split(",") if item.strip())
+        if not enabled or not verifier_types:
+            raise ValueError("OPERATED_RESOLVER_TYPES and OPERATED_VERIFIER_TYPES must explicitly name the deployed V2 runtime")
+        preflight_operated_resolver(
+            resolver_hash,
+            load_definition=lambda _hash: resolver_def,
+            enabled_resolver_types=enabled,
+            verifier_implementations={item: True for item in verifier_types},
+        )
     except Exception as e:
         print(f"Error loading resolver definition: {e}")
         sys.exit(1)

@@ -12,8 +12,8 @@ processes:
 
 The old `REMOTE_SIGNER_*`, `NOTARY_SIGNER_MODE=remote`, shared Vault-token, and
 dual-key key-map settings are retired and must not be placed in a production
-environment file. `src/remote_signer_main.py` is a fail-closed compatibility
-stub and is not a launch target.
+environment file. The generic `remote_signer_main.py` implementation is removed
+from the production source tree and is not a launch target.
 
 Role-local recovery may be performed one role at a time under that role's
 Vault policy. The operator must not load A and B credentials into the same

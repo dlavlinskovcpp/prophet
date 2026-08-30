@@ -5,7 +5,11 @@ import argparse
 import json
 from solders.pubkey import Pubkey
 from prophet_sdk import ProphetClient, derive_market_pda
-from prophet_sdk.resolver_hash import compute_resolver_hash, load_resolver_definition
+from prophet_sdk import resolver_v2
+from prophet_sdk.resolver_hash import load_resolver_definition
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../apps/oracle-attester")))
+from src.resolver_support import preflight_operated_resolver
 
 def main():
     parser = argparse.ArgumentParser(description="Create Markets from Resolver Def")
@@ -22,7 +26,17 @@ def main():
 
     client = ProphetClient()
     resolver_def = load_resolver_definition(args.resolver_file)
-    resolver_hash = compute_resolver_hash(resolver_def)
+    resolver_hash = resolver_v2.resolver_definition_hash(resolver_def)
+    enabled = tuple(item.strip() for item in os.getenv("OPERATED_RESOLVER_TYPES", "").split(",") if item.strip())
+    verifier_types = tuple(item.strip() for item in os.getenv("OPERATED_VERIFIER_TYPES", "").split(",") if item.strip())
+    if not enabled or not verifier_types:
+        raise ValueError("OPERATED_RESOLVER_TYPES and OPERATED_VERIFIER_TYPES must explicitly name the deployed V2 runtime")
+    preflight_operated_resolver(
+        resolver_hash,
+        load_definition=lambda _hash: resolver_def,
+        enabled_resolver_types=enabled,
+        verifier_implementations={item: True for item in verifier_types},
+    )
     resolver_hash_hex = resolver_hash.hex()
     
     quote_mint = Pubkey.from_string(args.quote_mint)

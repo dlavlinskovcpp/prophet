@@ -87,6 +87,21 @@ class AdmissionGrantReplayJournal:
         except sqlite3.Error as exc:
             raise AdmissionGrantReplayJournalError("admission_grant_replay_close_failed") from exc
 
+    def health(self) -> bool:
+        """Run non-mutating structural checks for a signer readiness probe."""
+        try:
+            with self._lock:
+                check = self._db.execute("PRAGMA integrity_check").fetchone()
+                version = self._db.execute("PRAGMA user_version").fetchone()
+                rows = dict(self._db.execute("SELECT key, value FROM admission_grant_replay_metadata"))
+                return (
+                    check is not None and check[0] == "ok"
+                    and version is not None and version[0] == SCHEMA_VERSION
+                    and rows == {"schema_version": str(SCHEMA_VERSION), "signer_role": self.signer_role}
+                )
+        except (sqlite3.Error, TypeError):
+            return False
+
     def _initialize(self) -> None:
         try:
             with self._lock:

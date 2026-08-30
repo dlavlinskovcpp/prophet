@@ -96,6 +96,7 @@ class MatchingKeeperService:
         self._last_ws_error = ""
         self._last_discovery_at = 0
         self._last_discovery_error = ""
+        self._last_rpc_error = ""
         self._last_prune_at = 0
         self._last_pruned_attempts = 0
 
@@ -145,6 +146,10 @@ class MatchingKeeperService:
             return False
         if self.settings.REQUIRE_NOTARY_CONFIG and market_account.notary_config == Pubkey.default():
             return False
+        if self.settings.REQUIRE_OPERATED_RESOLVER_SUPPORT:
+            resolver_hash = bytes(market_account.resolver_hash).hex()
+            if resolver_hash not in self.settings.operated_supported_resolver_hashes:
+                return False
         return True
 
     async def _discover_market_targets(self) -> Dict[Pubkey, str]:
@@ -193,6 +198,7 @@ class MatchingKeeperService:
         except Exception as exc:
             self._last_discovery_at = now
             self._last_discovery_error = str(exc)
+            self._last_rpc_error = "rpc_unavailable"
             logger.exception("market discovery failed")
 
     async def _discovery_loop(self) -> None:
@@ -238,7 +244,11 @@ class MatchingKeeperService:
     async def refresh_market_snapshot(self, market: Pubkey, *, discovery_source: Optional[str] = None) -> bool:
         discovery_source = discovery_source or self._market_sources.get(market, self.settings.MARKET_DISCOVERY_MODE)
 
-        market_account = await asyncio.to_thread(self.client.fetch_market, market)
+        try:
+            market_account = await asyncio.to_thread(self.client.fetch_market, market)
+        except Exception:
+            self._last_rpc_error = "rpc_unavailable"
+            raise
         if market_account is None:
             self._retire_market(
                 market,
@@ -258,7 +268,11 @@ class MatchingKeeperService:
             )
             return False
 
-        orders = await asyncio.to_thread(self.client.fetch_orders_for_market, market)
+        try:
+            orders = await asyncio.to_thread(self.client.fetch_orders_for_market, market)
+        except Exception:
+            self._last_rpc_error = "rpc_unavailable"
+            raise
         now = int(time.time())
         self.engine.activate_market(market, discovery_source=discovery_source, seen_at=now)
         self.engine.set_market_metadata(
@@ -278,6 +292,7 @@ class MatchingKeeperService:
             captured_at=now,
         )
         self._market_sources[market] = discovery_source
+        self._last_rpc_error = ""
         return True
 
     async def _refresh_dirty_orders(self, market: Pubkey) -> None:
@@ -454,12 +469,33 @@ class MatchingKeeperService:
         discovery_age = now - self._last_discovery_at if self._last_discovery_at else None
         prune_age = now - self._last_prune_at if self._last_prune_at else None
         ws_stale = bool(active_markets and ws_age is not None and ws_age > self.settings.STALE_WS_THRESHOLD_S)
+        matching_failed = any(bool(item.get("last_error")) for item in active_snapshots)
+        discovery_healthy = bool(self._last_discovery_at and not self._last_discovery_error)
+        websocket_healthy = not ws_stale and (not active_markets or bool(self._last_ws_connected_at))
+        rpc_healthy = not self._last_rpc_error and discovery_healthy
+        matching_healthy = not matching_failed
+        ready = bool(self._running and rpc_healthy and websocket_healthy and discovery_healthy and matching_healthy)
+        reasons = []
+        if not self._running:
+            reasons.append("process_not_running")
+        if not rpc_healthy:
+            reasons.append("rpc_unavailable")
+        if not websocket_healthy:
+            reasons.append("websocket_unhealthy")
+        if not discovery_healthy:
+            reasons.append("discovery_unhealthy")
+        if not matching_healthy:
+            reasons.append("matching_unhealthy")
 
         return {
-            "ok": self._running and not ws_stale and not self._last_discovery_error,
-            "running": self._running,
-            "rpc_url": self.settings.RPC_URL,
-            "ws_url": self.settings.ws_url_effective,
+            "ok": ready,
+            "process_up": self._running,
+            "keeper_ready": ready,
+            "rpc_healthy": rpc_healthy,
+            "websocket_healthy": websocket_healthy,
+            "discovery_healthy": discovery_healthy,
+            "matching_healthy": matching_healthy,
+            "reason_codes": reasons,
             "discovery_mode": self.settings.MARKET_DISCOVERY_MODE,
             "active_markets": active_markets,
             "dirty_orders": dirty_orders,
@@ -468,10 +504,8 @@ class MatchingKeeperService:
             "last_ws_connected_at": self._last_ws_connected_at,
             "last_ws_message_at": self._last_ws_message_at,
             "last_ws_message_age_s": ws_age,
-            "last_ws_error": self._last_ws_error,
             "last_discovery_at": self._last_discovery_at,
             "last_discovery_age_s": discovery_age,
-            "last_discovery_error": self._last_discovery_error,
             "last_prune_at": self._last_prune_at,
             "last_prune_age_s": prune_age,
             "last_pruned_attempts": self._last_pruned_attempts,
