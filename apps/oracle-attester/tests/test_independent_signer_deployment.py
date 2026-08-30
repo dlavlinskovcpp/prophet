@@ -24,7 +24,10 @@ def _config_raw(role, key, *, environment="public-devnet", mode="production", to
         "vault": {"address": f"https://vault-{lower}.example", "transit_mount": "transit", "key_name": f"notary-{lower}", "token_env": f"SIGNER_{role}_VAULT_TOKEN", "admin_domain_id": f"vault-admin-{lower}", "account_or_tenant_id": f"vault-account-{lower}", "auth_principal_id": f"vault-principal-{lower}", "timeout_seconds": 10},
         "rpc": {"url_env": f"SIGNER_{role}_RPC_URL", "provider_domain_id": f"rpc-provider-{lower}", "account_or_project_id": f"rpc-account-{lower}", "credential_principal_id": f"rpc-principal-{lower}"},
         "solana": {"expected_genesis_hash": GENESIS, "expected_program_id": "11111111111111111111111111111111"},
-        "journal_path": f"/var/lib/prophet/signer-{lower}.sqlite", "admission_token_env": f"SIGNER_{role}_ADMISSION_TOKEN",
+        # Use a platform-stable absolute fixture path.  macOS canonicalizes
+        # /var through /private, which made these deterministic vectors differ
+        # from the Linux CI runner without changing the production path policy.
+        "journal_path": f"/prophet-ci/signer-{lower}.sqlite", "admission_token_env": f"SIGNER_{role}_ADMISSION_TOKEN",
     }
 
 
@@ -68,8 +71,8 @@ def test_operated_public_devnet_and_mainnet_pairs_accept_with_deterministic_vect
     a, b, ma, mb = _pair()
     result = validate_operated_signer_deployment(a, b, ma, mb)
     assert result.classification == "OPERATED_2OF2_ACCEPTABLE"
-    assert ma.fingerprint() == "f31f7d583c9b8bbfe254bab8777996792f264cad7c00300ccc6fffdb52ede1ec"
-    assert mb.fingerprint() == "a42e81e9ddddb8cd1ca41a4c19b030050b8bbd8937a00e0b68ea65a93772da63"
+    assert ma.fingerprint() == "459108fd5b5e5cbfdd43e1bacb48b28a53a01b2b505f6799ff47361946239c3c"
+    assert mb.fingerprint() == "c9c568dac1cf1ac7696b26a7574ae54c05a7894faed9bce63552b6df775f6b19"
     mainnet = _pair(environment="mainnet")
     assert validate_operated_signer_deployment(*mainnet).environment == "mainnet"
     with pytest.raises(Exception):
