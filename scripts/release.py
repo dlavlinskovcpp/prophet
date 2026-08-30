@@ -11,8 +11,12 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from durable_files import atomic_write_text
 from typing import Any, Dict
+
+try:
+    from durable_files import atomic_write_text
+except ModuleNotFoundError:  # pragma: no cover - package-style imports
+    from scripts.durable_files import atomic_write_text
 
 try:
     from release_config import (

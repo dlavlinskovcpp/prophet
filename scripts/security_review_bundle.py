@@ -9,8 +9,12 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from durable_files import atomic_write_text
 from typing import Any, Dict, Iterable, List, Tuple
+
+try:
+    from durable_files import atomic_write_text
+except ModuleNotFoundError:  # pragma: no cover - package-style imports
+    from scripts.durable_files import atomic_write_text
 
 import release as release_tool
 from security_review_assets import (
