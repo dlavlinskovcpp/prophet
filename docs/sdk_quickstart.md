@@ -1,69 +1,83 @@
 # Python SDK Quickstart
 
-This SDK is the primary interface for agent-to-agent interaction with Prophet.
+The Python SDK is the programmatic interface for agents, traders, relayers,
+and developer integrations. It contains a low-level `ProphetClient` for real
+transactions and a small `ProphetAgent` facade for application-owned strategy
+backends.
 
 ## Install
 
 ```bash
 cd sdk/python
-pip install -e .
+poetry install
 ```
 
-## Environment
-
-Set these before running examples:
+Set the connection values for a local validator or your own developer cluster:
 
 ```bash
 export RPC_URL="http://127.0.0.1:8899"
-export PROPHET_PROGRAM_ID="<your_program_id>"
+export PROPHET_PROGRAM_ID="<program-id>"
 export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
-export QUOTE_MINT="<your_quote_mint>"
+export QUOTE_MINT="<quote-mint>"
 ```
 
-## Core Lifecycle API
+The official Prophet public-devnet is currently paused and its program is not
+deployed. Do not treat local or personal-devnet credentials as operated
+production infrastructure.
 
-`ProphetClient` now exposes the full MVP market lifecycle:
+## Current client API
+
+`ProphetClient` currently exposes:
 
 - `initialize_notary_config(...)`
-- `update_notary_config(...)`
+- `rotate_notary_config(...)`
 - `initialize_market_v2(...)`
-- `place_order(...)`
+- `place_order(...)` and `place_order_auto_seq(...)`
 - `match_orders(...)`
 - `cancel_order(...)`
 - `claim_refunds(...)`
-- `transfer_market_authority(...)`
-- `lock_market(...)` / `unlock_market(...)` / `sync_market_status(...)`
+- `lock_market(...)`, `unlock_market(...)`, and `sync_market_status(...)`
 - `update_market_schedule(...)`
-- `set_market_fee_config(...)` / `withdraw_protocol_fees(...)`
+- `set_market_fee_config(...)` and `withdraw_protocol_fees(...)`
 - `resolve_market_threshold(...)`
 - `redeem(...)`
 
-## Minimal Example
+## Exact 2-of-2 Market V2 example
+
+The current Market V2 path rejects unsupported notary topologies. Use two
+distinct, non-zero notary public keys:
 
 ```python
 import os
 import time
-from solders.pubkey import Pubkey
-from prophet_sdk import ProphetClient, OrderSide, derive_market_pda, derive_notary_config_pda
 
-client = ProphetClient(
-    rpc_url=os.getenv("RPC_URL"),
-    payer_keypair_path=os.getenv("PAYER_KEYPAIR_PATH"),
-    program_id=os.getenv("PROPHET_PROGRAM_ID"),
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
+
+from prophet_sdk import (
+    ProphetClient,
+    derive_market_pda,
+    derive_notary_config_pda,
 )
 
-quote_mint = Pubkey.from_string(os.environ["QUOTE_MINT"])
-resolver_hash = bytes([7] * 32)
+client = ProphetClient(
+    rpc_url=os.environ["RPC_URL"],
+    payer_keypair_path=os.environ["PAYER_KEYPAIR_PATH"],
+    program_id=os.environ["PROPHET_PROGRAM_ID"],
+)
 
+notary_a = Keypair()
+notary_b = Keypair()
+notary_config, _ = client.initialize_notary_config(
+    2, [notary_a.pubkey(), notary_b.pubkey()]
+)
+
+resolver_hash = bytes([7]) * 32
 now = int(time.time())
 open_ts = now - 5
 lock_ts = now + 120
 resolve_ts = now + 180
-
-notary_keys = [client.payer.pubkey()]  # demo only; use real t-of-n keys in production
-notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
-
-client.initialize_notary_config(1, notary_keys)
+quote_mint = Pubkey.from_string(os.environ["QUOTE_MINT"])
 
 client.initialize_market_v2(
     resolver_hash=resolver_hash,
@@ -75,36 +89,74 @@ client.initialize_market_v2(
     quote_mint=quote_mint,
 )
 
-market, _ = derive_market_pda(client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id)
-client.set_market_fee_config(market, client.payer.pubkey(), 50)  # 50 bps before the first order only
-client.place_order(market, 0, OrderSide.BuyYes, 60_000_000, 100, quote_mint)
+market, _ = derive_market_pda(
+    client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id
+)
 ```
 
-## Resolution Notes
+`NotaryConfig` is represented generally enough for protocol evolution, but
+Market V2 accepts exactly threshold 2 with exactly two distinct keys. For a
+developer-only direct resolution, pass both keypairs to
+`resolve_market_threshold(...)` and use a separate relayer keypair when
+appropriate. The production operated path keeps signer keys outside the SDK
+process.
 
-- `resolve_market_threshold` is the primary threshold-notary flow. New Market V2 creation is currently exact 2-of-2; permissionless resolver hashes are not automatically operated-supported.
-- The attester only supports threshold-notary v2 markets.
-- `initialize_notary_config(...)` is only idempotent when the existing PDA already matches the requested threshold and notary set. Use `update_notary_config(...)` when intentionally changing the config.
-- Fee config is frozen after the first order. Orders prefund a fee reserve, only taker executions accrue protocol fees, and unused reserve returns through `claim_refunds(...)`.
+## Rotation and legacy compatibility
 
-## Example Scripts
+`update_notary_config(...)` remains in the client for ABI compatibility but is
+fail-closed: it raises because an existing snapshot is immutable. It is not a
+normal mutable configuration operation.
 
-- Preferred v2 relayer example: `sdk/python/examples/resolve_threshold_relayer.py`
-- Operated matching service: `docs/matching_keeper.md`
+Use `rotate_notary_config(previous_notary_config, new_version, threshold,
+notary_keys)` to create the next versioned snapshot. Existing markets continue
+to use the snapshot they pinned at initialization; only new markets can select
+the successor.
 
-## Attester Helper Script
+## Agent facade
 
-The helper script supports direct proof/public-input payloads or `proof_ref` passthrough:
+The actual `ProphetAgent` facade delegates to an application-provided
+`AgentBackend`:
 
-```bash
-python scripts/resolve_market_via_attester.py <MARKET> YES \
-  --proof-file ./proof.bin \
-  --pi-file ./public_inputs.json
+```python
+from prophet_sdk import ProphetAgent, ResolverConfig
+
+backend = application_backend  # your AgentBackend implementation
+agent = ProphetAgent(backend)
+
+resolver = ResolverConfig(
+    resolver_id="my-resolver",
+    definition=canonical_resolver_definition,
+    required_verifiers=("verifier-a", "verifier-b"),
+    threshold=2,
+)
+
+market = agent.create_market(question="Example question", resolver=resolver)
+agent.buy_yes(market, agent_id="agent-a", quantity=100, price_e8=60_000_000)
+agent.buy_no(market, agent_id="agent-b", quantity=100, price_e8=40_000_000)
+agent.match_orders(market)
+result = agent.resolve(market)
 ```
 
-or:
+The facade is an application boundary, not a replacement for the on-chain
+client or the production fixed-role signer boundary.
 
-```bash
-python scripts/resolve_market_via_attester.py <MARKET> YES \
-  --proof-ref "file:/abs/path/proof.bin:/abs/path/public_inputs.json"
-```
+## Resolution and accounting notes
+
+- `resolve_market_threshold(...)` is the current threshold resolution entry
+  point and requires two valid signatures for Market V2.
+- Resolver V2 definitions are canonicalized and committed through a non-zero
+  `resolver_hash`; permissionless commitment does not imply operated support.
+- The existing settlement domain is `PROPHET_RESOLVE_V2`; the canonical message
+  is exactly 235 bytes.
+- `claim_refunds(amount_atoms)` claims up to the requested amount, subject to
+  the available refundable balance.
+- Fee configuration is frozen after the first order. Unused fee reserve is
+  returned through normal refund handling.
+
+## Verified repository examples
+
+- Deterministic agent flow: `make demo`
+- Fixed-role localtest flow: `make operated-smoke`
+- Threshold relayer example: [`examples/resolve_threshold_relayer.py`](../sdk/python/examples/resolve_threshold_relayer.py)
+- Market factory: [`examples/market_factory.py`](../sdk/python/examples/market_factory.py)
+- Resolver V2 specification: [`resolver_spec.md`](resolver_spec.md)

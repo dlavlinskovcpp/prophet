@@ -1,192 +1,129 @@
 # Prophet Trust Model
 
-This document describes what Prophet guarantees, what it assumes, and where the trust boundaries are.
+Prophet is a hybrid protocol. The Solana program enforces financial state and
+settlement authorization; Resolver V2, verifiers, and fixed-role signers are
+off-chain dependencies. The design makes those dependencies explicit and
+auditable, not trustless by assertion.
 
-## Scope
-
-Prophet is a hybrid system:
-
-- on-chain logic enforces custody, state transitions, and settlement
-- off-chain services supply resolver data, zkTLS verification, and threshold signatures
-
-The protocol is designed to make off-chain resolution auditable and constrained, not to eliminate off-chain trust entirely.
-
-## Security Goals
+## Security goals
 
 Prophet aims to provide:
 
-- on-chain custody of quote assets during market lifetime
-- deterministic order, refund, redemption, and fee accounting under the program rules
-- explicit governance controls around market lifecycle
-- auditable market resolution via canonical messages plus stored `proof_hash` and `public_inputs_hash`
-- threshold authorization for market resolution instead of single-signer resolution
+- on-chain custody, accounting, lifecycle, refunds, fees, and redemption;
+- immutable market binding to a canonical resolver and notary snapshot;
+- exact 2-of-2 authorization for current Market V2 settlement;
+- independent, role-local authorization before any settlement signature; and
+- fail-closed handling of replay, equivocation, ambiguity, and unsupported
+  resolver or notary inputs.
 
-## What The Program Enforces
+## What the Solana program enforces
 
-The on-chain program enforces:
+The program enforces market timing and lifecycle rules, order and escrow
+accounting, matching arithmetic, fee accounting, refunds, redemption, the
+canonical resolution message, and the distinct-signature threshold. Each
+Market V2 account pins an immutable `NotaryConfig` snapshot. Rotation creates a
+successor for new markets; it does not rewrite an existing market's trust root.
 
-- market timing, status transitions, and authority permissions, including an enforceable `lock_ts`
-- permanent schedule immutability after the first accepted order, even when current open-order count later returns to zero
-- order placement constraints, escrow accounting, and fee reserve accounting
-- matching math and payout logic
-- fee-recipient and protocol-fee withdrawal rules
-- canonical v2 resolution message format
-- immutable per-market notary trust-root snapshots: each market pins one exact `NotaryConfig` address/version, while rotation creates a distinct successor account
-- threshold signature count, distinct signer checks, and `NotaryConfig` version binding
+The chain rejects malformed or mismatched settlement bytes and stores the
+outcome, `proof_hash`, and `public_inputs_hash` after successful authorization.
 
-If a submitted resolution does not match the expected message bytes or threshold rules, the chain rejects it.
+## What the program does not enforce
 
-## What The Program Does Not Enforce
+The program does not prove that an external data source is truthful, that an
+off-chain verifier interpreted evidence correctly, or that operators selected
+a safe resolver registry, RPC, or runtime. zkTLS verification occurs off-chain;
+the chain does not verify zkTLS proofs itself.
 
-The program does not prove:
+Matching is **permissionless limit-order crossing**. The program validates a
+caller-selected crossing pair, but does not provide consensus-enforced global
+top-of-book, global best execution, strict price priority, strict time priority,
+or Sybil-resistant economic identity.
 
-- that public inputs came from a truthful external data source
-- that the off-chain zkTLS verifier was correct in an absolute cryptographic sense
-- that operators used a safe registry, signer, or RPC stack
-- fairness of transaction ordering or liveness of external infrastructure
+## Fixed-role signer boundary
 
-The chain stores hashes and verifies signatures, but it does not re-run zkTLS proof verification on-chain.
+Current production settlement uses fixed-role Signer A and fixed-role Signer B.
 
-## Trusted Components
+> No production process can possess or accept both Signer A and Signer B
+> credentials.
 
-### Notary Set
+The roles are independent across runtime principal, administration, admission
+issuer, Vault authentication and key identity, finalized RPC trust path, and
+durable journals. A signer performs:
 
-Resolution depends on the threshold notaries in the immutable snapshot pinned by that market. If enough keys from that pinned snapshot sign a bad message, the chain cannot distinguish that from a valid signed resolution.
+```text
+strict request parsing
+  -> admission G1
+  -> durable replay G2
+  -> independent P0C1 authorization
+  -> P0C2 anti-equivocation
+  -> role-local Vault signing
+```
 
-Notary rotation is append-only rather than in-place mutation. Legacy version 1 remains at its deployed PDA; each successor version has a versioned PDA. Existing markets continue to resolve against their original snapshot, while newly initialized markets may opt into a successor. The legacy `update_notary_config` instruction is retained only for ABI compatibility and rejects mutation.
+The coordinator/broker is only a cache and transport boundary. It is not an
+authorization authority and has no signer credentials. A submitter and matching
+keeper are also not signers.
 
-### Oracle Attester
+### Compromise and failure consequences
 
-The attester is trusted to:
+- Compromising one signer domain is insufficient for an exact 2-of-2 outcome.
+- Compromising both pinned signer domains can authorize a false outcome.
+- A compromised signer RPC can corrupt that signer's view of finalized state.
+  Independent A/B RPC domains are therefore an operational security gate, not
+  an optional deployment detail.
+- A compromised coordinator can submit bad requests or cause denial of
+  service, but should not directly authorize settlement.
+- A lost or unavailable pinned key can permanently block resolution for markets
+  bound to that exact 2-of-2 snapshot. This is a deliberate current liveness
+  tradeoff, not an implicit recovery guarantee.
 
-- load the correct resolver
-- evaluate the resolver correctly
-- verify zkTLS payloads correctly
-- ask signers to sign the right message
+## Resolver and verifier trust
 
-The attester is not trusted with final custody of market funds, but it is part of the resolution trust boundary.
+Resolver V2 definitions are canonical machine-readable market commitments. A
+non-zero `resolver_hash` is required for Market V2. Permissionless creation of
+that commitment does not mean the Prophet-operated resolver service supports
+every definition.
 
-### Resolver Registry
+Verifier A and Verifier B evaluate evidence and return authenticated results.
+Their output remains part of the off-chain trust boundary. The registry stores
+and serves definitions, but cannot self-authorize settlement. The signers must
+bind any result to the market's resolver hash and the configured policy before
+signing.
 
-The registry is trusted as the source for canonical resolver definitions. The main safety property is that the resolver loaded off-chain must hash back to the market's on-chain `resolver_hash`.
+## Readiness and liveness
 
-If the registry is unavailable, resolution can stall. If it serves the wrong resolver, the hash mismatch should prevent signing or submission.
+`/live` means the process is running. `/ready` checks dependencies and fails
+closed; it must not create a settlement signature merely to report readiness.
+Before the Prophet public-devnet program exists, settlement readiness may
+remain blocked with an `expected_program_missing` reason.
 
-### Remote Signer / KMS
+Resolution is permissionless to submit after valid authorization is assembled,
+but it depends on verifier, signer, Vault, RPC, registry, and transaction
+submission availability. Internal security acceptance and green CI are
+regression evidence, not an independent audit.
 
-The signer layer is trusted to:
+## Operational requirements
 
-- authorize only allowed signer pubkeys
-- keep key material protected
-- sign only the intended canonical message
+An operated deployment should:
 
-Compromise of enough notary keys compromises market resolution.
+- keep Signer A and Signer B in separate credential and fault domains;
+- use non-exportable role-local Vault keys and scoped admission policies;
+- use independent finalized-RPC trust paths;
+- persist G2 and P0C2 state on distinct durable storage;
+- protect TLS, private service ingress, metrics, and operator endpoints;
+- monitor verifier, signer, Vault, RPC, registry, coordinator, and keeper
+  liveness; and
+- rehearse backup, restart, key-loss, and ambiguous-submission procedures.
 
-### Solana Cluster And RPC
+## Current status
 
-Prophet inherits the normal Solana assumptions:
+The current release candidate is `v1.0.0-rc4.6` with CI green. Public-devnet
+is paused and its Prophet program is not deployed. Mainnet is blocked, and an
+external independent audit is required before significant mainnet TVL.
 
-- the cluster executes the deployed program correctly
-- RPC responses are sufficiently correct for clients and services to operate
-- transactions can be submitted and confirmed with reasonable liveness
+## Summary
 
-## Main Failure Modes
-
-### Attester Outage
-
-Effect:
-
-- markets cannot be resolved through the operated path
-
-What still holds:
-
-- funds remain in program custody
-- trading, refunds, and existing state stay governed by the program
-
-### Remote Signer Or KMS Outage
-
-Effect:
-
-- threshold signatures cannot be collected
-- resolution stalls
-
-### Resolver Registry Outage
-
-Effect:
-
-- new resolver loads may fail
-- resolution may rely on cache if stale-on-error is enabled
-
-### Notary Key Compromise
-
-Effect:
-
-- if enough keys are compromised to satisfy threshold, a bad market resolution can be signed
-
-Mitigation:
-
-- threshold sizing
-- KMS/HSM-backed keys
-- signer allowlists
-- audit logs
-- operator monitoring and key rotation
-
-### Operator Error
-
-Effect:
-
-- wrong resolver published
-- wrong market schedule
-- wrong fee recipient
-- incorrect service config
-
-Mitigation:
-
-- release process
-- ops runbooks
-- explicit environment configs
-- durable audit logs
-- on-chain rejection of retroactive schedule updates and schedule mutation after first economic activity
-- immutable notary snapshots prevent later administrator rotation from rewriting the trust root of an already-created market
-- no authority-controlled instruction can resolve a market or set `Invalid`; verifier,
-  signer, and Vault failures leave the market unresolved until the pinned threshold
-  authorization is satisfied
-- on-chain rejection of zero market limits, unusable notary keys, and threshold
-  configurations that cannot fit in the canonical V2 resolution transaction
-
-## Non-Goals
-
-Prophet does not currently attempt to provide:
-
-- fully trustless on-chain data verification
-- censorship-resistant off-chain service operation
-- decentralized notary discovery or automatic key governance
-- complete economic protection against all thin-liquidity or manipulation scenarios
-
-## Operational Requirements
-
-To run Prophet safely in production:
-
-- keep notary keys in KMS/HSM-backed infrastructure
-- require auth and TLS for remote signer and registry endpoints
-- monitor attester, signer, registry, and keeper health
-- back up audit logs, proof store, resolver store, and keeper state
-- rehearse rollback and restore procedures before releases
-
-## In Short
-
-Prophet is strongest where it is on-chain:
-
-- custody
-- accounting
-- governance bounds
-- payout settlement
-
-Its main trust boundary is market resolution:
-
-- resolver definition source
-- zkTLS verification
-- threshold notary signatures
-- operator-managed infrastructure
-
-That is why the operated path emphasizes registry integrity, signer isolation, audit logs, and threshold signatures rather than claiming fully trustless oracle resolution.
+Prophet's strongest guarantees are on-chain custody, accounting, lifecycle
+rules, and final authorization. Its remaining trust boundary is the complete
+off-chain resolution path: canonical resolver data, independent verifier
+correctness, two fixed-role signer domains, Vault and RPC security, and
+operator-controlled availability.

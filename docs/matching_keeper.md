@@ -27,7 +27,11 @@ make keeper
 make localnet-up
 ```
 
-`make localnet-up` starts the validator, resolver registry, remote signer, attester, matching keeper, Prometheus, and Grafana from `docker-compose.localnet.yml`. Prometheus scrapes the keeper and attester with the sample config in `ops/monitoring/prometheus.yml` and alert rules in `ops/monitoring/alerts.yml`.
+`make localnet-up` starts the validator, Resolver V2 registry, matching keeper,
+Prometheus, and Grafana from `docker-compose.localnet.yml`. It does not start
+production signer roles or a generic signing service. Verifier and coordinator
+processes are separate role-specific services; the fixed-role operated smoke
+path is `make operated-smoke`.
 
 Required env:
 
@@ -79,7 +83,10 @@ Markets that disappear, resolve, lock, or otherwise stop qualifying are retired 
 - Compose service: `docker-compose.localnet.yml`
 - Make target: `Makefile`
 
-The compose service defaults to `MARKET_DISCOVERY_MODE=program_scan`, mounts `./id.json` as the payer, persists SQLite state under `apps/matching-keeper/state`, and publishes the keeper on `:8010`.
+The compose service defaults to `MARKET_DISCOVERY_MODE=program_scan`, mounts
+`./id.json` as the payer, persists SQLite state under
+`apps/matching-keeper/state`, and publishes the keeper on `:8010`. The payer is
+only a transaction fee payer; it is not a settlement signer.
 `PROPHET_PROGRAM_ID` must be exported explicitly before starting the local compose
 keeper; compose does not supply a fallback program address. If you use a different
 payer keypair location, override `PAYER_KEYPAIR_PATH` in

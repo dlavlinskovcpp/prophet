@@ -1,6 +1,8 @@
 # Production Checklist
 
-Use this as a preflight before shipping to a real cluster. It assumes you already validated the devnet and operated-devnet paths.
+Use this as a preflight before shipping to a real cluster. It assumes the
+current release candidate, exact 2-of-2 Market V2 path, and fixed-role A/B
+settlement boundary have already passed repository validation.
 
 ## Release and Rollback
 - release tag chosen and `scripts/release.py plan/bundle/deploy` run for the target env
@@ -8,13 +10,14 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 - rollback bundle archived and accessible (program.so, IDL, types, config, git sha)
 - change freeze window and on-call owners set
 
-## Signer / Vault
-- `NOTARY_SIGNER_MODE=remote` in attester
-- remote signer backend set to Vault Transit or another managed signer path; `make signer-vault-bootstrap` output archived for the target release
-- `make signer-dry-run ARGS="backend"` passes on the signer host
-- `make signer-dry-run ARGS="--public-key <pubkey> service --url <https signer url> --api-key <token>"` passes against the live service path
-- signer allowlist present, loaded, and rotated with `make signer-allowlist`; current and next key sets documented
-- Vault policies/tokens scoped to the notary keys only; audit logging enabled
+## Fixed-role Signer A / Signer B and Vault
+- Signer A and Signer B run as separate fixed-role processes with distinct runtime principals
+- no process, coordinator, keeper, submitter, or operator session can possess both role credentials
+- each role uses a separate non-exportable Vault Transit key, auth principal, policy, audit domain, and finalized-RPC trust path
+- role-local admission issuers hold their own private keys; signers receive only bound signed grants
+- public key, Vault key identity/version, policy, and audit provenance are recorded for each role
+- Vault policies are scoped to the role's key only; audit logging and TLS are enabled
+- restart, replay, ambiguity, and key-loss/liveness drills have been rehearsed
 
 ## Resolver Registry
 - registry runs with TLS and auth enabled
@@ -30,10 +33,11 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 - local reads are bounded by `PROOF_MAX_BYTES` (default 2,000,000 bytes) and `PUBLIC_INPUTS_MAX_BYTES` (default 256,000 bytes), with both pre-read size checks and a hard post-read cap
 - proof store retention policy defined; audit log path writable and rotated
 
-## Remote Signer
-- auth required; allowlist enforced; TLS enabled when off-box
-- signer audit logs writable and rotated
-- health checks alerting wired to paging for 5xx / allowlist load failures
+## Signer ingress
+- Signer A and Signer B are private authenticated services; neither is an anonymous public API
+- TLS is enabled when a role is off-box and ingress is bound to its role
+- signer audit logs are writable, durable, and rotated without exposing request secrets
+- health checks alert on role failure, Vault dependency failure, grant rejection, and `UNCERTAIN` state
 
 ## Matching Keeper
 - markets discovery mode configured (`program_scan` or explicit list)
@@ -43,7 +47,7 @@ Use this as a preflight before shipping to a real cluster. It assumes you alread
 ## Monitoring and Alerting
 - Prometheus scraping all services; Grafana dashboards linked to on-call
 - `make ops-validate-alerts` passes against `ops/monitoring/prometheus.yml` and `ops/monitoring/alerts.yml`
-- alerts for: attester 5xx/error rate, signer health, registry health, keeper websocket staleness, snapshot lag, backlog growth, Solana RPC errors, program errors in logs
+- alerts for: verifier A/B failure or disagreement, signer A/B health, Vault/RPC failure, G1/G2/P0C1/P0C2 rejection, registry health, keeper websocket staleness, snapshot lag, backlog growth, Solana RPC errors, and program errors in logs
 
 ## Backup / Restore
 - program/IDL/types bundle archived

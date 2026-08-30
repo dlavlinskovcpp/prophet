@@ -32,7 +32,7 @@ Used by:
 
 - on-chain instruction: `resolve_market_threshold`
 - SDK: `ProphetClient.resolve_market_threshold(...)`
-- attester threshold flow by default
+- operated Resolver V2 verifier/coordinator flow
 
 ## Hash Inputs
 

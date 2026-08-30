@@ -7,7 +7,7 @@ Use the generated review bundle as the handoff package for external auditors and
 From the repo root:
 
 ```bash
-make security-review-bundle ENV=devnet TAG=v0.2.3
+make security-review-bundle ENV=devnet TAG=<release-tag>
 ```
 
 That writes a bundle under `security-reviews/<tag>/<environment>/`.
