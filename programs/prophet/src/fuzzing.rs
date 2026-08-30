@@ -106,3 +106,49 @@ pub fn fuzz_settlement(data: &[u8]) {
         );
     }
 }
+
+/// Exercise the same bounded Ed25519 wire layout rules without constructing a
+/// Solana instruction sysvar. Malformed bytes must never panic or increase the
+/// count of accepted signatures.
+pub fn fuzz_ed25519_parser(data: &[u8]) {
+    let expected = data.get(0..data.len().min(64)).unwrap_or_default();
+    let mut accepted = 0_u8;
+    if data.len() < 16 || data[0] != 1 || data[1] != 0 {
+        return;
+    }
+    let read = |offset: usize| -> Option<usize> {
+        Some(u16::from_le_bytes([*data.get(offset)?, *data.get(offset + 1)?]) as usize)
+    };
+    let signature_offset = match read(2) {
+        Some(v) => v,
+        None => return,
+    };
+    let public_key_offset = match read(6) {
+        Some(v) => v,
+        None => return,
+    };
+    let message_offset = match read(10) {
+        Some(v) => v,
+        None => return,
+    };
+    let message_size = match read(12) {
+        Some(v) => v,
+        None => return,
+    };
+    let end = |offset: usize, size: usize| offset.checked_add(size);
+    let (Some(signature_end), Some(public_key_end)) =
+        (end(signature_offset, 64), end(public_key_offset, 32))
+    else {
+        return;
+    };
+    let Some(message_end) = message_offset.checked_add(message_size) else {
+        return;
+    };
+    if signature_end > data.len() || public_key_end > data.len() || message_end > data.len() {
+        return;
+    }
+    if &data[message_offset..message_end] == expected {
+        accepted = accepted.saturating_add(1);
+    }
+    assert!(accepted <= 1);
+}

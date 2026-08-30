@@ -9,6 +9,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from durable_files import atomic_write_text
 from typing import Any, Dict, Iterable, List, Tuple
 
 import release as release_tool
@@ -75,8 +76,7 @@ def _repo_rel(path: Path, *, fallback: str = "") -> str:
 
 
 def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    atomic_write_text(path, text)
 
 
 def _write_json(path: Path, payload: Dict[str, Any] | List[Any]) -> None:

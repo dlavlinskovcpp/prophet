@@ -114,4 +114,10 @@ pub enum ErrorCode {
     UnsupportedNotaryTopology,
     #[msg("Resolver hash must identify a non-zero resolver definition")]
     InvalidResolverHash,
+    #[msg("Settlement proof hash must be non-zero")]
+    InvalidProofHash,
+    #[msg("Settlement public inputs hash must be non-zero")]
+    InvalidPublicInputsHash,
+    #[msg("Position has already been redeemed")]
+    PositionAlreadyRedeemed,
 }

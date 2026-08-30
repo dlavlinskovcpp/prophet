@@ -22,6 +22,7 @@ from solders.pubkey import Pubkey
 from .resolver_v2_multi_verifier import AgreementPolicy, evaluate_agreement
 from .resolver_v2_pipeline import PipelineRejected
 from .runtime_clock import wall_clock_ms
+from .sqlite_durability import configure_durable_connection
 
 try:
     from prophet_sdk import resolver_v2
@@ -187,9 +188,7 @@ class ResolutionCoordinatorStore:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA foreign_keys = ON")
-        self._db.execute("PRAGMA journal_mode = WAL")
-        self._db.execute("PRAGMA busy_timeout = 5000")
+        configure_durable_connection(self._db)
         self._migrate()
 
     def close(self) -> None:

@@ -14,8 +14,21 @@ class SQLiteStateStore:
         self.db_path = db_path
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000")
+        journal_mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+        conn.execute("PRAGMA synchronous = FULL")
+        conn.execute("PRAGMA foreign_keys = ON")
+        effective = (
+            str(journal_mode).lower(),
+            int(conn.execute("PRAGMA synchronous").fetchone()[0]),
+            int(conn.execute("PRAGMA busy_timeout").fetchone()[0]),
+            int(conn.execute("PRAGMA foreign_keys").fetchone()[0]),
+        )
+        if effective != ("wal", 2, 5000, 1):
+            conn.close()
+            raise RuntimeError(f"sqlite_durability_contract_mismatch:{effective!r}")
         return conn
 
     def init(self) -> None:

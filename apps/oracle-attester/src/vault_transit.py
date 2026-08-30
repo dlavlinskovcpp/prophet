@@ -1,7 +1,6 @@
 import base64
 import json
 import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
@@ -10,6 +9,7 @@ import httpx
 from solders.pubkey import Pubkey
 
 from .signer_backend import _ed25519_pubkey_from_spki
+from .durable_files import atomic_write_bytes
 
 
 LOCAL_VAULT_PREFIXES = ("http://127.0.0.1", "http://localhost")
@@ -264,18 +264,10 @@ def write_vault_key_map_file(path: str, payload: Mapping[str, Any]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, tmp_path = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.replace(tmp_path, target)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
-        raise
+    atomic_write_bytes(
+        target,
+        (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+    )
 
 
 @dataclass(frozen=True)

@@ -19,6 +19,7 @@ from solders.pubkey import Pubkey
 from solders.signature import Signature
 
 from .signer_authorization import _JournalAuthorizedSettlement
+from .sqlite_durability import configure_durable_connection
 
 
 SCHEMA_VERSION = 1
@@ -237,11 +238,7 @@ class IndependentSignerJournal:
         self._lock = Lock()
         self._db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False, timeout=0.1)
         self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA busy_timeout = 100")
-        self._enable_wal()
-        self._db.execute("PRAGMA busy_timeout = 5000")
-        self._db.execute("PRAGMA synchronous = FULL")
-        self._db.execute("PRAGMA foreign_keys = ON")
+        configure_durable_connection(self._db)
         self._migrate_and_recover()
 
     def _enable_wal(self) -> None:

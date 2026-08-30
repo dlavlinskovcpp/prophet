@@ -10,6 +10,7 @@ from .tx import submit_and_confirm
 logger = logging.getLogger(__name__)
 
 TOKEN_PROGRAM_ID = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+TOKEN_2022_PROGRAM_ID = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuTb")
 ASSOCIATED_TOKEN_PROGRAM_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 SYSVAR_RENT_ID = Pubkey.from_string("SysvarRent111111111111111111111111111111111")
@@ -18,6 +19,12 @@ def derive_ata(owner: Pubkey, mint: Pubkey) -> Pubkey:
     seeds = [bytes(owner), bytes(TOKEN_PROGRAM_ID), bytes(mint)]
     pda, _ = Pubkey.find_program_address(seeds, ASSOCIATED_TOKEN_PROGRAM_ID)
     return pda
+
+
+def require_legacy_spl_token_program(program_id: Pubkey = TOKEN_PROGRAM_ID) -> None:
+    """The V1/V2 protocol accepts legacy SPL Token only, never Token-2022."""
+    if program_id == TOKEN_2022_PROGRAM_ID or program_id != TOKEN_PROGRAM_ID:
+        raise ValueError("Token-2022 and unknown token programs are unsupported")
 
 def build_create_ata_ix(
     payer: Pubkey,

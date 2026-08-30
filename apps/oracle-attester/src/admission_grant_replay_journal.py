@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any, Literal
+from .sqlite_durability import configure_durable_connection
 
 
 SCHEMA_VERSION = 1
@@ -70,10 +71,7 @@ class AdmissionGrantReplayJournal:
             candidate.parent.mkdir(parents=True, exist_ok=True)
             self._db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False, timeout=5.0)
             self._db.row_factory = sqlite3.Row
-            self._db.execute("PRAGMA busy_timeout = 5000")
-            self._db.execute("PRAGMA journal_mode = WAL")
-            self._db.execute("PRAGMA synchronous = FULL")
-            self._db.execute("PRAGMA foreign_keys = ON")
+            configure_durable_connection(self._db)
             self._lock = Lock()
             self._initialize()
         except AdmissionGrantReplayJournalError:

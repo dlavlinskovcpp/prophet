@@ -71,11 +71,11 @@ pub(crate) fn count_valid_notary_signatures(
         if !config.contains_notary(&public_key) {
             continue;
         }
-        if seen.contains(&public_key) {
-            return Err(ErrorCode::DuplicateNotarySig.into());
-        }
         if &data[message_offset as usize..message_end] != expected_message {
             continue;
+        }
+        if seen.contains(&public_key) {
+            return Err(ErrorCode::DuplicateNotarySig.into());
         }
 
         seen.push(public_key);

@@ -44,6 +44,11 @@ pub(crate) fn resolve_market_threshold(
         outcome != MarketOutcome::Undecided,
         ErrorCode::InvalidOutcome
     );
+    require!(proof_hash != [0u8; 32], ErrorCode::InvalidProofHash);
+    require!(
+        public_inputs_hash != [0u8; 32],
+        ErrorCode::InvalidPublicInputsHash
+    );
     require!(
         market.notary_config != Pubkey::default(),
         ErrorCode::NotaryConfigNotSet

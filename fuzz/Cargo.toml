@@ -25,4 +25,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "ed25519_parser"
+path = "fuzz_targets/ed25519_parser.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

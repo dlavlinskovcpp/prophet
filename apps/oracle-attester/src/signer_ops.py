@@ -2,7 +2,6 @@ import base64
 import hashlib
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 from urllib.parse import urlsplit, urlunsplit
@@ -11,6 +10,7 @@ import httpx
 from solders.pubkey import Pubkey
 
 from .signer_allowlist import _parse_allowed_pubkeys
+from .durable_files import atomic_write_bytes
 from .signer_backend import (
     SignerBackend,
     _make_aws_kms_client,
@@ -44,18 +44,7 @@ def write_allowlist_file(path: str, pubkeys: Iterable[str]) -> List[str]:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, tmp_path = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            for pubkey in entries:
-                handle.write(f"{pubkey}\n")
-        os.replace(tmp_path, target)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except FileNotFoundError:
-            pass
-        raise
+    atomic_write_bytes(target, "".join(f"{pubkey}\n" for pubkey in entries).encode("utf-8"))
 
     return entries
 

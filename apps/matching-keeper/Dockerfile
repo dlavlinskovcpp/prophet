@@ -3,14 +3,18 @@
 ARG PYTHON_BASE_IMAGE=python:3.11.15-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
 ARG SQLITE_SOURCE_URL=https://www.sqlite.org/2026/sqlite-autoconf-3530400.tar.gz
 ARG SQLITE_SOURCE_SHA256=0e9483900e92cd5de8fd48d16bf9200145a61f7fd5be542a5ac81d8a9516eb9c
+ARG BUILD_ESSENTIAL_VERSION=12.12
+ARG CA_CERTIFICATES_VERSION=20250419
 
 FROM ${PYTHON_BASE_IMAGE} AS sqlite-builder
 
 ARG SQLITE_SOURCE_URL
 ARG SQLITE_SOURCE_SHA256
+ARG BUILD_ESSENTIAL_VERSION
+ARG CA_CERTIFICATES_VERSION
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends --yes build-essential ca-certificates \
+    && apt-get install --no-install-recommends --yes "build-essential=${BUILD_ESSENTIAL_VERSION}" "ca-certificates=${CA_CERTIFICATES_VERSION}" \
     && python -c 'from urllib.request import urlopen; open("/tmp/sqlite.tar.gz", "wb").write(urlopen("'"${SQLITE_SOURCE_URL}"'", timeout=60).read())' \
     && echo "${SQLITE_SOURCE_SHA256}  /tmp/sqlite.tar.gz" | sha256sum -c - \
     && mkdir /tmp/sqlite \

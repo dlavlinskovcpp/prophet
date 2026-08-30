@@ -44,6 +44,7 @@ pub(crate) fn redeem(ctx: Context<Redeem>) -> Result<()> {
         market.status == MarketStatus::Resolved,
         ErrorCode::MarketNotResolved
     );
+    require!(!position.redeemed, ErrorCode::PositionAlreadyRedeemed);
 
     let yes = position.yes_shares_atoms;
     let no = position.no_shares_atoms;

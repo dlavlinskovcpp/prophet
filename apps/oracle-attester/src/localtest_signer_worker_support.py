@@ -12,7 +12,6 @@ import json
 import os
 import socket
 import stat
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -20,6 +19,7 @@ from typing import Any, Mapping
 import uvicorn
 
 from .admission_grant_replay_journal import AdmissionGrantReplayJournal
+from .durable_files import atomic_write_bytes
 from .independent_signer_execution import IndependentSignerEngine, IndependentSignerVaultAdapter
 from .independent_signer_journal import IndependentSignerBinding, IndependentSignerJournal
 from .independent_signer_runtime import IndependentSignerServiceConfig
@@ -171,13 +171,7 @@ def _admission(raw: Mapping[str, Any], *, role: str, config: IndependentSignerSe
 
 def _write_readiness(path: Path, *, role: str, signer_service_id: str, endpoint: str, signer_public_key: str) -> None:
     value = {"schema": "PROPHET_LOCALTEST_SIGNER_READINESS_V1", "version": 1, "role": role, "signer_service_id": signer_service_id, "endpoint": endpoint, "signer_public_key": signer_public_key, "pid": os.getpid(), "ready": True}
-    descriptor, temporary = tempfile.mkstemp(prefix=".readiness-", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, separators=(",", ":")); handle.flush(); os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary): os.unlink(temporary)
+    atomic_write_bytes(path, json.dumps(value, separators=(",", ":")).encode("utf-8"))
 
 
 def _remove_stale_readiness(path: Path) -> None:

@@ -1,0 +1,35 @@
+{
+  "schema": "PROPHET_RC47_SECURITY_ACCEPTANCE_BASIS_V1",
+  "version": 1,
+  "acceptance_basis_revision": 6,
+  "purpose": "Reproducible RC4.7 durability, supply-chain, and consensus-edge evidence.",
+  "previous_manifest_sha256": "c879eae30bceea6f24282f3fbb341c30429fc2d625efe019c5ef3896f72747a6",
+  "immutable_crypto_vectors": {
+    "p0c3e_v2": "9e6dafc41c450a62d733b5bf5bef93fea8f1460641091edd8f818a6f507e254c",
+    "p0c3e_v1": "d1ec055d779e90db8b782827957a77dd4de4918643d4db5e01292fdd6c86666d",
+    "g1": "UNCHANGED",
+    "d2": "UNCHANGED"
+  },
+  "toolchain": {
+    "anchor_cli": "1.0.3",
+    "anchor_source_commit": "9bd4f2f41b0407545da1af7348b0419725ce3ce8",
+    "solana_version": "3.1.10",
+    "solana_installer_sha256": "dfd8afbff06d8c0302e11c2fbead5464d5c773097af97c772f3df8470677e130",
+    "trivy_image": "aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969",
+    "syft_image": "anchore/syft@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026",
+    "rustsec_advisory_db_commit": "b331df68b3ed0e99594d259040bdcb9de3c7c8a4"
+  },
+  "lanes": [
+    {"id":"supply_chain_pinning","command":["python3","scripts/validate_supply_chain_pinning.py"],"kind":"pass"},
+    {"id":"residual_risk_manifest","command":["python3","scripts/validate_rc47_risk_manifest.py"],"kind":"pass"},
+    {"id":"python_security_static","command":["python3","scripts/check_python_static.py"],"kind":"pass"},
+    {"id":"p0c3e1","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_effective_authority.py","tests/test_r3c_v2_production_verification.py","tests/test_r3c_package_freshness.py","tests/test_operational_evidence_r3c_i1.py","tests/test_provider_result_v2.py","tests/test_vault_admin_package_bridge.py","tests/test_vault_admin_attestation.py","tests/test_manual_review_permit.py","tests/test_verified_manual_review_permit.py","tests/test_rfc8785_dependency.py"],"expected_passed":315,"expected_skipped":0},
+    {"id":"oracle_attester","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests"],"expected_passed":1446,"expected_skipped":3},
+    {"id":"p0c4_fixed_role","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_admission_grant_replay_journal.py","tests/test_fixed_role_signer_applications.py","tests/test_localtest_file_vault_transport.py","tests/test_localtest_settlement_bridge.py","tests/test_localtest_signer_bootstrap.py","tests/test_operated_devnet_external_signers.py","tests/test_operated_localnet_fixed_role_controller.py","tests/test_p0c4_i2_config_retirement.py","tests/test_p0c4_i3_fixed_role.py","tests/test_signer_admission_grant.py","tests/test_signer_admission_runtime.py","tests/test_signer_admission_vectors.py"],"expected_passed":105,"expected_skipped":0},
+    {"id":"resolver_v2","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_resolver_v2_adapters.py","tests/test_resolver_v2_multi_verifier.py","tests/test_resolver_v2_oracle_adapters.py","tests/test_resolver_v2_pipeline.py"],"expected_passed":64,"expected_skipped":0},
+    {"id":"adversarial_settlement_properties","command":["cargo","test","-p","prophet","--lib","security_tests","--locked"],"expected_passed":5,"expected_skipped":0},
+    {"id":"rust_frozen_layout","command":["cargo","test","-p","prophet","--lib","utils::attestation::tests::legacy_resolution_message_layout_is_byte_for_byte_stable"],"expected_passed":1,"expected_skipped":0},
+    {"id":"rust_fuzz_targets","command":["cargo","check","--manifest-path","fuzz/Cargo.toml","--bins"],"kind":"compile"},
+    {"id":"operated_config","command":["python3","scripts/validate_operated_config.py"],"kind":"pass"}
+  ]
+}

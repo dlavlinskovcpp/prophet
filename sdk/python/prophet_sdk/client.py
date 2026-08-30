@@ -27,6 +27,7 @@ from .types import MarketAccount, MarketOutcome, OrderAccount, OrderSide, Positi
 
 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 TOKEN_PROGRAM_ID = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+TOKEN_2022_PROGRAM_ID = Pubkey.from_string("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuTb")
 ASSOCIATED_TOKEN_PROGRAM_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 SYSVAR_INSTRUCTIONS_ID = Pubkey.from_string("Sysvar1nstructions1111111111111111111111111")
 
@@ -44,6 +45,24 @@ class ProphetClient:
             program_id or os.getenv("PROPHET_PROGRAM_ID", "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A")
         )
         self.payer = self._load_keypair(payer_keypair_path or os.getenv("PAYER_KEYPAIR_PATH", "./id.json"))
+
+    def inspect_quote_mint(self, mint: Pubkey) -> Dict[str, object]:
+        """Return the operated mint facts and reject Token-2022/unknown owners."""
+        response = self.client.get_account_info(mint, encoding="base64")
+        if response.value is None:
+            raise ValueError("quote mint account not found")
+        if Pubkey.from_string(str(response.value.owner)) != TOKEN_PROGRAM_ID:
+            raise ValueError("Token-2022 and unknown token programs are unsupported")
+        raw = extract_account_bytes(response.value.data)
+        if len(raw) < 82:
+            raise ValueError("quote mint account data is too short")
+        return {
+            "mint": str(mint),
+            "program": str(TOKEN_PROGRAM_ID),
+            "decimals": raw[44],
+            "mint_authority_present": int.from_bytes(raw[0:4], "little") != 0,
+            "freeze_authority_present": int.from_bytes(raw[46:50], "little") != 0,
+        }
 
     def _load_keypair(self, path_or_str: str) -> Keypair:
         val = (path_or_str or "").strip()
@@ -370,6 +389,9 @@ class ProphetClient:
             raise ValueError("Resolver hash must be 32 bytes")
         if resolver_hash == bytes(32):
             raise ValueError("Resolver hash must be non-zero")
+        if quote_mint is None:
+            raise ValueError("quote_mint is required")
+        self.inspect_quote_mint(quote_mint)
 
         notary_state = self._fetch_notary_config_state(notary_config)
         if int(notary_state["threshold"]) != 2 or len(notary_state["notary_keys"]) != 2:
@@ -727,6 +749,8 @@ class ProphetClient:
             raise ValueError("resolver_hash must be 32 bytes")
         if len(proof_hash) != 32 or len(public_inputs_hash) != 32:
             raise ValueError("proof_hash and public_inputs_hash must be 32 bytes each")
+        if proof_hash == bytes(32) or public_inputs_hash == bytes(32):
+            raise ValueError("proof_hash and public_inputs_hash must be non-zero")
         if not notary_keypairs:
             raise ValueError("at least one notary keypair is required")
         cfg_version = (

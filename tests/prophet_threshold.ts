@@ -469,6 +469,47 @@ describe("prophet-threshold-notary", () => {
             }
             assert.equal(threw, true, "expected outsider notary to fail");
         }
+
+        // --- Case 6: zero cryptographic evidence hashes are rejected ---
+        const assertZeroEvidenceRejected = async (badProofHash: Buffer, badPublicInputsHash: Buffer) => {
+            const badMsg = Buffer.concat([
+                Buffer.from("PROPHET_RESOLVE_V2"),
+                program.programId.toBuffer(),
+                market2.toBuffer(),
+                notaryConfig.toBuffer(),
+                resolverHash2,
+                openTs.toArrayLike(Buffer, "le", 8),
+                resolveTs.toArrayLike(Buffer, "le", 8),
+                notaryVersion.toArrayLike(Buffer, "le", 8),
+                Buffer.from([outcomeIdx]),
+                badProofHash,
+                badPublicInputsHash,
+            ]);
+            const sig1 = Buffer.from(nacl.sign.detached(badMsg, notary1.secretKey));
+            const sig2 = Buffer.from(nacl.sign.detached(badMsg, notary2.secretKey));
+            const ed1 = createManualEd25519Ix(badMsg, sig1, notary1.publicKey.toBuffer());
+            const ed2 = createManualEd25519Ix(badMsg, sig2, notary2.publicKey.toBuffer());
+            const resolveIx = await program.methods
+                .resolveMarketThreshold({ yes: {} } as any, Array.from(badProofHash), Array.from(badPublicInputsHash))
+                .accounts({
+                    market: market2,
+                    notaryConfig,
+                    instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
+                })
+                .instruction();
+            let threw = false;
+            try {
+                await provider.sendAndConfirm(new Transaction().add(ed1, ed2, resolveIx), [], {
+                    skipPreflight: true,
+                });
+            } catch {
+                threw = true;
+            }
+            assert.equal(threw, true, "expected zero settlement evidence hash to fail");
+        };
+        await assertZeroEvidenceRejected(Buffer.alloc(32), publicInputsHash);
+        await assertZeroEvidenceRejected(proofHash, Buffer.alloc(32));
+        await assertZeroEvidenceRejected(Buffer.alloc(32), Buffer.alloc(32));
     });
 
     it("enforces bounded ed25519 scan window for threshold resolution", async () => {
@@ -1151,6 +1192,25 @@ describe("prophet-threshold-notary", () => {
             .rpc();
         const balARedeemPost = (await getAccount(provider.connection, ataA.address)).amount;
         assert.equal(Number(balARedeemPost) - Number(balARedeemPre), 20);
+
+        let repeatedRedeemThrew = false;
+        try {
+            await program.methods
+                .redeem()
+                .accounts({
+                    market,
+                    position: posA,
+                    owner: traderA.publicKey,
+                    quoteVault,
+                    ownerQuoteAta: ataA.address,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                })
+                .signers([traderA])
+                .rpc();
+        } catch {
+            repeatedRedeemThrew = true;
+        }
+        assert.equal(repeatedRedeemThrew, true, "expected repeated redeem to fail");
 
         const balBRedeemPre = (await getAccount(provider.connection, ataB.address)).amount;
         await program.methods

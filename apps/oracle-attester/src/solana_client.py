@@ -191,6 +191,10 @@ class SolanaClient:
         proof_hash: bytes,
         public_inputs_hash: bytes,
     ) -> Instruction:
+        if len(proof_hash) != 32 or proof_hash == bytes(32):
+            raise ValueError("proof_hash must be a non-zero 32-byte value")
+        if len(public_inputs_hash) != 32 or public_inputs_hash == bytes(32):
+            raise ValueError("public_inputs_hash must be a non-zero 32-byte value")
         discriminator = self.get_discriminator("global", "resolve_market_threshold")
 
         data = discriminator

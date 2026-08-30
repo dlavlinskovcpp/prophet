@@ -19,16 +19,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05 # 1.89.0
         with:
           toolchain: 1.89.0
           components: clippy
 
       - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Run zkTLS guardrail audit
         run: bash scripts/check_zktls.sh
@@ -57,16 +57,16 @@ jobs:
       CI_ENV_DIR: /tmp/prophet-release-envs
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05 # 1.89.0
 
       - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.19.6"
           cache: yarn
@@ -88,7 +88,9 @@ jobs:
 
       - name: Install Solana CLI
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          curl -fsSL -o /tmp/solana-install "https://release.anza.xyz/v${SOLANA_VERSION}/install"
+          echo "dfd8afbff06d8c0302e11c2fbead5464d5c773097af97c772f3df8470677e130  /tmp/solana-install" | sha256sum -c -
+          SOLANA_RELEASE="v${SOLANA_VERSION}" sh /tmp/solana-install
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
@@ -105,7 +107,7 @@ jobs:
         run: |
           cargo install \
             --git https://github.com/solana-foundation/anchor \
-            --tag "v${ANCHOR_VERSION}" \
+            --rev "9bd4f2f41b0407545da1af7348b0419725ce3ce8" \
             anchor-cli \
             --locked \
             --force
@@ -129,12 +131,12 @@ jobs:
           rm -rf target .anchor/test-ledger
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1.4.1
         with:
           version: 1.8.5
           virtualenvs-create: true
@@ -183,6 +185,21 @@ jobs:
 
       - name: Build Anchor program
         run: anchor build
+
+      - name: Record RC4.7 program artifact provenance
+        run: |
+          rm -rf /tmp/rc47-program-provenance
+          python3 scripts/build_rc47_release_provenance.py \
+            --output-dir /tmp/rc47-program-provenance \
+            --commit-sha "${GITHUB_SHA}" \
+            --program target/deploy/prophet.so \
+            --idl target/idl/prophet.json
+
+      - name: Upload RC4.7 program provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rc4.7-program-provenance-${{ github.sha }}
+          path: /tmp/rc47-program-provenance
 
       - name: Run Anchor Tests
         run: |
@@ -322,7 +339,7 @@ jobs:
           PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/release.py bundle --environment mainnet-beta --release-tag "ci-${GITHUB_SHA}" --bundle-root "${BUNDLE_ROOT}"
 
       - name: Upload Release Bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: prophet-release-bundles
           path: /tmp/prophet-release-bundles
@@ -335,7 +352,7 @@ jobs:
           PROPHET_RELEASE_ENVIRONMENTS_DIR="${CI_ENV_DIR}" python3 scripts/security_review_bundle.py --environment mainnet-beta --release-tag "ci-${GITHUB_SHA}" --review-root "${REVIEW_ROOT}"
 
       - name: Upload Security Review Bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: prophet-security-review-bundles
           path: /tmp/prophet-security-review-bundles
@@ -345,7 +362,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Validate untouched checked-in environments
         run: |
@@ -377,13 +394,13 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1.4.1
         with:
           version: 1.8.5
           virtualenvs-create: true
@@ -412,10 +429,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Validate production image vulnerability policy input
         run: |
           test -f security/production-image-vulnerability-exceptions.json
+          python3 scripts/validate_container_reproducibility.py
           python3 -m unittest scripts.tests.test_check_trivy_image_scan -v
       - name: Build production-shaped images from repository root
         run: |
@@ -477,12 +495,12 @@ jobs:
       - name: Prepare pinned Trivy vulnerability database
         run: |
           mkdir -p /tmp/trivy-cache
-          docker run --rm -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 image --download-db-only
+          docker run --rm -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 image --download-db-only
       - name: Generate SPDX JSON SBOMs with pinned Syft
         run: |
           mkdir -p sbom
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft:v1.50.0 prophet-oracle-ci -o spdx-json=/out/oracle.spdx.json
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft:v1.50.0 prophet-keeper-ci -o spdx-json=/out/keeper.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026 prophet-oracle-ci -o spdx-json=/out/oracle.spdx.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${PWD}/sbom:/out" anchore/syft@sha256:1288ea4c8b38767b4e620c1e312c8cb26b6e887a99b4f07ab6cd19fc6f225026 prophet-keeper-ci -o spdx-json=/out/keeper.spdx.json
           python3 - <<'PY'
           import json, os
           payload = {
@@ -506,26 +524,45 @@ jobs:
             container="$(docker create "${image}")"
             docker export "${container}" | tar -x -C "${rootfs}"
             docker rm "${container}"
-            docker run --rm -v "${rootfs}":/rootfs:ro -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 fs --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json /rootfs > "sbom/${role}-rootfs-trivy.json"
+            docker run --rm -v "${rootfs}":/rootfs:ro -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 fs --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json /rootfs > "sbom/${role}-rootfs-trivy.json"
             python3 scripts/check_trivy_image_scan.py --report "sbom/${role}-rootfs-trivy.json" --exceptions security/production-image-vulnerability-exceptions.json --role "${role}"
             rm -rf "${rootfs}"
-            docker run --rm -v "${PWD}/sbom:/sbom:ro" -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy:0.74.0 sbom --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json "/sbom/${role}.spdx.json" > "sbom/${role}-sbom-trivy.json"
+            docker run --rm -v "${PWD}/sbom:/sbom:ro" -v /tmp/trivy-cache:/root/.cache/ aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 sbom --skip-db-update --scanners vuln --severity HIGH,CRITICAL --format json "/sbom/${role}.spdx.json" > "sbom/${role}-sbom-trivy.json"
             python3 scripts/check_trivy_image_scan.py --report "sbom/${role}-sbom-trivy.json" --role "${role}"
           }
           scan_role oracle prophet-oracle-ci
           scan_role keeper prophet-keeper-ci
       - name: Upload production SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rc4-production-sbom-${{ github.sha }}
           path: sbom
+      - name: Record RC4.7 image and SBOM provenance
+        run: |
+          python3 scripts/build_rc47_release_provenance.py \
+            --output-dir sbom/rc4.7-provenance \
+            --commit-sha "${GITHUB_SHA}" \
+            --sbom-dir sbom \
+            --image oracle=prophet-oracle-ci \
+            --image keeper=prophet-keeper-ci
+      - name: Upload RC4.7 image provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rc4.7-image-provenance-${{ github.sha }}
+          path: sbom/rc4.7-provenance
 
   release-security:
     name: Release Secret Hygiene (P-07)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate immutable CI supply chain
+        run: python3 scripts/validate_supply_chain_pinning.py
+      - name: Python security static gate
+        run: python3 scripts/check_python_static.py
+      - name: Validate residual-risk manifest
+        run: python3 scripts/validate_rc47_risk_manifest.py
       - name: Release bundle secret boundary regression
         run: python3 scripts/tests/test_release_bundle_security.py -v
       - name: Scan tracked release/deployment material
@@ -536,20 +573,21 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup Rust project toolchain
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05 # 1.89.0
       - name: Install pinned cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Fetch RustSec advisory database
         run: |
-          git clone --depth 1 https://github.com/RustSec/advisory-db.git /tmp/rustsec-advisory-db
-          git -C /tmp/rustsec-advisory-db rev-parse HEAD
+          git clone --no-checkout https://github.com/RustSec/advisory-db.git /tmp/rustsec-advisory-db
+          git -C /tmp/rustsec-advisory-db checkout --detach b331df68b3ed0e99594d259040bdcb9de3c7c8a4
+          test "$(git -C /tmp/rustsec-advisory-db rev-parse HEAD)" = "b331df68b3ed0e99594d259040bdcb9de3c7c8a4"
           test -n "$(find /tmp/rustsec-advisory-db -name 'RUSTSEC-*.md' -print -quit)"
       - name: Audit committed Cargo.lock
         run: python3 scripts/check_cargo_audit.py --db /tmp/rustsec-advisory-db
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
       - name: Install Poetry and pinned pip-audit
@@ -566,7 +604,7 @@ jobs:
             pip-audit --vulnerability-service osv --progress-spinner off --requirement "${requirements}"
           done
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20.19.6"
           cache: yarn
@@ -588,9 +626,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05 # 1.89.0
       - name: Run deterministic 100k state-machine campaign
         run: PROPHET_INVARIANT_SEQUENCE_COUNT=100000 cargo test -p prophet state_machine_preserves_economic_invariants_for_thousands_of_seeds --lib --locked
 
@@ -599,15 +637,15 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1.4.1
         with:
           version: 1.8.5
           virtualenvs-create: true
@@ -626,15 +664,15 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1.4.1
         with:
           version: 1.8.5
           virtualenvs-create: true
@@ -653,10 +691,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -673,14 +711,16 @@ jobs:
       SOLANA_VERSION: 3.1.10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Rust for localtest acceptance
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1d1eb14921d9c2d8ea575663e5fe3a0b57868a05 # 1.89.0
 
       - name: Install Solana CLI for localtest acceptance
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          curl -fsSL -o /tmp/solana-install "https://release.anza.xyz/v${SOLANA_VERSION}/install"
+          echo "dfd8afbff06d8c0302e11c2fbead5464d5c773097af97c772f3df8470677e130  /tmp/solana-install" | sha256sum -c -
+          SOLANA_RELEASE="v${SOLANA_VERSION}" sh /tmp/solana-install
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
@@ -694,12 +734,12 @@ jobs:
           test -f target/deploy/prophet.so
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
       - name: Install Poetry
-        uses: snok/install-poetry@v1
+        uses: snok/install-poetry@76e04a911780d5b312d89783f7b1cd627778900a # v1.4.1
         with:
           version: 1.8.5
           virtualenvs-create: true
@@ -713,8 +753,8 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
 
-      - name: Validate RC4.6 reproducible protocol and operations acceptance basis
-        run: make rc46-security-acceptance
+      - name: Validate RC4.7 reproducible protocol and operations acceptance basis
+        run: make rc47-security-acceptance
 
       - name: Run deterministic agent E2E demo
         working-directory: apps/oracle-attester

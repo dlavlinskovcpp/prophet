@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -456,6 +457,7 @@ class EquivocationStore:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
                 handle.flush()
+                os.fsync(handle.fileno())
             self._records[key] = record
             return True
 
@@ -470,6 +472,8 @@ def build_legacy_settlement_message(
         raise PipelineRejected("unsupported settlement outcome")
     for name, value in (("resolver_hash", resolver_hash), ("proof_hash", proof_hash), ("public_inputs_hash", public_inputs_hash)):
         _hex32(value, name)
+    if proof_hash == "00" * 32 or public_inputs_hash == "00" * 32:
+        raise PipelineRejected("settlement hashes must be non-zero")
     return (LEGACY_SETTLEMENT_DOMAIN + bytes(Pubkey.from_string(program_id)) + bytes(Pubkey.from_string(market))
             + bytes(Pubkey.from_string(notary_config)) + bytes.fromhex(resolver_hash)
             + int(open_ts).to_bytes(8, "little", signed=True) + int(resolve_ts).to_bytes(8, "little", signed=True)

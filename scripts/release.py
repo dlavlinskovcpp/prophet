@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from durable_files import atomic_write_text
 from typing import Any, Dict
 
 try:
@@ -645,13 +646,13 @@ def _bundle_release(
 
     public_env_path = bundle_dir / "deploy" / "environments" / env_path.name
     public_env_path.parent.mkdir(parents=True, exist_ok=True)
-    public_env_path.write_text(
+    atomic_write_text(
+        public_env_path,
         json.dumps(_public_environment_snapshot(config), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
 
     manifest_path = bundle_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text(manifest_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     _assert_bundle_has_no_private_key_material(bundle_dir)
     return bundle_dir
 
@@ -665,7 +666,7 @@ def _write_manifest(manifest: Dict[str, Any], output_path: str) -> None:
     if not path.is_absolute():
         path = (ROOT / path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
 
 def _validate_live_deploy_config(env_name: str, config: Dict[str, Any]) -> None:

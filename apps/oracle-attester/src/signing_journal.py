@@ -12,6 +12,7 @@ from solders.pubkey import Pubkey
 from solders.signature import Signature
 
 from .vault_transit_signer_identity import VaultTransitSignature
+from .sqlite_durability import configure_durable_connection
 
 
 SCHEMA_VERSION = 2
@@ -105,9 +106,7 @@ class SigningJournal:
         self._lock = Lock()
         self._db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA journal_mode = WAL")
-        self._db.execute("PRAGMA foreign_keys = ON")
-        self._db.execute("PRAGMA busy_timeout = 5000")
+        configure_durable_connection(self._db)
         self._migrate()
 
     def close(self) -> None:

@@ -12,6 +12,8 @@ def build_resolution_message_v2(*, program_id: str, market: str, notary_config: 
                                 proof_hash: bytes, public_inputs_hash: bytes) -> bytes:
     if outcome not in {"YES", "NO", "INVALID"} or len(resolver_hash) != 32 or len(proof_hash) != 32 or len(public_inputs_hash) != 32:
         raise ValueError("invalid resolution message fields")
+    if proof_hash == bytes(32) or public_inputs_hash == bytes(32):
+        raise ValueError("settlement hashes must be non-zero")
     message = (DOMAIN_V2 + bytes(Pubkey.from_string(program_id)) + bytes(Pubkey.from_string(market)) +
                bytes(Pubkey.from_string(notary_config)) + resolver_hash + struct.pack("<q", open_ts) +
                struct.pack("<q", resolve_ts) + struct.pack("<Q", notary_config_version) +

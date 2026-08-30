@@ -4,7 +4,6 @@ import ipaddress
 import json
 import logging
 import os
-import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -16,6 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .audit import JsonlAuditLogger
 from .config import settings
+from .durable_files import atomic_write_bytes
 from .resolver import ResolverDefinition, compute_resolver_hash
 
 
@@ -212,23 +212,8 @@ def _hash_path(hash_hex: str) -> Path:
 
 
 def _write_canonical_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        dir=str(path.parent),
-        prefix=f".{path.stem}.",
-        suffix=".tmp",
-        delete=False,
-    ) as handle:
-        handle.write(canonical)
-        handle.flush()
-        os.fsync(handle.fileno())
-        temp_path = Path(handle.name)
-
-    os.replace(temp_path, path)
+    atomic_write_bytes(path, canonical.encode("utf-8"))
 
 
 def _load_resolver_payload(hash_hex: str) -> Dict[str, Any]:
