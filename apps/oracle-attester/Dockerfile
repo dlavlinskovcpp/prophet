@@ -1,6 +1,37 @@
 # Pin the reviewed official Python 3.11/Trixie base.  Runtime packages are
 # supplied solely by this digest; do not introduce an unpinned apt upgrade.
 ARG PYTHON_BASE_IMAGE=python:3.11.15-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
+ARG SQLITE_SOURCE_URL=https://www.sqlite.org/2026/sqlite-autoconf-3530400.tar.gz
+ARG SQLITE_SOURCE_SHA256=0e9483900e92cd5de8fd48d16bf9200145a61f7fd5be542a5ac81d8a9516eb9c
+
+FROM ${PYTHON_BASE_IMAGE} AS sqlite-builder
+
+ARG SQLITE_SOURCE_URL
+ARG SQLITE_SOURCE_SHA256
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes build-essential ca-certificates \
+    && python -c 'from urllib.request import urlopen; open("/tmp/sqlite.tar.gz", "wb").write(urlopen("'"${SQLITE_SOURCE_URL}"'", timeout=60).read())' \
+    && echo "${SQLITE_SOURCE_SHA256}  /tmp/sqlite.tar.gz" | sha256sum -c - \
+    && mkdir /tmp/sqlite \
+    && tar -xzf /tmp/sqlite.tar.gz -C /tmp/sqlite --strip-components=1 \
+    && cd /tmp/sqlite \
+    && ./configure --prefix=/opt/sqlite --enable-fts5 --disable-static \
+    && make -j"$(nproc)" \
+    && make install \
+    && test "$(/opt/sqlite/bin/sqlite3 --version | awk '{print $1}')" = "3.53.4" \
+    && mkdir -p /tmp/prophet-sqlite-runtime/DEBIAN /tmp/prophet-sqlite-runtime/usr/local/lib \
+    && cp /opt/sqlite/lib/libsqlite3.so.3.53.4 /tmp/prophet-sqlite-runtime/usr/local/lib/ \
+    && ln -s libsqlite3.so.3.53.4 /tmp/prophet-sqlite-runtime/usr/local/lib/libsqlite3.so.0 \
+    && printf '%s\n' \
+        'Package: prophet-sqlite-runtime' \
+        'Version: 3.53.4' \
+        "Architecture: $(dpkg --print-architecture)" \
+        'Maintainer: Prophet Protocol Infrastructure' \
+        'Provides: libsqlite3-0 (= 3.53.4)' \
+        'Description: Prophet-pinned SQLite runtime library' \
+        > /tmp/prophet-sqlite-runtime/DEBIAN/control \
+    && dpkg-deb --build --root-owner-group /tmp/prophet-sqlite-runtime /tmp/prophet-sqlite-runtime.deb
 
 FROM ${PYTHON_BASE_IMAGE} AS builder
 
@@ -84,6 +115,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app/apps/oracle-attester
 
 COPY --from=builder /app/apps/oracle-attester/.venv /app/apps/oracle-attester/.venv
+
+# Debian Trixie has no fixed package for the current SQLite FTS5 advisories.
+# Replace only the runtime library with an authenticated, locally packaged
+# upstream release; the package provides the ABI required by liblastlog2 and
+# Python's sqlite3 module remains available.
+COPY --from=sqlite-builder /tmp/prophet-sqlite-runtime.deb /tmp/prophet-sqlite-runtime.deb
+RUN dpkg --install /tmp/prophet-sqlite-runtime.deb \
+    && dpkg --purge libsqlite3-0 \
+    && ldconfig \
+    && rm /tmp/prophet-sqlite-runtime.deb \
+    && python -c 'import sqlite3; assert sqlite3.sqlite_version == "3.53.4"'
 
 # The production service runs installed application code only.  pip,
 # setuptools, wheel, and ensurepip are build/package-management tooling, not

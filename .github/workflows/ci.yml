@@ -188,11 +188,6 @@ jobs:
         run: |
           set -euo pipefail
           solana config set --url "$ANCHOR_PROVIDER_URL"
-          VAULT_CONTAINER="prophet-ci-vault"
-          VAULT_ADDR_LOCAL="http://127.0.0.1:18200"
-          VAULT_TOKEN_LOCAL="root"
-          VAULT_KEY_NAME_A_LOCAL="prophet-ci-notary-a"
-          VAULT_KEY_NAME_B_LOCAL="prophet-ci-notary-b"
 
           mkdir -p .anchor/test-ledger
           VALIDATOR_LOG="/tmp/prophet-ci-validator.log"
@@ -210,7 +205,6 @@ jobs:
           VALIDATOR_PID=$!
 
           cleanup() {
-            docker rm -f "${VAULT_CONTAINER}" >/dev/null 2>&1 || true
             kill "${VALIDATOR_PID}" 2>/dev/null || true
             wait "${VALIDATOR_PID}" 2>/dev/null || true
           }
@@ -279,76 +273,7 @@ jobs:
             exit 1
           fi
 
-          docker rm -f "${VAULT_CONTAINER}" >/dev/null 2>&1 || true
-          docker run -d --rm --name "${VAULT_CONTAINER}" -p 127.0.0.1:18200:8200 hashicorp/vault:1.16 \
-            vault server -dev -dev-root-token-id="${VAULT_TOKEN_LOCAL}" -dev-listen-address=0.0.0.0:8200
-
-          for i in $(seq 1 60); do
-            if curl -fsS "${VAULT_ADDR_LOCAL}/v1/sys/health" >/dev/null; then
-              echo "Vault dev server is ready"
-              break
-            fi
-
-            if [ "${i}" -eq 60 ]; then
-              echo "Vault dev server did not become ready in time"
-              docker logs "${VAULT_CONTAINER}" || true
-              exit 1
-            fi
-
-            sleep 1
-          done
-
-          curl -fsS \
-            -X POST \
-            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
-            -H "Content-Type: application/json" \
-            --data '{"type":"transit"}' \
-            "${VAULT_ADDR_LOCAL}/v1/sys/mounts/transit" >/dev/null
-
-          curl -fsS \
-            -X POST \
-            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
-            -H "Content-Type: application/json" \
-            --data '{"type":"ed25519"}' \
-            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_A_LOCAL}" >/dev/null
-
-          curl -fsS \
-            -X POST \
-            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
-            -H "Content-Type: application/json" \
-            --data '{"type":"ed25519"}' \
-            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_B_LOCAL}" >/dev/null
-
-          if ! (cd apps/oracle-attester && \
-            VAULT_ADDR="${VAULT_ADDR_LOCAL}" \
-            VAULT_TOKEN="${VAULT_TOKEN_LOCAL}" \
-            VAULT_SIGNER_A_KEY_NAME="${VAULT_KEY_NAME_A_LOCAL}" \
-            VAULT_SIGNER_B_KEY_NAME="${VAULT_KEY_NAME_B_LOCAL}" \
-            RC3_VAULT_SMOKE_LABEL="initial" \
-            poetry run python ../../scripts/secure_vault_2of2_smoke.py); then
-            echo "Secure Vault 2-of-2 smoke failed; validator log follows:"
-            docker logs "${VAULT_CONTAINER}" || true
-            cat "${VALIDATOR_LOG}" || true
-            exit 1
-          fi
-
-          curl -fsS \
-            -X POST \
-            -H "X-Vault-Token: ${VAULT_TOKEN_LOCAL}" \
-            "${VAULT_ADDR_LOCAL}/v1/transit/keys/${VAULT_KEY_NAME_B_LOCAL}/rotate" >/dev/null
-
-          if ! (cd apps/oracle-attester && \
-            VAULT_ADDR="${VAULT_ADDR_LOCAL}" \
-            VAULT_TOKEN="${VAULT_TOKEN_LOCAL}" \
-            VAULT_SIGNER_A_KEY_NAME="${VAULT_KEY_NAME_A_LOCAL}" \
-            VAULT_SIGNER_B_KEY_NAME="${VAULT_KEY_NAME_B_LOCAL}" \
-            RC3_VAULT_SMOKE_LABEL="after-b-rotation" \
-            poetry run python ../../scripts/secure_vault_2of2_smoke.py); then
-            echo "Secure Vault 2-of-2 post-rotation smoke failed; validator log follows:"
-            docker logs "${VAULT_CONTAINER}" || true
-            cat "${VALIDATOR_LOG}" || true
-            exit 1
-          fi
+          (cd apps/oracle-attester && poetry run pytest -q ../../scripts/tests/test_p0c4_recovery_retirement.py)
 
       - name: Run Release Bundle Security Tests
         run: python3 scripts/tests/test_release_bundle_security.py -v
@@ -744,9 +669,29 @@ jobs:
   oracle-attester:
     name: Oracle Attester Tests
     runs-on: ubuntu-22.04
+    env:
+      SOLANA_VERSION: 3.1.10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Rust for localtest acceptance
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install Solana CLI for localtest acceptance
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
+          solana-test-validator --version
+          test "$(solana --version | awk '{print $2}')" = "${SOLANA_VERSION}"
+          test "$(solana-test-validator --version | awk '{print $2}')" = "${SOLANA_VERSION}"
+
+      - name: Build localtest program for attester acceptance
+        run: |
+          cargo build-sbf --manifest-path programs/prophet/Cargo.toml --sbf-out-dir target/deploy -- --locked
+          test -f target/deploy/prophet.so
 
       - name: Setup Python
         uses: actions/setup-python@v5
