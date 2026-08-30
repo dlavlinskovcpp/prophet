@@ -553,7 +553,7 @@ describe("prophet-threshold-notary", () => {
             .instruction();
 
         const txInside = new Transaction().add(edInside, edInside2);
-        for (let i = 0; i < SCAN_WINDOW - 1; i++) {
+        for (let i = 0; i < SCAN_WINDOW - 2; i++) {
             txInside.add(createNoopMemoIx());
         }
         txInside.add(resolveInside);
