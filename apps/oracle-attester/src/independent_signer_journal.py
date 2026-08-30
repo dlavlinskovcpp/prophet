@@ -258,6 +258,19 @@ class IndependentSignerJournal:
     def close(self) -> None:
         self._db.close()
 
+    def health(self) -> bool:
+        """Run non-mutating structural checks for readiness probes."""
+        try:
+            with self._lock:
+                if self._db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    return False
+                if self._db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+                    return False
+                metadata = self._db.execute("SELECT COUNT(*) FROM independent_signer_intents").fetchone()
+                return metadata is not None and int(metadata[0]) >= 0
+        except sqlite3.Error:
+            return False
+
     def _migrate_and_recover(self) -> None:
         with self._lock:
             if self._db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":

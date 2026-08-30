@@ -368,6 +368,16 @@ class ProphetClient:
     ) -> str:
         if len(resolver_hash) != 32:
             raise ValueError("Resolver hash must be 32 bytes")
+        if resolver_hash == bytes(32):
+            raise ValueError("Resolver hash must be non-zero")
+
+        notary_state = self._fetch_notary_config_state(notary_config)
+        if int(notary_state["threshold"]) != 2 or len(notary_state["notary_keys"]) != 2:
+            raise ValueError("Market V2 requires an exact 2-of-2 notary topology")
+        if len(set(notary_state["notary_keys"])) != 2 or any(
+            key == Pubkey.default() for key in notary_state["notary_keys"]
+        ):
+            raise ValueError("Market V2 requires two distinct non-zero notary keys")
 
         if isinstance(market_nonce, bool) or not isinstance(market_nonce, int) or not 0 <= market_nonce < (1 << 64):
             raise ValueError("market_nonce must be a u64")

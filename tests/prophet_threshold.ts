@@ -230,14 +230,13 @@ describe("prophet-threshold-notary", () => {
         const admin = (provider.wallet as anchor.Wallet).payer;
         const notary1 = Keypair.generate();
         const notary2 = Keypair.generate();
-        const notary3 = Keypair.generate();
         const outsider = Keypair.generate();
 
         const threshold = 2;
 
         const { notaryConfig, version: notaryVersion } = await createNotaryConfig(
             threshold,
-            [notary1.publicKey, notary2.publicKey, notary3.publicKey]
+            [notary1.publicKey, notary2.publicKey]
         );
 
         // --- Setup: quote mint + market (v2) ---
@@ -475,9 +474,10 @@ describe("prophet-threshold-notary", () => {
     it("enforces bounded ed25519 scan window for threshold resolution", async () => {
         const admin = (provider.wallet as anchor.Wallet).payer;
         const notary1 = Keypair.generate();
+        const notary2 = Keypair.generate();
         const { notaryConfig, version: notaryVersion } = await createNotaryConfig(
-            1,
-            [notary1.publicKey]
+            2,
+            [notary1.publicKey, notary2.publicKey]
         );
 
         const quoteMint = await createMint(
@@ -540,7 +540,9 @@ describe("prophet-threshold-notary", () => {
             publicInputsHash,
         ]);
         const sigInside = Buffer.from(nacl.sign.detached(msgInside, notary1.secretKey));
+        const sigInside2 = Buffer.from(nacl.sign.detached(msgInside, notary2.secretKey));
         const edInside = createManualEd25519Ix(msgInside, sigInside, notary1.publicKey.toBuffer());
+        const edInside2 = createManualEd25519Ix(msgInside, sigInside2, notary2.publicKey.toBuffer());
         const resolveInside = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
             .accounts({
@@ -550,7 +552,7 @@ describe("prophet-threshold-notary", () => {
             })
             .instruction();
 
-        const txInside = new Transaction().add(edInside);
+        const txInside = new Transaction().add(edInside, edInside2);
         for (let i = 0; i < SCAN_WINDOW - 1; i++) {
             txInside.add(createNoopMemoIx());
         }
@@ -604,7 +606,9 @@ describe("prophet-threshold-notary", () => {
             publicInputsHash,
         ]);
         const sigOutside = Buffer.from(nacl.sign.detached(msgOutside, notary1.secretKey));
+        const sigOutside2 = Buffer.from(nacl.sign.detached(msgOutside, notary2.secretKey));
         const edOutside = createManualEd25519Ix(msgOutside, sigOutside, notary1.publicKey.toBuffer());
+        const edOutside2 = createManualEd25519Ix(msgOutside, sigOutside2, notary2.publicKey.toBuffer());
         const resolveOutside = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
             .accounts({
@@ -614,7 +618,7 @@ describe("prophet-threshold-notary", () => {
             })
             .instruction();
 
-        const txOutside = new Transaction().add(edOutside);
+        const txOutside = new Transaction().add(edOutside, edOutside2);
         for (let i = 0; i < SCAN_WINDOW; i++) {
             txOutside.add(createNoopMemoIx());
         }

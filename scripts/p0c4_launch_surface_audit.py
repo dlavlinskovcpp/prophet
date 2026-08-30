@@ -109,9 +109,9 @@ def audit() -> dict[str, object]:
     if any(marker in recovery for marker in ("ThresholdResolutionSigner", "VAULT_SIGNER_A_KEY_NAME", "VAULT_SIGNER_B_KEY_NAME", "SIGNER_A_VAULT_TOKEN", "SIGNER_B_VAULT_TOKEN")):
         findings.append("retired recovery path still contains dual-capability markers")
 
-    remote = (ROOT / "apps/oracle-attester/src/remote_signer_main.py").read_text(encoding="utf-8")
-    if "generic_remote_signer_retired_use_fixed_role_signer_a_or_b" not in remote:
-        findings.append("retired generic signer entrypoint is not fail-closed")
+    remote = ROOT / "apps/oracle-attester/src/remote_signer_main.py"
+    if remote.exists():
+        findings.append("retired generic signer entrypoint remains in the production source tree")
         production_role_selectable += 1
 
     controller = (ROOT / "scripts/operated_localnet_smoke.py").read_text(encoding="utf-8")

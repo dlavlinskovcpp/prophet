@@ -43,13 +43,16 @@ describe("prophet-governance", () => {
       program.programId
     )[0];
 
-  const ensureNotaryConfig = async (configAdmin: Keypair, notaryKeys: PublicKey[], threshold = 1) => {
+  const ensureNotaryConfig = async (configAdmin: Keypair, notaryKeys: PublicKey[], threshold = 2) => {
     const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
     const existing = await provider.connection.getAccountInfo(notaryConfig);
     assert.isNull(existing, "test fixture must use a fresh immutable notary snapshot admin");
 
     await program.methods
-      .initializeNotaryConfig(threshold, notaryKeys)
+      .initializeNotaryConfig(
+        threshold,
+        notaryKeys.length === 1 ? [notaryKeys[0], Keypair.generate().publicKey] : notaryKeys
+      )
       .accounts({
         notaryConfig,
         admin: configAdmin.publicKey,

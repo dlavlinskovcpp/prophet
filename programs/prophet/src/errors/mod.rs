@@ -110,4 +110,8 @@ pub enum ErrorCode {
     InvalidNotaryConfigVersion,
     #[msg("Notary config account is not the canonical PDA for its immutable snapshot")]
     InvalidNotaryConfigSnapshot,
+    #[msg("Market V2 requires an exact 2-of-2 notary topology")]
+    UnsupportedNotaryTopology,
+    #[msg("Resolver hash must identify a non-zero resolver definition")]
+    InvalidResolverHash,
 }

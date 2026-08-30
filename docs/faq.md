@@ -74,18 +74,18 @@ The attester:
 
 The registry is the canonical storage layer for resolver definitions. It lets operators publish, fetch, and audit resolver definitions by hash instead of relying on ad hoc local files.
 
-### What does the remote signer do?
+### What does the fixed-role signer do?
 
-The remote signer isolates notary key material from the attester process. In this repo it supports:
+The fixed-role signer isolates each notary key from the attester process. Production uses separate A and B services with bound identities. Legacy generic signer tooling remains only for tests and compatibility:
 
 - Vault Transit-backed Ed25519 signing through the bundled command wrapper
-- generic command-backed signing for external KMS/HSM wrappers, plus AWS KMS compatibility
+- generic command-backed signing for external KMS/HSM wrappers, plus AWS KMS compatibility (legacy/test only)
 
 ### What is the fastest way to see Prophet work end to end?
 
 Use `docs/devnet_quickstart.md`.
 
-That path uses a demo `1-of-1` notary config to prove the SDK and on-chain resolution path, not the full production trust model.
+That path uses a legacy/demo notary fixture to prove the SDK and on-chain resolution path, not the full production trust model. Operated Market V2 creation is exact 2-of-2.
 
 ### What is the production-shaped path?
 
@@ -93,7 +93,7 @@ The intended operated path is:
 
 - resolver registry
 - attester
-- remote signer
+- fixed-role A/B signer services
 - matching keeper
 - Prometheus and Grafana
 
@@ -140,7 +140,7 @@ It proves:
 It does not prove:
 
 - attester correctness in production shape
-- remote signer or KMS operation
+- fixed-role A/B signer and Vault operation
 - resolver registry availability
 - matching keeper behavior
 - monitoring, backup, restore, or rollback readiness

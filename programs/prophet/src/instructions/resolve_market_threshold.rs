@@ -53,6 +53,8 @@ pub(crate) fn resolve_market_threshold(
         ErrorCode::NotaryConfigMismatch
     );
     validate_notary_config_snapshot_address(&config.key(), config, &crate::ID)?;
+    // New Market V2 creation admits only the operated 2-of-2 topology, while
+    // existing snapshots remain generically resolvable for compatibility.
     validate_stored_notary_config(config)?;
 
     let expected_message = resolution_message_v2(

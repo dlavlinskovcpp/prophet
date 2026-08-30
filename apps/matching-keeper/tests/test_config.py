@@ -37,3 +37,53 @@ def test_current_public_devnet_program_id_is_accepted():
 def test_another_valid_program_id_is_technically_accepted():
     settings = Settings(PROPHET_PROGRAM_ID=OTHER_VALID_PROGRAM_ID)
     assert settings.PROPHET_PROGRAM_ID == OTHER_VALID_PROGRAM_ID
+
+
+def test_production_keeper_requires_operated_resolver_allowlist():
+    settings = Settings(
+        PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID,
+        ENVIRONMENT="public-devnet",
+        RPC_URL="https://rpc.example",
+        WS_URL="wss://rpc.example",
+        PAYER_KEYPAIR_PATH="/run/secrets/keeper-id.json",
+        DB_PATH="/var/lib/prophet/matcher.db",
+        MARKET_DISCOVERY_MODE="program_scan",
+        REQUIRE_OPERATED_RESOLVER_SUPPORT=True,
+        OPERATED_SUPPORTED_RESOLVER_HASHES="",
+    )
+    with pytest.raises(ValueError, match="OPERATED_SUPPORTED_RESOLVER_HASHES"):
+        settings.validate_runtime()
+
+
+def test_production_keeper_rejects_plaintext_and_unbounded_compute_price():
+    settings = Settings(
+        PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID,
+        ENVIRONMENT="public-devnet",
+        RPC_URL="http://rpc.example",
+        WS_URL="ws://rpc.example",
+        PAYER_KEYPAIR_PATH="/run/secrets/keeper-id.json",
+        DB_PATH="/var/lib/prophet/matcher.db",
+        MARKET_DISCOVERY_MODE="program_scan",
+        REQUIRE_OPERATED_RESOLVER_SUPPORT=True,
+        OPERATED_SUPPORTED_RESOLVER_HASHES="aa" * 32,
+        COMPUTE_UNIT_PRICE_MICRO_LAMPORTS=1_000_001,
+    )
+    with pytest.raises(ValueError, match="https"):
+        settings.validate_runtime()
+
+
+def test_production_keeper_rejects_unbounded_compute_price_after_transport_checks():
+    settings = Settings(
+        PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID,
+        ENVIRONMENT="public-devnet",
+        RPC_URL="https://rpc.example",
+        WS_URL="wss://rpc.example",
+        PAYER_KEYPAIR_PATH="/run/secrets/keeper-id.json",
+        DB_PATH="/var/lib/prophet/matcher.db",
+        MARKET_DISCOVERY_MODE="program_scan",
+        REQUIRE_OPERATED_RESOLVER_SUPPORT=True,
+        OPERATED_SUPPORTED_RESOLVER_HASHES="aa" * 32,
+        COMPUTE_UNIT_PRICE_MICRO_LAMPORTS=1_000_001,
+    )
+    with pytest.raises(ValueError, match="COMPUTE_UNIT_PRICE"):
+        settings.validate_runtime()

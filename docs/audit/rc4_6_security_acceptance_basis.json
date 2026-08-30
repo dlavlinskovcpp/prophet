@@ -1,0 +1,23 @@
+{
+  "schema": "PROPHET_RC46_SECURITY_ACCEPTANCE_BASIS_V1",
+  "version": 1,
+  "acceptance_basis_revision": 5,
+  "purpose": "Reproducible RC4.6 protocol and operations consistency evidence.",
+  "previous_manifest_sha256": "a56bb5d2515839d003932b2a18036fc1483066a900d566a89278dc6e9812337b",
+  "supersession_reason": "RC4.6 permissionless matching semantics, exact Market V2 topology, operated Resolver V2 preflight, and fail-closed signer/keeper operations",
+  "immutable_crypto_vectors": {
+    "p0c3e_v2": "9e6dafc41c450a62d733b5bf5bef93fea8f1460641091edd8f818a6f507e254c",
+    "p0c3e_v1": "d1ec055d779e90db8b782827957a77dd4de4918643d4db5e01292fdd6c86666d",
+    "g1": "UNCHANGED",
+    "d2": "UNCHANGED"
+  },
+  "lanes": [
+    {"id":"rc46_resolver_support","purpose":"operated Resolver V2 classification and fail-closed preflight","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_resolver_support.py"],"expected_passed":4,"expected_skipped":0},
+    {"id":"p0c3e1","purpose":"frozen RC4.4 operational-evidence acceptance lane","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_r3c_effective_authority.py","tests/test_r3c_v2_production_verification.py","tests/test_r3c_package_freshness.py","tests/test_operational_evidence_r3c_i1.py","tests/test_provider_result_v2.py","tests/test_vault_admin_package_bridge.py","tests/test_vault_admin_attestation.py","tests/test_manual_review_permit.py","tests/test_verified_manual_review_permit.py","tests/test_rfc8785_dependency.py"],"expected_passed":315,"expected_skipped":0},
+    {"id":"oracle_attester","purpose":"complete current oracle-attester suite","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests"],"expected_passed":1446,"expected_skipped":3},
+    {"id":"p0c4_fixed_role","purpose":"frozen fixed-role signer acceptance lane","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_admission_grant_replay_journal.py","tests/test_fixed_role_signer_applications.py","tests/test_localtest_file_vault_transport.py","tests/test_localtest_settlement_bridge.py","tests/test_localtest_signer_bootstrap.py","tests/test_operated_devnet_external_signers.py","tests/test_operated_localnet_fixed_role_controller.py","tests/test_p0c4_i2_config_retirement.py","tests/test_p0c4_i3_fixed_role.py","tests/test_signer_admission_grant.py","tests/test_signer_admission_runtime.py","tests/test_signer_admission_vectors.py"],"expected_passed":105,"expected_skipped":0},
+    {"id":"resolver_v2","purpose":"frozen Resolver V2 compatibility","workdir":"apps/oracle-attester","command":["poetry","run","pytest","-q","tests/test_resolver_v2_adapters.py","tests/test_resolver_v2_multi_verifier.py","tests/test_resolver_v2_oracle_adapters.py","tests/test_resolver_v2_pipeline.py"],"expected_passed":64,"expected_skipped":0},
+    {"id":"rust_frozen_layout","purpose":"frozen 235-byte settlement layout","workdir":".","command":["cargo","test","-p","prophet","--lib","utils::attestation::tests::legacy_resolution_message_layout_is_byte_for_byte_stable"],"expected_passed":1,"expected_skipped":0},
+    {"id":"p0c4_launch_surface","purpose":"production signer reachability audit","workdir":".","command":["python3","scripts/p0c4_launch_surface_audit.py"],"kind":"audit","expected_status":"PASS"}
+  ]
+}

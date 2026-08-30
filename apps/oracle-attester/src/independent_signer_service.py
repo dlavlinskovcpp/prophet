@@ -6,6 +6,8 @@ authorizes settlement fields, accesses the journal directly, or signs bytes.
 from __future__ import annotations
 
 import base64
+import os
+import threading
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -38,6 +40,26 @@ class _RequestTooLarge(ValueError):
 
 class _RequestStreamFailure(ValueError):
     pass
+
+
+class _AuthorizationConcurrency:
+    def __init__(self, maximum: int) -> None:
+        if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum <= 0 or maximum > 1024:
+            raise IndependentSignerServiceStartupError("signer_authorization_concurrency_invalid")
+        self.maximum = maximum
+        self._active = 0
+        self._lock = threading.Lock()
+
+    def try_acquire(self) -> bool:
+        with self._lock:
+            if self._active >= self.maximum:
+                return False
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            self._active = max(0, self._active - 1)
 
 
 def _json_content_type(request: Request) -> bool:
@@ -140,6 +162,11 @@ def create_independent_signer_service(
     if admission.context.signer_role != service_config.signer_role or admission.context.signer_service_id != service_config.signer_id:
         raise IndependentSignerServiceStartupError("independent_signer_admission_context_binding_mismatch")
     local_clock = clock or (lambda: int(time.time() * 1000))
+    try:
+        max_inflight = int(os.getenv("SIGNER_MAX_INFLIGHT_AUTHORIZATIONS", "8"))
+    except ValueError as exc:
+        raise IndependentSignerServiceStartupError("signer_authorization_concurrency_invalid") from exc
+    concurrency = _AuthorizationConcurrency(max_inflight)
 
     app = FastAPI(
         title="Prophet Independent Signer",
@@ -148,18 +175,67 @@ def create_independent_signer_service(
         openapi_url=None,
     )
     app.state.engine = engine
-    app.state.ready = True
+    app.state.ready = False
+
+    def readiness() -> tuple[bool, str]:
+        try:
+            now = _local_now(local_clock)
+        except ValueError:
+            return False, "local_clock_invalid"
+        if not admission.issuer_keys or admission.context.signer_role != service_config.signer_role:
+            return False, "admission_unavailable"
+        if not admission.replay_journal.health():
+            return False, "replay_journal_unavailable"
+        if not engine._journal.health():
+            return False, "signing_journal_unavailable"
+        try:
+            if engine._rpc.genesis_hash() != service_config.expected_genesis_hash:
+                return False, "rpc_identity_mismatch"
+            slot = engine._rpc.finalized_slot()
+            if not isinstance(slot, int) or isinstance(slot, bool) or slot < 0:
+                return False, "rpc_unavailable"
+            if engine._rpc.block_time(slot) is None:
+                return False, "rpc_unavailable"
+        except Exception:
+            return False, "rpc_unavailable"
+        try:
+            identity = engine._vault.validate_identity()
+            if identity.public_key != service_config.signer_public_key or identity.key_version != service_config.signer_key_version:
+                return False, "vault_identity_mismatch"
+        except Exception as exc:
+            if "mismatch" in str(exc):
+                return False, "vault_identity_mismatch"
+            return False, "vault_unavailable"
+        return True, ""
+
+    app.state.readiness = readiness
 
     @app.get("/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> dict[str, bool | str]:
+        ready_state, reason = readiness()
+        return {"ok": ready_state, "live": True, "ready": ready_state, **({"reason": reason} if reason else {})}
+
+    @app.get("/live")
+    async def live() -> dict[str, bool]:
+        return {"live": True}
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
+        ready_state, reason = readiness()
+        if not ready_state:
+            return JSONResponse(status_code=503, content={"ready": False, "reason": reason})
         return JSONResponse(status_code=200, content={"ready": True})
 
     @app.post("/v1/settlement-authorizations")
     async def sign_authorization(request: Request) -> JSONResponse:
+        if not concurrency.try_acquire():
+            return JSONResponse(status_code=503, content={"error": "authorization_capacity_exhausted"})
+        try:
+            return await _sign_authorization(request, admission=admission, engine=engine, local_clock=local_clock)
+        finally:
+            concurrency.release()
+
+    async def _sign_authorization(request: Request, *, admission: SignerAdmissionRuntime, engine: IndependentSignerEngine, local_clock: Callable[[], Any]) -> JSONResponse:
         if not _json_content_type(request):
             return JSONResponse(status_code=415, content={"error": "unsupported_media_type"})
         try:

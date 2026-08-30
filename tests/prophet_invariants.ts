@@ -31,6 +31,7 @@ describe("prophet-invariants", () => {
 
   let quoteMint: PublicKey;
   const oracle = Keypair.generate();
+  const oracleB = Keypair.generate();
   const traderA = Keypair.generate();
   const traderB = Keypair.generate();
 
@@ -101,7 +102,7 @@ describe("prophet-invariants", () => {
     const notaryConfig = deriveNotaryConfig(configAdmin.publicKey);
 
     await program.methods
-      .initializeNotaryConfig(1, notaryKeys)
+      .initializeNotaryConfig(2, notaryKeys.length === 1 ? [notaryKeys[0], oracleB.publicKey] : notaryKeys)
       .accounts({
         notaryConfig,
         admin: configAdmin.publicKey,
@@ -483,6 +484,8 @@ describe("prophet-invariants", () => {
     ]);
     const sig = nacl.sign.detached(msg, oracle.secretKey);
     const ed25519Ix = createManualEd25519Ix(msg, sig, oracle.publicKey.toBuffer());
+    const sigB = nacl.sign.detached(msg, oracleB.secretKey);
+    const ed25519IxB = createManualEd25519Ix(msg, sigB, oracleB.publicKey.toBuffer());
     const resolveIx = await program.methods
       .resolveMarketThreshold({ yes: {} } as any, [...proofHash], [...publicInputsHash])
       .accounts({
@@ -491,7 +494,7 @@ describe("prophet-invariants", () => {
         instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
       })
       .instruction();
-    await provider.sendAndConfirm(new Transaction().add(ed25519Ix).add(resolveIx), []);
+    await provider.sendAndConfirm(new Transaction().add(ed25519Ix).add(ed25519IxB).add(resolveIx), []);
 
     const balA1 = (await getAccount(provider.connection, ataA)).amount;
     await program.methods

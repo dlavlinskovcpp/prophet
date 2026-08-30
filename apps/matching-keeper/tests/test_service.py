@@ -102,6 +102,26 @@ def test_program_scan_discovery_filters_non_open_and_legacy_markets(tmp_path):
     assert targets == {open_v2_market: "program_scan"}
 
 
+def test_production_discovery_requires_explicit_operated_resolver_hash(tmp_path):
+    market = _pk(13)
+    settings = Settings(
+        PROPHET_PROGRAM_ID=TEST_PROGRAM_ID,
+        DB_PATH=str(tmp_path / "matcher.db"),
+        MARKET_DISCOVERY_MODE="program_scan",
+        MARKETS="",
+        REQUIRE_NOTARY_CONFIG=True,
+        REQUIRE_OPERATED_RESOLVER_SUPPORT=True,
+        OPERATED_SUPPORTED_RESOLVER_HASHES=(bytes([9]) * 32).hex(),
+    )
+    service = MatchingKeeperService(
+        settings,
+        client=FakeClient([(market, _market_account(status=MarketStatus.Open, notary_config=_pk(50)))]),
+    )
+    assert asyncio.run(service._discover_market_targets()) == {market: "program_scan"}
+    settings.OPERATED_SUPPORTED_RESOLVER_HASHES = "aa" * 32
+    assert asyncio.run(service._discover_market_targets()) == {}
+
+
 def test_health_reports_stale_websocket_for_active_markets(tmp_path):
     settings = Settings(
         PROPHET_PROGRAM_ID=TEST_PROGRAM_ID,
