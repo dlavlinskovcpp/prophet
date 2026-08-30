@@ -1,0 +1,29 @@
+{
+  "schema": "PROPHET_RC47_RESIDUAL_RISK_V1",
+  "release": "v1.0.0-rc4.7",
+  "status": "reviewed",
+  "exception_sources": [
+    "security/cargo-audit-exceptions.json",
+    "security/production-image-vulnerability-exceptions.json",
+    "security/yarn-audit-exceptions.json"
+  ],
+  "classification_policy": {
+    "high_or_critical_crypto_tls_parser_libc": "explicit_owner_review_required",
+    "expired_or_stale_exception": "release_blocker",
+    "unclassified_finding": "release_blocker"
+  },
+  "production_deployment_residuals": [
+    {
+      "id": "external-security-audit",
+      "classification": "accepted_external_dependency",
+      "status": "required_before_mainnet",
+      "owner": "Protocol Infrastructure"
+    },
+    {
+      "id": "quote-asset-issuer-freeze-authority",
+      "classification": "operational-asset-risk",
+      "status": "requires-approved-mint-policy",
+      "owner": "Protocol Infrastructure"
+    }
+  ]
+}

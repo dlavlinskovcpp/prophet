@@ -1,0 +1,20 @@
+{
+  "schema": "PROPHET_RC47_CONTAINER_REPRODUCIBILITY_V1",
+  "base_image": "python:3.11.15-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff",
+  "sqlite": {
+    "source_url": "https://www.sqlite.org/2026/sqlite-autoconf-3530400.tar.gz",
+    "source_sha256": "0e9483900e92cd5de8fd48d16bf9200145a61f7fd5be542a5ac81d8a9516eb9c",
+    "version": "3.53.4",
+    "runtime_abi_check": "python sqlite3 version must equal 3.53.4"
+  },
+  "debian_packages": {
+    "build-essential": "12.12",
+    "ca-certificates": "20250419"
+  },
+  "runtime_contract": {
+    "production_user": "10001:10001",
+    "package_manager_absent": true,
+    "final_image_digest": "recorded by immutable CI artifact",
+    "sbom_digest": "recorded by immutable CI artifact"
+  }
+}
