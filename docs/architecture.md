@@ -1,176 +1,148 @@
 # Prophet Architecture
 
-This document is the high-level map of Prophet as a system. Use it before diving into protocol details or operator runbooks.
+Prophet is a Solana prediction-market protocol for autonomous agents. The
+Solana program owns financial state and final authorization; Resolver V2 and
+its off-chain services supply machine-readable resolution evidence.
 
-## Overview
+## System map
 
-Prophet splits responsibility across an on-chain market program and several off-chain services:
+```mermaid
+flowchart LR
+    A[Agents / traders] --> SDK[Python SDK / agent facade]
+    SDK --> P[Prophet Solana program]
+    K[Matching keeper<br/>(off-chain policy)] --> P
 
-- the Anchor program owns custody, order state, settlement, governance, and final resolution state
-- the SDK is the user and agent entrypoint for market creation, trading, governance, and resolution
-- the attester evaluates resolver logic, verifies zkTLS payloads, and assembles canonical resolve transactions
-- the resolver registry stores canonical resolver definitions keyed by `resolver_hash`
-- the fixed-role A/B signer services manage notary keys outside the attester process; legacy generic signer tooling is not a production launch surface
-- the matching keeper discovers open orders and submits `match_orders` for crossed books
+    P -. resolver_hash .-> R[Resolver V2 registry<br/>canonical definition]
+    R --> VA[Verifier A]
+    R --> VB[Verifier B]
 
-## Component Diagram
+    VA --> IA[Admission issuer A]
+    VB --> IB[Admission issuer B]
+    IA --> SA[Fixed-role Signer A]
+    IB --> SB[Fixed-role Signer B]
 
-```text
-                    +----------------------+
-                    |  Resolver Registry   |
-                    | canonical resolvers  |
-                    +----------+-----------+
-                               ^
-                               |
-                    +----------+-----------+
-                    |      Oracle Attester |
-                    | resolver eval +      |
-                    | zkTLS verify +       |
-                    | resolve assembly     |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------+-----------+
-                    |     Remote Signer    |
-                    | KMS / command bridge |
-                    +----------+-----------+
-                               |
-                               v
-+-------------------+  txs  +--+------------------+  txs  +-------------------+
-| Traders / Agents  +------->   Prophet Program   <-------+ Matching Keeper   |
-| SDK / scripts     |       | custody + matching  |       | crossed-book loop |
-+-------------------+       | governance + settle |       +-------------------+
-                            +-----------+----------+
-                                        |
-                                        v
-                               +--------+--------+
-                               | Solana Accounts |
-                               | Market / Order  |
-                               | Position /      |
-                               | NotaryConfig    |
-                               +-----------------+
+    RA[RPC trust domain A] --> SA
+    RB[RPC trust domain B] --> SB
+    VLA[Vault / key domain A] <--> SA
+    VLB[Vault / key domain B] <--> SB
+
+    C[Credential-free coordinator / broker<br/>cache only] --> VA
+    C --> VB
+    SA --> C
+    SB --> C
+    C --> X[Permissionless submitter]
+    X --> P
+    M[Monitoring / durable operational state] -.-> C
+    M -.-> SA
+    M -.-> SB
 ```
 
-## On-Chain State
+The production boundary is fixed before credentials are acquired:
 
-The core accounts are:
+> No production process can possess or accept both Signer A and Signer B
+> credentials.
 
-- `Market`: resolver commitment, timing, governance authority, fee config, and final resolution state
-- `Order`: live order state, remaining escrow, and fee reserve
-- `Position`: matched shares, pending refunds, and redemption state
-- `NotaryConfig`: threshold, member keys, and version used by v2 resolution messages
+Signer A and Signer B are separate processes with role-local runtime identity,
+admission authority, Vault access, finalized-RPC trust, replay journals, and
+anti-equivocation state. The diagram is deliberately not a generic signer
+topology.
 
-The program is the source of truth for:
+## Authority by layer
 
-- market timing and lifecycle
-- custody of quote assets in the market vault
-- open orders and matched share balances
-- protocol fee accrual and withdrawal
-- final resolved outcome plus `proof_hash` and `public_inputs_hash`
+| Layer | Authority | Responsibility |
+| --- | --- | --- |
+| Solana program | Consensus-enforced | Custody, order accounting, matching arithmetic, fees, refunds, redemption, lifecycle, notary snapshot binding, and final settlement authorization |
+| Resolver V2 | Commitment and validation format | Canonical machine-readable resolution definition and `resolver_hash` binding |
+| Verifier A/B | Off-chain evidence verification | Independently evaluate evidence and authenticate the result; they do not settle funds |
+| Signer A/B | Off-chain authorization | Independently validate finalized chain context, G1/G2/P0C1/P0C2 policy, and authorize the canonical settlement message |
+| Coordinator/broker | Non-authoritative coordination | Queue, cache, and route untrusted work; it has no signer credentials and is not an authorization authority |
+| Matching keeper | Off-chain matching policy | Discover crossed orders and submit caller-selected valid `match_orders` transactions |
+| SDK / agents / relayers | Clients | Create markets, trade, operate workflows, and submit permissionless transactions |
 
-## Off-Chain Responsibilities
+## Market V2 and settlement
 
-### Python SDK
+Every Market V2 input must contain a non-zero `resolver_hash` and an exact
+2-of-2 `NotaryConfig` with two distinct non-zero notary keys. A generic
+N-of-M account representation may exist for protocol evolution, but unsupported
+topologies are rejected by the current Market V2 path.
 
-The SDK is the standard interface for:
+Resolution follows this sequence:
 
-- creating and governing markets
-- placing, matching, cancelling, refunding, and redeeming
-- direct threshold resolution for relayer or operator flows
+1. The market commits to a canonical Resolver V2 definition by hash.
+2. Verifier A and Verifier B evaluate the evidence independently.
+3. Each role-local signer validates admission G1, durable replay state G2,
+   independent P0C1 authorization, and P0C2 anti-equivocation state.
+4. Signer A and Signer B sign the identical `PROPHET_RESOLVE_V2` message.
+   The current message is exactly 235 bytes.
+5. A credential-free submitter places the Ed25519 instructions and
+   `resolve_market_threshold` in a permissionless transaction.
+6. The Solana program verifies the canonical bytes, distinct threshold
+   signatures, and immutable market snapshot before changing state.
 
-### Oracle Attester
+The chain verifies settlement authorization and stores the outcome,
+`proof_hash`, and `public_inputs_hash`. It does not verify zkTLS proofs itself.
 
-The attester is responsible for:
+## Matching semantics
 
-- loading the current market state
-- loading the canonical resolver definition
-- evaluating resolver logic against public inputs
-- verifying zkTLS payloads
-- obtaining threshold signatures
-- submitting the final `resolve_market_threshold` transaction
+Prophet V1 uses **permissionless limit-order crossing**. A caller selects a
+valid opposite-side pair; the program checks market membership, price
+crossing, ownership constraints, and accounting invariants. The matching keeper
+uses best-price / earliest-order policy as an off-chain convenience.
 
-### Resolver Registry
+The protocol does not consensus-enforce a global top of book, global best
+execution, strict price priority, strict time priority, or Sybil-resistant
+self-trade prevention. Prophet V1 should therefore not be described as a
+strict CLOB without that qualification.
 
-The registry stores canonical resolver definitions and lets operators:
+## Runtime endpoints and state
 
-- publish a resolver once
-- retrieve a resolver by hash
-- audit what definition was published for a given market
+`/live` reports process liveness. `/ready` is dependency-aware and fail-closed;
+it checks real dependencies without producing a settlement signature. Before
+the first public-devnet program deployment, a correct runtime may report
+`expected_program_missing` for settlement readiness. That is not a reason to
+weaken the readiness check.
 
-### Remote Signer
+Role-local durable state includes G2 replay data, P0C2 anti-equivocation data,
+signing journals, and transaction-attempt reconciliation state. A coordinator
+database is only a broker/cache store. It must not contain signer credentials,
+issuer private keys, or authorization authority.
 
-The signer keeps notary key material outside the attester process. In this repo it supports:
+## Deployment shapes
 
-- Vault Transit-backed Ed25519 signing through the bundled command wrapper
-- command-backed signing for other KMS/HSM wrappers, plus AWS KMS compatibility
+### Deterministic demo
 
-### Matching Keeper
+`make demo` runs the repository's deterministic agent-native Resolver V2 demo,
+including agreement and conflict fail-closed paths. It uses local fixtures and
+does not deploy or require a wallet.
 
-The keeper handles the off-chain part of the order book:
+### Localtest fixed-role topology
 
-- discovers eligible markets
-- indexes open orders
-- detects crossed books
-- submits `match_orders`
+`make operated-smoke` exercises two fixed-role signer services through an
+ephemeral localtest environment. Its keys and infrastructure are developer
+fixtures, not evidence of production administrative independence.
 
-## Common Flows
+### Operated public-devnet
 
-### Trading Flow
+The checked-in operated topology uses Resolver V2 registry, Verifier A,
+Verifier B, credential-free coordinator, matching keeper, monitoring, and two
+independent fixed-role signer domains. Real Vault, RPC, issuer, TLS, durable
+storage, and alerting infrastructure must be provisioned outside the
+repository. Public-devnet is currently paused; the Prophet program is not
+deployed there.
 
-1. An operator creates a market with a `resolver_hash`, quote mint, schedule, and `NotaryConfig`.
-2. Agents place `BuyYes` and `BuyNo` orders on-chain.
-3. The keeper or any relayer submits `match_orders` when orders cross.
-4. Traders claim refunds and later redeem winning shares on-chain.
+### Mainnet future gate
 
-### Resolution Flow
+Mainnet remains blocked. An external independent audit is required before
+significant mainnet TVL, in addition to live operational evidence, deployment
+authorization, monitoring, recovery drills, and an approved liveness/key-loss
+plan.
 
-1. The market reaches `resolve_ts`.
-2. The attester loads the resolver definition that matches the market's `resolver_hash`.
-3. The attester verifies public inputs and zkTLS proof material.
-4. Distinct notaries sign the canonical v2 resolve message.
-5. Any relayer submits `resolve_market_threshold`.
-6. The program verifies threshold signatures and finalizes the market.
+## Read next
 
-## Deployment Shapes
-
-### Developer Smoke Path
-
-Use the SDK directly with a small threshold set, often `1-of-1`, to:
-
-- deploy the program
-- create a market
-- resolve it directly with `resolve_market_threshold`
-
-This is the fastest integration path, but not the production trust model.
-
-### Operated Path
-
-Use the full service stack:
-
-- resolver registry
-- attester
-- remote signer
-- matching keeper
-- Prometheus and Grafana
-
-This is the intended production shape for Prophet.
-
-## Mutable Off-Chain State
-
-Operators should treat these as owned runtime state:
-
-- `resolver_store/`
-- `proof_store/`
-- `audit/`
-- `apps/matching-keeper/state/`
-
-Backup and restore procedures are documented in `docs/ops_runbook.md`.
-
-## Read Next
-
-- Protocol details: `docs/protocol.md`
-- Security assumptions and boundaries: `docs/trust_model.md`
-- Minimal deploy-to-resolution path: `docs/devnet_quickstart.md`
-- Common reader questions: `docs/faq.md`
-- End-to-end flow diagrams: `docs/sequence_flows.md`
-- Release and rollback: `docs/release_runbook.md`
+- Protocol and economic semantics: [`protocol.md`](protocol.md)
+- Trust assumptions and security boundaries: [`trust_model.md`](trust_model.md)
+- Developer flow: [`devnet_quickstart.md`](devnet_quickstart.md)
+- Python SDK: [`sdk_quickstart.md`](sdk_quickstart.md)
+- Resolver V2 schema: [`resolver_spec.md`](resolver_spec.md)
+- Operations and recovery: [`ops_runbook.md`](ops_runbook.md)
+- External audit scope: [`security_review_scope.md`](security_review_scope.md)

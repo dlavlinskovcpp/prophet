@@ -1,235 +1,138 @@
-# Devnet Quickstart
+# Developer Devnet Preparation
 
-This guide is the shortest path from a fresh checkout to a resolved Prophet market on Solana devnet.
+This guide is for deterministic development and independent local/devnet
+experimentation. It does not describe a currently live Prophet-operated public
+devnet: the official public-devnet is paused, its Prophet program is not
+deployed, and mainnet is blocked.
 
-It intentionally uses a demo `1-of-1` notary configuration so you can validate the end-to-end developer flow quickly. That is useful for smoke testing and integration work, but it is not the production trust model.
+## Safest first steps
 
-## What You Will Do
-
-1. Build and deploy the program to devnet.
-2. Create a quote mint.
-3. Initialize a demo `NotaryConfig`.
-4. Create a market from a resolver definition.
-5. Resolve the market directly with the SDK threshold flow.
-
-If you want the full operated path with registry, fixed-role signers, and monitoring, use this guide first and then move to `docs/ops_runbook.md` and `docs/release_runbook.md`.
-
-## Prerequisites
-
-- Rust/Cargo
-- Solana CLI
-- Anchor CLI
-- Python 3.10+
-- a funded devnet wallet at `~/.config/solana/id.json` or an updated `deploy/environments/devnet.json`
-
-Point your CLI at devnet and fund the wallet:
+From the repository root:
 
 ```bash
-solana config set --url https://api.devnet.solana.com
-solana airdrop 2
+make demo
+make rc46-security-acceptance
 ```
 
-## 1. Build And Deploy
+`make demo` runs the deterministic agent-native Resolver V2 flow and its
+conflict fail-closed case without a wallet, RPC, or deployment. The acceptance
+target validates the checked-in RC4.6 security basis.
 
-Build the program:
+For the fixed-role localtest path:
 
 ```bash
-make build
+make operated-smoke
 ```
 
-Deploy with the repo-supported release flow:
+This uses ephemeral developer infrastructure and proves the A/B admission and
+settlement boundary locally. Its test keys are developer-only fixtures and are
+not evidence of independent production compute, Vault, RPC, or administrative
+domains.
+
+## Localnet Market V2 flow
+
+If you need an on-chain integration, use a local validator and two distinct
+test notary keypairs. Market V2 accepts exactly 2-of-2; a one-key smoke path is
+invalid.
+
+Start the repository's local environment using the current target:
 
 ```bash
-make release-deploy ENV=devnet TAG=devnet-smoke
+make localnet-up
 ```
 
-Export the program id from the deployed keypair:
+Set the local RPC, program, payer, and quote-mint values for your environment:
 
 ```bash
-export RPC_URL="https://api.devnet.solana.com"
-export PROPHET_PROGRAM_ID="$(solana address -k target/deploy/prophet-keypair.json)"
+export RPC_URL="http://127.0.0.1:8899"
+export PROPHET_PROGRAM_ID="<local-program-id>"
 export PAYER_KEYPAIR_PATH="$HOME/.config/solana/id.json"
+export QUOTE_MINT="<local-quote-mint>"
 ```
 
-Sanity-check those exports before running any SDK command:
+The following uses the current `ProphetClient` API. The two notary keypairs
+are intentionally distinct and are held only by this developer process:
 
-```bash
-echo "$RPC_URL"
-echo "$PROPHET_PROGRAM_ID"
-solana address -k "$PAYER_KEYPAIR_PATH"
-solana balance "$(solana address -k "$PAYER_KEYPAIR_PATH")" --url devnet
-```
-
-Recommended for a clean smoke path: switch to a fresh devnet wallet for market creation and resolution so you do not inherit old `NotaryConfig` PDA state from previous runs.
-
-```bash
-solana-keygen new --no-bip39-passphrase --force -o /tmp/prophet-devnet-smoke.json
-solana airdrop 2 "$(solana address -k /tmp/prophet-devnet-smoke.json)" --url devnet
-export PAYER_KEYPAIR_PATH="/tmp/prophet-devnet-smoke.json"
-```
-
-## 2. Create A Quote Mint
-
-Create a devnet SPL mint to use as the market quote asset:
-
-```bash
-spl-token create-token --url devnet
-```
-
-Copy the printed mint address and export it:
-
-```bash
-export QUOTE_MINT="<paste-mint-pubkey>"
-```
-
-This quickstart does not place orders, so you do not need to mint tokens into a user ATA yet.
-
-## 3. Initialize A Demo NotaryConfig
-
-For the smoke path, use your payer wallet as the only notary.
-
-From `sdk/python`:
-
-```bash
-cd sdk/python
-pip install -e .
-python - <<'PY'
-from prophet_sdk import ProphetClient
-
-client = ProphetClient()
-cfg, sig = client.initialize_notary_config(1, [client.payer.pubkey()])
-print("NOTARY_CONFIG=", cfg)
-print("TX=", sig)
-PY
-cd ../..
-```
-
-If this step fails with `already in use` or later market creation fails with `AccountNotInitialized` for `notary_config`, your current admin wallet is reusing a stale devnet PDA. Generate a fresh smoke wallet with the commands above and retry this step.
-
-If this step fails with `AccountNotFound` or `Attempt to debit an account but found no record of a prior credit`, the SDK is usually pointed at the wrong RPC or the payer wallet is unfunded on devnet. Re-check `RPC_URL`, `PAYER_KEYPAIR_PATH`, and the payer balance, then retry.
-
-Export the printed `NOTARY_CONFIG` pubkey:
-
-```bash
-export NOTARY_CONFIG="<paste-notary-config-pubkey>"
-```
-
-## 4. Create A Resolver Definition
-
-Write a simple resolver file:
-
-```bash
-cat > resolver.json <<'JSON'
-{
-  "url": "https://example.com/value",
-  "method": "GET",
-  "path": "data.answer",
-  "predicate": "equals",
-  "target_value": 42
-}
-JSON
-```
-
-Create a market that resolves after 60 seconds:
-
-```bash
-python3 scripts/create_market.py \
-  --resolver-file resolver.json \
-  --mint "$QUOTE_MINT" \
-  --notary-config "$NOTARY_CONFIG" \
-  --duration 60
-```
-
-The script prints the market address. Export it:
-
-```bash
-export MARKET_PUBKEY="<paste-market-pubkey>"
-```
-
-## 5. Wait Until Resolve Time
-
-The example above uses `--duration 60`, so wait about a minute before resolving.
-
-## 6. Resolve The Market Directly
-
-Use the direct threshold relayer example with the same wallet acting as payer and notary:
-
-```bash
-export NOTARY_KEYPAIR_PATHS="$PAYER_KEYPAIR_PATH"
-export OUTCOME="YES"
-python3 sdk/python/examples/resolve_threshold_relayer.py
-```
-
-If you want to record non-zero hashes in the resolved market, set these first:
-
-```bash
-export PROOF_HASH_HEX="$(python3 - <<'PY'
-import hashlib
-print(hashlib.sha256(b'devnet-proof').hexdigest())
-PY
-)"
-export PUBLIC_INPUTS_HASH_HEX="$(python3 - <<'PY'
-import hashlib
-print(hashlib.sha256(b'{\"data\":{\"answer\":42}}').hexdigest())
-PY
-)"
-```
-
-Then rerun the relayer command.
-
-## 7. Verify Final State
-
-Inspect the market through the SDK:
-
-```bash
-cd sdk/python
-python - <<'PY'
-from solders.pubkey import Pubkey
-from prophet_sdk import ProphetClient
+```python
 import os
+import time
 
-client = ProphetClient()
-market = Pubkey.from_string(os.environ["MARKET_PUBKEY"])
-state = client.fetch_market(market)
-print(f"Market: {market}")
-print(f"Status: {state.status}")
-print(f"Outcome: {state.outcome}")
-print(f"Proof Hash: {state.proof_hash.hex()}")
-print(f"Public Inputs Hash: {state.public_inputs_hash.hex()}")
-PY
-cd ../..
+from solders.keypair import Keypair
+from solders.pubkey import Pubkey
+
+from prophet_sdk import ProphetClient, derive_market_pda, derive_notary_config_pda
+
+client = ProphetClient(
+    rpc_url=os.environ["RPC_URL"],
+    payer_keypair_path=os.environ["PAYER_KEYPAIR_PATH"],
+    program_id=os.environ["PROPHET_PROGRAM_ID"],
+)
+notary_a = Keypair()
+notary_b = Keypair()
+notary_keys = [notary_a.pubkey(), notary_b.pubkey()]
+
+notary_config, _ = client.initialize_notary_config(2, notary_keys)
+resolver_hash = bytes([7]) * 32
+now = int(time.time())
+open_ts = now - 5
+lock_ts = now + 120
+resolve_ts = now + 180
+quote_mint = Pubkey.from_string(os.environ["QUOTE_MINT"])
+
+client.initialize_market_v2(
+    resolver_hash=resolver_hash,
+    open_ts=open_ts,
+    market_nonce=0,
+    lock_ts=lock_ts,
+    resolve_ts=resolve_ts,
+    notary_config=notary_config,
+    quote_mint=quote_mint,
+)
+
+market, _ = derive_market_pda(
+    client.payer.pubkey(), resolver_hash, open_ts, 0, client.program_id
+)
 ```
 
-You should see:
+This is a developer example only. For an actual resolution, call
+`resolve_market_threshold(...)` with both `notary_a` and `notary_b`, or use the
+repository's fixed-role operated flow. Do not export these ephemeral private
+keys or present them as production signer evidence.
 
-- `status = Resolved`
-- `outcome = Yes` or whatever you chose
-- non-zero `proof_hash` and `public_inputs_hash` if you set them
+## Independent developer deployment
 
-## What This Quickstart Proves
+An independent developer may deploy to a personal devnet environment after
+reviewing the target environment and release workflow. Use the release tool
+with an explicitly selected release tag and externally managed deployment
+credentials; do not infer that this is the Prophet-operated public-devnet.
 
-This flow proves that:
+The release workflow and its credential boundary are documented in
+[`release_runbook.md`](release_runbook.md). It intentionally keeps upgrade
+authority and fee-payer credentials outside the repository and release bundle.
 
-- the deployed program accepts v2 market creation
-- `NotaryConfig` setup works
-- threshold resolution works on devnet
-- the SDK can drive the full market setup and resolve path
+Before using a public RPC, verify the cluster and program identity. The current
+operated public-devnet configuration points to
+`https://api.devnet.solana.com`, but its `deployment_authorized` flag is false
+and the Prophet program account is currently absent.
 
-It does not prove the full operated path:
+## What this guide proves
 
-- no attester service
-- no remote signer
-- no resolver registry
-- no matching keeper
-- no monitoring stack
+- deterministic Resolver V2 behavior through `make demo`;
+- the local fixed-role A/B boundary through `make operated-smoke`; or
+- local on-chain Market V2 initialization with two distinct test notaries when
+  the local validator and quote mint are available.
 
-## Next Step
+It does not prove production independence, public-devnet readiness, external
+audit completion, or mainnet safety. It also does not guarantee global
+best-execution, strict price priority, strict time priority, or Sybil-resistant
+matching: Prophet V1 is permissionless limit-order crossing.
 
-After this smoke path, the next practical step is to move to the operated path:
+## Related guides
 
-- full operated devnet flow: `docs/operated_devnet.md`
-- one-command operated devnet runner: `make operated-devnet ARGS="--quote-mint <mint> --payer-keypair <path> --reclaim-verify-url <url> --proof-file ./proof.bin --public-inputs-file ./public_inputs.json"`
-- release process: `docs/release_runbook.md`
-- ops and monitoring: `docs/ops_runbook.md`
-- system overview: `docs/architecture.md`
-- trust boundary details: `docs/trust_model.md`
+- System architecture: [`architecture.md`](architecture.md)
+- SDK API examples: [`sdk_quickstart.md`](sdk_quickstart.md)
+- Resolver V2 schema: [`resolver_spec.md`](resolver_spec.md)
+- Matching keeper: [`matching_keeper.md`](matching_keeper.md)
+- Operated services: [`operated_devnet.md`](operated_devnet.md)
+- Operations and recovery: [`ops_runbook.md`](ops_runbook.md)
+- Release workflow: [`release_runbook.md`](release_runbook.md)

@@ -53,33 +53,33 @@ For non-localnet releases, release validation now treats the secure settlement t
 Plan a release:
 
 ```bash
-python3 scripts/release.py plan --environment devnet --release-tag v0.2.3
+python3 scripts/release.py plan --environment devnet --release-tag <release-tag>
 ```
 
 Create a rollback bundle:
 
 ```bash
-python3 scripts/release.py bundle --environment devnet --release-tag v0.2.3
+python3 scripts/release.py bundle --environment devnet --release-tag <release-tag>
 ```
 
 Deploy and archive:
 
 ```bash
-python3 scripts/release.py deploy --environment devnet --release-tag v0.2.3
+python3 scripts/release.py deploy --environment devnet --release-tag <release-tag>
 ```
 
 Mainnet deploys require an explicit confirmation flag:
 
 ```bash
-python3 scripts/release.py deploy --environment mainnet-beta --release-tag v0.2.3 --yes
+python3 scripts/release.py deploy --environment mainnet-beta --release-tag <release-tag> --yes
 ```
 
 Equivalent make targets:
 
-- `make release-plan ENV=devnet TAG=v0.2.3`
-- `make release-bundle ENV=devnet TAG=v0.2.3`
-- `make release-deploy ENV=devnet TAG=v0.2.3`
-- `make security-review-bundle ENV=devnet TAG=v0.2.3`
+- `make release-plan ENV=devnet TAG=<release-tag>`
+- `make release-bundle ENV=devnet TAG=<release-tag>`
+- `make release-deploy ENV=devnet TAG=<release-tag>`
+- `make security-review-bundle ENV=devnet TAG=<release-tag>`
 
 ## What The Bundle Contains
 
@@ -109,7 +109,7 @@ The bundle is the rollback artifact set for public/artifact state. It is safe to
 Generate the external-review handoff package after the release artifacts are ready:
 
 ```bash
-make security-review-bundle ENV=devnet TAG=v0.2.3
+make security-review-bundle ENV=devnet TAG=<release-tag>
 ```
 
 That writes `security-reviews/<TAG>/<ENV>/` with:

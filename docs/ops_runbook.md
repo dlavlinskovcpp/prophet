@@ -1,137 +1,131 @@
-# Prophet Ops Runbook
+# Prophet Operations Runbook
 
-This runbook covers the mutable local/prod-like state that Prophet operators own in this repo:
+This runbook covers mutable service state and operator checks. It does not
+change protocol code, release tags, or deployment authorization.
 
-- resolver registry store: `resolver_store/`
-- attester proof store: `proof_store/`
-- JSONL audit logs: `audit/`
-- matching keeper SQLite state: `apps/matching-keeper/state/`
+## Service boundary
 
-## Local Stack
+The operated topology consists of:
 
-Bring up the full operated stack:
+- Resolver V2 registry;
+- independent Verifier A and Verifier B;
+- fixed-role Signer A and Signer B;
+- credential-free coordinator/broker;
+- matching keeper;
+- durable role-local journals; and
+- private monitoring and alerting.
+
+The coordinator, matching keeper, and transaction submitter do not hold signer
+credentials. No production process may possess both role credentials. Public
+devnet is currently paused and its Prophet program is not deployed.
+
+## Local stack
+
+The repository's local stack target is:
 
 ```bash
 make localnet-up
 ```
 
-Key endpoints:
+It starts the local validator, resolver registry, matching keeper, Prometheus,
+and Grafana. The local stack is developer infrastructure; it is not evidence
+of public-devnet independence. The target does not provision production Vault,
+issuer, RPC, TLS, or signer domains.
 
-- Grafana: `http://127.0.0.1:3000`
+Useful local endpoints are:
+
 - Prometheus: `http://127.0.0.1:9090`
-- Oracle attester: `http://127.0.0.1:8000`
-- Remote signer: `http://127.0.0.1:8100`
-- Resolver registry: `http://127.0.0.1:8200`
+- Grafana: `http://127.0.0.1:3000`
+- Resolver V2 registry: `http://127.0.0.1:8200`
 - Matching keeper: `http://127.0.0.1:8010`
+
+Verifier, coordinator, and fixed-role signer services must be started through
+their role-specific development targets or the localtest operated smoke path;
+there is no generic production signer target.
 
 ## Monitoring
 
-The repo provisions:
-
-- Prometheus scrape config: `ops/monitoring/prometheus.yml`
-- Alert rules: `ops/monitoring/alerts.yml`
-- Grafana dashboard: `ops/monitoring/grafana/dashboards/prophet-ops.json`
-
-Primary alerts:
-
-- `ProphetOracleAttesterDown`
-- `ProphetRemoteSignerDown`
-- `ProphetResolverRegistryDown`
-- `ProphetAttesterResolveErrors`
-- `ProphetRemoteSignerBackendErrors`
-- `ProphetMatchingKeeperDown`
-- `ProphetMatchingKeeperWebsocketStale`
-- `ProphetMatchingKeeperDirtyOrderBacklog`
-- `ProphetMatchingKeeperSnapshotLag`
-- `ProphetMatchingKeeperNoActiveMarkets`
-
-Config validation:
+Validate the checked-in alert contract with:
 
 ```bash
 make ops-validate-alerts
 ```
 
-## Signer / Vault Checks
+The monitoring stack should provide private signals for:
 
-Use the dedicated signer runbook for full bootstrap and rotation steps:
+- Verifier A/B, Signer A/B, coordinator, resolver, keeper, and RPC health;
+- Vault dependency failures and signer readiness;
+- G1 rejection, G2 replay, P0C1 rejection, P0C2 `UNCERTAIN`, and verifier
+  disagreement;
+- resolution, submission, and reconciliation failures; and
+- keeper websocket staleness, snapshot lag, and match backlog.
 
-- `docs/signer_vault_ops.md`
+Metrics and alerts must never contain tokens, private keys, grants, or other
+secret values.
 
-Operational commands:
+## Signer and Vault operations
 
-```bash
-make signer-vault-bootstrap ARGS="--vault-addr https://vault.example --key-name prophet-devnet-notary-01"
-make signer-dry-run ARGS="backend"
-make signer-dry-run ARGS="--public-key <pubkey> service --url https://signer.example/sign --api-key <token>"
-make signer-allowlist ARGS="--path /etc/prophet/devnet/signer_allowlist.txt show"
-```
+Signer A and Signer B are independently provisioned fixed-role services. Their
+Vault keys, authentication principals, RPC credentials, admission issuers,
+replay journals, and audit domains remain role-local. Follow
+[`signer_vault_ops.md`](signer_vault_ops.md) for managed-key bootstrap and
+rotation; record public identities and key versions, never private material.
 
-## Backup
+The coordinator and keeper must not be supplied with Vault credentials, issuer
+private keys, or signer key material. Cross-role grants and replayed grants
+must reject before P0C1.
 
-Create an ops snapshot:
+## Backup and restore
+
+Create a mutable-state snapshot:
 
 ```bash
 make ops-backup
 ```
 
-Optional custom path:
-
-```bash
-make ops-backup OUT=ops/backups/prophet-ops-manual.tar.gz
-```
-
-The archive includes the mutable runtime state plus the monitoring/config snapshot that was active when the backup was taken. Config files are included for reference; restore only rehydrates mutable state.
-
-Repeatable verification:
+Verify the repository backup/restore procedure:
 
 ```bash
 make ops-verify-restore
 ```
 
-That check stages fixture state in a temporary workspace, runs the backup script, verifies the checksum and manifest, confirms restore refuses to overwrite non-empty state without `--force`, and then validates a forced restore reproduces the original mutable state.
+For an operated deployment, back up and restore coordinator state, Resolver V2
+registry data, matching-keeper state, G2 replay journals, P0C2
+anti-equivocation state, and submission-attempt journals according to their
+role-local ownership. A restore must preserve historical security state; it
+must not regenerate identities or silently clear replay records.
 
-## Restore
+## Incident checklist
 
-Restore mutable ops state from a snapshot:
+1. Check private monitoring for service-down, dependency, and rejection alerts.
+2. Check `/live`, `/ready`, and `/metrics` on the affected role without
+   exposing request bodies or credentials.
+3. Inspect the role-local audit and durable journal state.
+4. For a verifier or registry issue, verify the canonical resolver hash and
+   evidence freshness; do not substitute an unsupported definition.
+5. For a signer issue, stop the affected role if key identity, grant binding,
+   replay state, or Vault provenance is uncertain.
+6. Treat ambiguous P0C2 or transaction submission state as `UNCERTAIN`; do not
+   blindly retry a signing or broadcast attempt.
+7. Restore only from an operator-approved backup after preserving evidence.
 
-```bash
-make ops-restore ARCHIVE=ops/backups/<snapshot>.tar.gz FORCE=--force
-```
+## Keeper operations
 
-`--force` is required when the target state directories are already populated.
+The matching keeper is an off-chain policy and submission service. Its
+`MARKET_DISCOVERY_MODE`, durable SQLite `DB_PATH`, RPC/WebSocket endpoints,
+market caps, and compute-unit-price bound must be explicit. Protect or disable
+its operational endpoints and keep metrics private. It has no settlement
+signer credentials.
 
-Restore rehydrates only:
+Matching is permissionless limit-order crossing. Keeper best-price /
+earliest-order selection is a policy convenience, not a consensus global
+price-time guarantee.
 
-- `audit/`
-- `proof_store/`
-- `resolver_store/`
-- `apps/matching-keeper/state/`
+## Drill cadence
 
-## Incident Checklist
-
-1. Check Grafana first for service-down or error-rate alerts.
-2. Confirm `/health` and `/metrics` on the affected service.
-3. Inspect the corresponding audit log in `audit/`.
-4. For keeper issues, inspect `apps/matching-keeper/state/matcher.db` and `/attempts`.
-5. For registry issues, verify `resolver_store/` still contains the expected resolver hashes.
-6. For signer issues, verify the allowlist and signer backend health from `/health`, then rerun `make signer-dry-run`.
-7. If state corruption is suspected, stop the affected service, restore from the latest ops snapshot, and restart the stack.
-
-## Signer Incidents
-
-For signer-specific failures:
-
-1. Check `/health` for `ok`, `allowlist_ready`, `loaded_pubkeys`, and recent audit log writes.
-2. Run `make signer-dry-run ARGS="backend"` on the signer host to isolate backend or Vault policy/TLS issues.
-3. If the HTTP path is suspect, run `make signer-dry-run ARGS="--public-key <pubkey> service --url <signer url> --api-key <token>"`.
-4. If a key is compromised, remove it from the allowlist first, then update on-chain `NotaryConfig`, then re-run the dry-runs on the surviving signer set.
-5. Remember that updating `NotaryConfig` bumps the version bound into `resolve_market_threshold`, so old signatures must be re-collected after emergency rotation.
-
-## Drill Cadence
-
-Recommended operator drills:
-
-- weekly `make ops-validate-alerts`
-- monthly `make ops-verify-restore`
-- monthly Grafana/dashboard review using `make localnet-up`
-- before each release, verify alerts, dashboards, and writable state directories on the target environment
+- before each release: validate alerts and writable state ownership;
+- weekly: `make ops-validate-alerts`;
+- monthly: `make ops-verify-restore` and review dashboards; and
+- before public-devnet authorization: rehearse independent signer restart,
+  key-loss/liveness, grant replay, P0C2 ambiguity, and transaction
+  reconciliation drills.

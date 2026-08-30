@@ -7,9 +7,9 @@ This document shows the main end-to-end flows in Prophet using text sequence dia
 ```text
 Operator / SDK          Prophet Program           Solana Accounts
      |                        |                         |
-     | initialize_notary_config/update_notary_config   |
+     | initialize_notary_config / rotate_notary_config |
      |----------------------->|                         |
-     |                        | create/update           |
+     |                        | create immutable       |
      |                        | NotaryConfig            |
      |                        |------------------------>|
      |                        |                         |
@@ -53,31 +53,40 @@ Trader A / SDK         Trader B / SDK         Matching Keeper        Prophet Pro
 ## 3. Operated Resolution Flow
 
 ```text
-Attester              Resolver Registry      Remote Signer       Prophet Program
-   |                         |                    |                    |
-   | load market state       |                    |                    |
-   |--------------------------------------------------------------->   |
-   |                         |                    |                    |
-   | load resolver by hash   |                    |                    |
-   |------------------------>|                    |                    |
-   |<------------------------| canonical resolver |                    |
-   |                         |                    |                    |
-   | verify public inputs + zkTLS                 |                    |
-   |                                               |                    |
-   | build canonical v2 message                    |                    |
-   |--------------------------------------------->| sign message       |
-   |<---------------------------------------------| signature(s)       |
-   |                                               |                    |
-   | resolve_market_threshold                      |                    |
-   |------------------------------------------------------------------>|
-   |                                               | verify threshold   |
-   |                                               | sigs, store hashes |
-   |                                               | set outcome        |
+Verifier A          Resolver Registry       Signer A       Prophet Program
+   |                         |                 |                 |
+   | load resolver by hash   |                 |                 |
+   |------------------------>|                 |                 |
+   |<------------------------| canonical def  |                 |
+   | evaluate evidence       |                 |                 |
+   | signed result + grant   |                 |                 |
+   |-----------------------------------------> |                 |
+   |                                           | read finalized   |
+   |                                           | state via RPC A  |
+   |                                           | G1/G2/P0C1/P0C2  |
+   |                                           | sign 235 bytes   |
+
+Verifier B performs the same work independently through Signer B, RPC B, its
+own Vault/key domain, issuer, and durable journals. A credential-free
+coordinator/broker may transport the untrusted request and signature bundle;
+it cannot authorize either role.
+
+Signer A + Signer B       Permissionless Submitter       Prophet Program
+       |                            |                          |
+       | identical signatures       |                          |
+       |--------------------------->|                          |
+       |                            | Ed25519 instructions   |
+       |                            | + resolve_market_threshold
+       |                            |------------------------->|
+       |                            |                          | verify exact
+       |                            |                          | 2-of-2 + bytes
+       |                            |                          | store outcome
 ```
 
 ## 4. Direct SDK Threshold Resolution Flow
 
-This is the fast smoke-test path used in the devnet guide.
+This is a developer-only smoke-test path. It is not the operated production
+signer topology.
 
 ```text
 Operator / SDK                         Prophet Program
@@ -86,7 +95,7 @@ Operator / SDK                         Prophet Program
      |-------------------------------------->|
      |                                       |
      | build canonical v2 message            |
-     | sign with local/demo notary keys      |
+     | sign with two distinct demo notary keys|
      | prepend Ed25519 verify instructions   |
      | resolve_market_threshold              |
      |-------------------------------------->|
@@ -114,5 +123,5 @@ Trader / SDK              Prophet Program            Solana Accounts
 
 - Matching is on-chain in outcome, but off-chain in discovery and submission.
 - Resolution is permissionless to submit, but depends on off-chain verifier and signer infrastructure.
-- The direct SDK flow is useful for smoke testing; the attester path is the intended operated path.
+- The direct SDK flow is useful for developer smoke testing; operated resolution uses independent Verifier A/B and fixed-role Signer A/B services.
 - The resolver registry and fixed-role A/B signer services are part of the production trust and availability boundary, even though the final outcome is still committed on-chain.

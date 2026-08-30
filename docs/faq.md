@@ -6,7 +6,11 @@ This document answers the questions a new reader, integrator, or operator usuall
 
 ### What is Prophet?
 
-Prophet is a Solana prediction market protocol built for automated trading and operated market resolution. Trading, custody, fees, refunds, redemption, and lifecycle controls are on-chain. Resolution uses an off-chain attester plus threshold notary signatures and an on-chain finalization step.
+Prophet is a Solana prediction market protocol built for autonomous agents,
+automated trading, and machine-resolvable markets. Trading, custody, fees,
+refunds, redemption, and lifecycle controls are on-chain. Resolution uses
+Resolver V2, independent verifier results, fixed-role threshold authorization,
+and an on-chain finalization step.
 
 ### Is Prophet fully on-chain?
 
@@ -47,7 +51,9 @@ See `docs/resolver_spec.md`.
 - the allowed notary pubkeys
 - a version number
 
-The version is part of the canonical v2 resolve message, so signer-set updates invalidate old signatures.
+The version is part of the canonical V2 resolve message. Rotation creates a
+successor snapshot for new markets; an existing market continues to use the
+snapshot it pinned at initialization.
 
 ### Why does Prophet need a matching keeper?
 
@@ -57,18 +63,21 @@ Orders are explicit on-chain accounts, but crossed-book discovery and match subm
 
 Not always.
 
-For smoke tests or tightly controlled flows, a relayer can call `resolve_market_threshold(...)` directly through the SDK after constructing the correct message and signatures. For the operated production-shaped path, the attester is the intended integration point.
+For developer smoke tests or tightly controlled flows, a relayer can call
+`resolve_market_threshold(...)` directly through the SDK after constructing the
+correct message and both signatures. The operated production-shaped path uses
+independent Verifier A/B and fixed-role Signer A/B services.
 
 ### What does the attester actually do?
 
-The attester:
+The resolution pipeline:
 
 - loads market state
 - loads the canonical resolver definition
 - evaluates resolver logic against public inputs
 - verifies zkTLS payloads
-- obtains notary signatures
-- submits the final resolution transaction
+- supplies authenticated verifier results to the fixed-role signer boundary
+- submits or brokers the final resolution transaction without holding signer keys
 
 ### What does the resolver registry do?
 
@@ -85,14 +94,17 @@ The fixed-role signer isolates each notary key from the attester process. Produc
 
 Use `docs/devnet_quickstart.md`.
 
-That path uses a legacy/demo notary fixture to prove the SDK and on-chain resolution path, not the full production trust model. Operated Market V2 creation is exact 2-of-2.
+The deterministic demo and localtest path use developer-only fixtures to prove
+the SDK and on-chain resolution path, not the full production trust model.
+Operated Market V2 creation is exact 2-of-2.
 
 ### What is the production-shaped path?
 
 The intended operated path is:
 
 - resolver registry
-- attester
+- verifier A and verifier B
+- credential-free coordinator/broker
 - fixed-role A/B signer services
 - matching keeper
 - Prometheus and Grafana
