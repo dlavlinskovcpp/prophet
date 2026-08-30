@@ -6,9 +6,6 @@ authorizes settlement fields, accesses the journal directly, or signs bytes.
 from __future__ import annotations
 
 import base64
-import hmac
-import json
-import os
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -23,6 +20,8 @@ from .independent_signer_execution import (
     IndependentSignerExecutionResult,
 )
 from .independent_signer_runtime import IndependentSignerServiceConfig
+from .signer_admission_grant import AdmissionGrantError, StrictSignerAuthorizationRequestV1, decode_strict_json
+from .signer_admission_runtime import SignerAdmissionRuntime, SignerAdmissionRuntimeError, decode_grant_header
 from .signer_authorization import SignerAuthorizationError
 
 
@@ -39,21 +38,6 @@ class _RequestTooLarge(ValueError):
 
 class _RequestStreamFailure(ValueError):
     pass
-
-
-def _admission_token(config: IndependentSignerServiceConfig) -> str:
-    token = os.getenv(config.admission_token_env, "")
-    if not isinstance(token, str) or not token:
-        raise IndependentSignerServiceStartupError("independent_signer_admission_token_missing")
-    return token
-
-
-def _authorized(request: Request, token: str) -> bool:
-    headers = request.headers.getlist("authorization")
-    if len(headers) != 1:
-        return False
-    scheme, separator, presented = headers[0].partition(" ")
-    return bool(separator and scheme.lower() == "bearer" and presented and hmac.compare_digest(presented, token))
 
 
 def _json_content_type(request: Request) -> bool:
@@ -102,24 +86,11 @@ async def _read_bounded_body(request: Request, maximum: int) -> bytes:
     return bytes(body)
 
 
-def _duplicate_rejecting_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate_json_key")
-        result[key] = value
-    return result
-
-
 def _decode_request(body: bytes) -> Mapping[str, Any]:
+    """Strictly decode transport JSON; P0C1 immediately makes it typed."""
     try:
-        text = body.decode("utf-8", errors="strict")
-        value = json.loads(
-            text,
-            object_pairs_hook=_duplicate_rejecting_object,
-            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("json_constant_invalid")),
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        value = decode_strict_json(body)
+    except AdmissionGrantError as exc:
         raise ValueError("json_invalid") from exc
     if not isinstance(value, dict):
         raise ValueError("json_top_level_object_required")
@@ -154,6 +125,7 @@ def create_independent_signer_service(
     *,
     engine: IndependentSignerEngine,
     service_config: IndependentSignerServiceConfig,
+    admission: SignerAdmissionRuntime,
     clock: Callable[[], Any] | None = None,
 ) -> FastAPI:
     """Wrap exactly one P0C3B engine with strict local HTTP admission."""
@@ -163,7 +135,10 @@ def create_independent_signer_service(
         raise IndependentSignerServiceStartupError("independent_signer_service_config_required")
     if getattr(engine, "_service_config", None) != service_config:
         raise IndependentSignerServiceStartupError("independent_signer_service_config_binding_mismatch")
-    token = _admission_token(service_config)
+    if not isinstance(admission, SignerAdmissionRuntime):
+        raise IndependentSignerServiceStartupError("independent_signer_admission_runtime_required")
+    if admission.context.signer_role != service_config.signer_role or admission.context.signer_service_id != service_config.signer_id:
+        raise IndependentSignerServiceStartupError("independent_signer_admission_context_binding_mismatch")
     local_clock = clock or (lambda: int(time.time() * 1000))
 
     app = FastAPI(
@@ -185,9 +160,6 @@ def create_independent_signer_service(
 
     @app.post("/v1/settlement-authorizations")
     async def sign_authorization(request: Request) -> JSONResponse:
-        # Authentication intentionally precedes any request-body operation.
-        if not _authorized(request, token):
-            return JSONResponse(status_code=401, content={"error": "unauthorized"})
         if not _json_content_type(request):
             return JSONResponse(status_code=415, content={"error": "unsupported_media_type"})
         try:
@@ -202,6 +174,14 @@ def create_independent_signer_service(
             parsed = _decode_request(body)
         except ValueError:
             return JSONResponse(status_code=400, content={"error": "invalid_request"})
+        try:
+            strict = StrictSignerAuthorizationRequestV1.from_mapping(parsed)
+            headers = request.headers.getlist("x-prophet-admission-grant")
+            if len(headers) != 1:
+                raise SignerAdmissionRuntimeError("grant_transport_invalid")
+            admission.admit(request=strict, raw_grant=decode_grant_header(headers[0]))
+        except (AdmissionGrantError, SignerAdmissionRuntimeError):
+            return JSONResponse(status_code=403, content={"error": "admission_rejected"})
         try:
             now_ms = _local_now(local_clock)
         except ValueError:

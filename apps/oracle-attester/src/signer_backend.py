@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 import shlex
 import subprocess
 from typing import Any, Dict, List
@@ -210,11 +211,14 @@ class LocalKeypairSignerBackend(SignerBackend):
 class CommandSignerBackend(SignerBackend):
     name = "command"
 
-    def __init__(self, command: str, timeout_s: float, *, public_keys: List[str] | None = None):
+    def __init__(self, command: str, timeout_s: float, *, public_keys: List[str] | None = None, child_env: Dict[str, str] | None = None):
         self.command = command
         self.timeout_s = timeout_s
         self.argv = shlex.split(command)
         self.public_keys = _normalize_pubkeys(public_keys or [])
+        # Never inherit the parent process environment.  Fixed-role callers
+        # provide their already-filtered role-local environment explicitly.
+        self.child_env = dict(child_env or {name: os.environ[name] for name in ("PATH", "LANG", "LC_ALL") if name in os.environ})
         if not self.argv:
             raise ValueError("REMOTE_SIGNER_COMMAND is empty")
 
@@ -232,6 +236,7 @@ class CommandSignerBackend(SignerBackend):
                 capture_output=True,
                 timeout=self.timeout_s,
                 check=False,
+                env=self.child_env,
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"Command signer timed out: {exc}")

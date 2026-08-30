@@ -1,3 +1,14 @@
+"""Retired generic remote-signer ASGI entry point.
+
+P0C4-I3 prohibits a production process whose signer identity is selected by
+request public key, generic backend configuration, or ambient credentials.
+The independent fixed-role signer service is the production boundary.
+"""
+
+# Deliberately fail at import time so this historical module cannot be started
+# by a stale Compose command, an operator shell, or a production ASGI runner.
+raise RuntimeError("generic_remote_signer_retired_use_fixed_role_signer_a_or_b")
+
 import base64
 import hmac
 import hashlib

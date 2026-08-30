@@ -37,15 +37,13 @@
       "backend_ref": "mainnet-beta:zktls-independent",
       "auth_ref": "mainnet-beta:verifier-b-auth"
     },
-    "signer_a": {
-      "identity": "mainnet-beta-settlement-a",
-      "vault_key_ref": "mainnet-beta:vault:settlement-a",
-      "auth_ref": "mainnet-beta:vault-policy-a"
+  "signer_a": {
+    "identity": "mainnet-beta-settlement-a",
+    "vault_key_ref": "mainnet-beta:vault:settlement-a"
     },
-    "signer_b": {
-      "identity": "mainnet-beta-settlement-b",
-      "vault_key_ref": "mainnet-beta:vault:settlement-b",
-      "auth_ref": "mainnet-beta:vault-policy-b"
+  "signer_b": {
+    "identity": "mainnet-beta-settlement-b",
+    "vault_key_ref": "mainnet-beta:vault:settlement-b"
     }
   },
   "deployment_artifacts": {

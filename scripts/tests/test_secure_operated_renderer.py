@@ -41,8 +41,8 @@ class SecureOperatedRendererTests(unittest.TestCase):
                 "required_signer_count": 2,
                 "verifier_a": {"identity": "a", "backend_ref": "a-backend", "auth_ref": "a-auth"},
                 "verifier_b": {"identity": "b", "backend_ref": "b-backend", "auth_ref": "b-auth"},
-                "signer_a": {"identity": "sa", "vault_key_ref": "key-a", "auth_ref": "policy-a"},
-                "signer_b": {"identity": "sb", "vault_key_ref": "key-b", "auth_ref": "policy-b"},
+                "signer_a": {"identity": "sa", "vault_key_ref": "key-a"},
+                "signer_b": {"identity": "sb", "vault_key_ref": "key-b"},
             },
         }
 

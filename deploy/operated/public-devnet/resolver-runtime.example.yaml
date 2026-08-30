@@ -16,22 +16,3 @@ signed_oracle:
 limits: {request_max_bytes: 1048576, request_timeout_seconds: 10}
 freshness: {default_max_evidence_age_seconds: 300, default_max_verification_age_seconds: 60}
 internal_auth: {token_env: PROPHET_VERIFIER_INTERNAL_TOKEN}
-signing:
-  journal_path: "/var/lib/prophet/signing-journal.sqlite"
-  vault:
-    address: "https://REPLACE_WITH_VAULT_ADDRESS"
-    auth: {token_env: PROPHET_VAULT_TOKEN}
-    transit_mount: "REPLACE_WITH_TRANSIT_MOUNT"
-    request_timeout_seconds: 10
-    backend: vault-transit
-  signers:
-    a:
-      signer_id: "REPLACE_WITH_SIGNER_A_ID"
-      key_name: "REPLACE_WITH_SIGNER_A_KEY_NAME"
-      key_epochs:
-        - {key_version: 1, public_key: "REPLACE_WITH_SIGNER_A_PUBLIC_KEY", activation_time_ms: 0, retirement_time_ms: null}
-    b:
-      signer_id: "REPLACE_WITH_SIGNER_B_ID"
-      key_name: "REPLACE_WITH_SIGNER_B_KEY_NAME"
-      key_epochs:
-        - {key_version: 1, public_key: "REPLACE_WITH_SIGNER_B_PUBLIC_KEY", activation_time_ms: 0, retirement_time_ms: null}

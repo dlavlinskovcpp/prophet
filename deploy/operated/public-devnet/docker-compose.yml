@@ -1,4 +1,4 @@
-# Production-shaped secure settlement topology.
+# Production-shaped secure-coordinator topology.
 # Generic remote signer and direct oracle-attester settlement are intentionally absent.
 services:
   vault:
@@ -77,11 +77,11 @@ services:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
     command: uvicorn src.coordinator_main:app --host 0.0.0.0 --port 8400
     environment:
-      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/coordinator-runtime.yaml
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/coordinator.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/coordinator-runtime.yaml:/app/runtime/coordinator-runtime.yaml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator:/var/lib/prophet/public-devnet/coordinator
     depends_on: [verifier-a, verifier-b]
     user: "10001:10001"
@@ -94,32 +94,6 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
     restart: on-failure:5
     networks: [control]
-
-  secure-settlement:
-    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
-    command: uvicorn src.secure_settlement_main:app --host 0.0.0.0 --port 8500
-    environment:
-      PROPHET_SETTLEMENT_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
-      PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH: /run/secrets/settlement-fee-payer.json
-    env_file:
-      - "${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/secure-settlement.env"
-    volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator:/var/lib/prophet/public-devnet/coordinator
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/signing:/var/lib/prophet/public-devnet/signing
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/submission:/var/lib/prophet/public-devnet/submission
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/settlement-fee-payer.json:/run/secrets/settlement-fee-payer.json:ro
-    depends_on: [coordinator]
-    user: "10001:10001"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 256
-    mem_limit: 512m
-    cpus: "1.0"
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
-    restart: on-failure:5
-    networks: [control, egress]
 
   matching-keeper:
     build: { context: ../../.., dockerfile: apps/matching-keeper/Dockerfile }

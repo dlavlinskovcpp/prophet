@@ -63,22 +63,25 @@ class IndependentSignerVaultAdapter:
     def __init__(self, config: IndependentSignerServiceConfig, *, transport: _VaultTransport | None = None) -> None:
         if not isinstance(config, IndependentSignerServiceConfig):
             raise IndependentSignerStartupError("independent_signer_service_config_required")
-        token = os.getenv(config.vault_token_env, "")
-        if not isinstance(token, str) or not token:
-            raise IndependentSignerStartupError("independent_signer_vault_token_missing")
         self._config = config
         self._owns_transport = transport is None
-        self._transport: _VaultTransport = transport or VaultTransitClient(VaultTransitConfig(
-            addr=config.vault_address,
-            namespace="",
-            token=token,
-            mount=config.vault_transit_mount,
-            timeout_s=float(config.vault_timeout_seconds),
-            cacert="",
-            skip_verify=False,
-            key_name=config.vault_key_name,
-            key_map_path="",
-        ))
+        if transport is not None:
+            self._transport = transport
+        else:
+            token = os.getenv(config.vault_token_env, "")
+            if not isinstance(token, str) or not token:
+                raise IndependentSignerStartupError("independent_signer_vault_token_missing")
+            self._transport = VaultTransitClient(VaultTransitConfig(
+                addr=config.vault_address,
+                namespace="",
+                token=token,
+                mount=config.vault_transit_mount,
+                timeout_s=float(config.vault_timeout_seconds),
+                cacert="",
+                skip_verify=False,
+                key_name=config.vault_key_name,
+                key_map_path="",
+            ))
 
     @property
     def signer_id(self) -> str:

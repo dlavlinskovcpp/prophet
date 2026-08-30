@@ -35,11 +35,12 @@ def test_command_signer_backend_passes_json_payload(monkeypatch):
     seen = {}
     expected_sig = bytes([9] * 64)
 
-    def mock_run(argv, input=None, capture_output=None, timeout=None, check=None):
+    def mock_run(argv, input=None, capture_output=None, timeout=None, check=None, env=None):
         del capture_output, check
         seen["argv"] = argv
         seen["timeout"] = timeout
         seen["payload"] = json.loads(input.decode("utf-8"))
+        seen["env"] = env
         return subprocess.CompletedProcess(
             argv,
             0,
@@ -60,6 +61,7 @@ def test_command_signer_backend_passes_json_payload(monkeypatch):
     assert sig == expected_sig
     assert seen["argv"] == ["kms-wrapper", "--mode", "sign"]
     assert seen["timeout"] == 7.5
+    assert "SIGNER_B_VAULT_TOKEN" not in seen["env"]
     assert seen["payload"]["public_key"] == str(kp.pubkey())
     assert seen["payload"]["context"]["market"] == "m1"
 

@@ -13,7 +13,6 @@ REQUIRED_SERVICES = {
     "verifier-a",
     "verifier-b",
     "coordinator",
-    "secure-settlement",
     "matching-keeper",
 }
 APPLICATION_SERVICES = tuple(sorted(REQUIRED_SERVICES))
@@ -28,6 +27,14 @@ SANDBOX_LINES = (
     'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]',
     "restart: on-failure:5",
 )
+_RETIRED_SIGNER_SECRET_MARKERS = (
+    "SIGNER_A_AUTH_REF",
+    "SIGNER_B_AUTH_REF",
+    "PROPHET_VAULT_SIGNER_A_TOKEN",
+    "PROPHET_VAULT_SIGNER_B_TOKEN",
+    "signer_a_vault_token_env",
+    "signer_b_vault_token_env",
+)
 
 
 def _service_names(text: str) -> set[str]:
@@ -41,6 +48,15 @@ def _block(text: str, service: str) -> str:
     return match.group(1)
 
 
+def legacy_signer_secret_errors(text: str, *, location: str, coordinator: bool = False) -> list[str]:
+    """Reject retired dual-token references without examining secret values."""
+    markers = [marker for marker in _RETIRED_SIGNER_SECRET_MARKERS if marker in text]
+    if not markers:
+        return []
+    scope = "coordinator" if coordinator else "active operated configuration"
+    return [f"{location}: retired signer credential reference in {scope}: {marker}" for marker in markers]
+
+
 def validate_environment(name: str) -> list[str]:
     errors: list[str] = []
     base = ROOT / "deploy/operated" / name
@@ -49,11 +65,22 @@ def validate_environment(name: str) -> list[str]:
     services = _service_names(text)
     for missing in sorted(REQUIRED_SERVICES - services):
         errors.append(f"{name}: compose missing {missing}")
-    for forbidden in ("oracle-attester", "remote-signer"):
+    for forbidden in ("oracle-attester", "remote-signer", "secure-settlement"):
         if forbidden in services:
             errors.append(f"{name}: forbidden legacy settlement service {forbidden}")
+    if "src.remote_signer_main:app" in text or "REMOTE_SIGNER_BACKEND" in text:
+        errors.append(f"{name}: generic role-selectable remote signer is forbidden in operated compose")
 
-    for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator", "secure-settlement"):
+    for service in services:
+        try:
+            block = _block(text, service)
+        except ValueError:
+            continue
+        errors.extend(legacy_signer_secret_errors(
+            block, location=f"{name}: {service}", coordinator=service == "coordinator"
+        ))
+
+    for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator"):
         try:
             block = _block(text, service)
         except ValueError as exc:
@@ -74,17 +101,13 @@ def validate_environment(name: str) -> list[str]:
             errors.append(f"{name}: resolver audit is not on persistent runtime storage")
     except ValueError:
         pass
-    for service in ("coordinator", "secure-settlement"):
+    for service in ("coordinator",):
         try:
             block = _block(text, service)
             if name in SANDBOXED_ENVIRONMENTS:
                 coordinator_mount = f"/coordinator:/var/lib/prophet/{name}/coordinator"
                 if coordinator_mount not in block:
                     errors.append(f"{name}: {service} coordinator SQLite/WAL mount missing")
-                if service == "secure-settlement":
-                    for state_name in ("signing", "submission"):
-                        if f"/{state_name}:/var/lib/prophet/{name}/{state_name}" not in block:
-                            errors.append(f"{name}: secure-settlement {state_name} journal/WAL mount missing")
             elif f"/state:/var/lib/prophet/{name}" not in block:
                 errors.append(f"{name}: {service} durable state mount missing")
         except ValueError:
@@ -108,7 +131,6 @@ def validate_environment(name: str) -> list[str]:
             "verifier-a": "networks: [control, egress]",
             "verifier-b": "networks: [control, egress]",
             "coordinator": "networks: [control]",
-            "secure-settlement": "networks: [control, egress]",
             "matching-keeper": "networks: [egress]",
         }.items():
             try:
@@ -119,19 +141,15 @@ def validate_environment(name: str) -> list[str]:
         if "control:\n    internal: true" not in text or "egress: {}" not in text:
             errors.append(f"{name}: explicit control/egress networks missing")
         try:
-            settlement = _block(text, "secure-settlement")
-            if "/run/secrets/settlement-fee-payer.json:ro" not in settlement:
-                errors.append(f"{name}: secure-settlement read-only fee-payer mount missing")
-            if "PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH: /run/secrets/settlement-fee-payer.json" not in settlement:
-                errors.append(f"{name}: secure-settlement fee-payer path must be explicit")
             keeper = _block(text, "matching-keeper")
             if "/run/secrets/keeper-id.json:ro" not in keeper:
                 errors.append(f"{name}: matching-keeper read-only key mount missing")
             if "PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json" not in keeper:
                 errors.append(f"{name}: matching-keeper key path must be explicit")
-            for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator"):
+            for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator", "matching-keeper"):
                 if "/run/secrets/settlement-fee-payer.json" in _block(text, service):
                     errors.append(f"{name}: {service} must not receive the settlement fee payer")
+            for service in ("resolver-registry", "verifier-a", "verifier-b", "coordinator"):
                 if "/run/secrets/keeper-id.json" in _block(text, service):
                     errors.append(f"{name}: {service} must not receive the keeper key")
         except ValueError:
@@ -167,6 +185,20 @@ def validate_environment(name: str) -> list[str]:
         ):
             if required not in env:
                 errors.append(f"{name}: oracle bounded-resource config missing {required}")
+
+    for template in base.glob("*.env.example"):
+        errors.extend(legacy_signer_secret_errors(
+            template.read_text(encoding="utf-8"), location=f"{name}: {template.name}"
+        ))
+    retired_runtime = base / "secure-settlement-runtime.example.yaml"
+    if retired_runtime.exists():
+        errors.append(f"{name}: retired secure-settlement runtime template present")
+    coordinator_runtime = base / "coordinator-runtime.example.yaml"
+    if coordinator_runtime.exists():
+        errors.extend(legacy_signer_secret_errors(
+            coordinator_runtime.read_text(encoding="utf-8"),
+            location=f"{name}: {coordinator_runtime.name}", coordinator=True,
+        ))
     return errors
 
 

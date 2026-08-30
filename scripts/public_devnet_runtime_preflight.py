@@ -28,7 +28,6 @@ REQUIRED = (
     "SIGNING_JOURNAL_PATH", "SUBMISSION_JOURNAL_PATH",
     "SIGNER_A_IDENTITY", "SIGNER_B_IDENTITY",
     "SIGNER_A_VAULT_KEY", "SIGNER_B_VAULT_KEY",
-    "SIGNER_A_AUTH_REF", "SIGNER_B_AUTH_REF",
     "STRICT_SIGNER_COUNT",
 )
 
@@ -74,7 +73,7 @@ def topology_errors(values: dict[str, str], *, compose_path: Path) -> tuple[list
     infra: list[str] = []
     for key in REQUIRED:
         if not values.get(key):
-            (code if key in {"RESOLUTION_MODE", "DIRECT_ATTESTER_SETTLEMENT_ENABLED", "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED", "VERIFIER_A_URL", "VERIFIER_B_URL", "VERIFIER_A_IDENTITY", "VERIFIER_B_IDENTITY", "VERIFIER_A_AUTH_REF", "VERIFIER_B_AUTH_REF", "VERIFIER_A_PROOF_BACKEND_URL", "VERIFIER_B_PROOF_BACKEND_URL", "COORDINATOR_URL", "COORDINATOR_SQLITE_PATH", "SIGNING_JOURNAL_PATH", "SUBMISSION_JOURNAL_PATH", "MANAGED_SIGNER_A_PUBLIC_KEY", "MANAGED_SIGNER_B_PUBLIC_KEY", "SIGNER_A_IDENTITY", "SIGNER_B_IDENTITY", "SIGNER_A_VAULT_KEY", "SIGNER_B_VAULT_KEY", "SIGNER_A_AUTH_REF", "SIGNER_B_AUTH_REF", "STRICT_SIGNER_COUNT"} else infra).append(f"missing {key}")
+            (code if key in {"RESOLUTION_MODE", "DIRECT_ATTESTER_SETTLEMENT_ENABLED", "GENERIC_REMOTE_SIGNER_SETTLEMENT_ENABLED", "VERIFIER_A_URL", "VERIFIER_B_URL", "VERIFIER_A_IDENTITY", "VERIFIER_B_IDENTITY", "VERIFIER_A_AUTH_REF", "VERIFIER_B_AUTH_REF", "VERIFIER_A_PROOF_BACKEND_URL", "VERIFIER_B_PROOF_BACKEND_URL", "COORDINATOR_URL", "COORDINATOR_SQLITE_PATH", "SIGNING_JOURNAL_PATH", "SUBMISSION_JOURNAL_PATH", "MANAGED_SIGNER_A_PUBLIC_KEY", "MANAGED_SIGNER_B_PUBLIC_KEY", "SIGNER_A_IDENTITY", "SIGNER_B_IDENTITY", "SIGNER_A_VAULT_KEY", "SIGNER_B_VAULT_KEY", "STRICT_SIGNER_COUNT"} else infra).append(f"missing {key}")
         elif values[key].startswith(("REPLACE_", "CONFIGURE_")):
             infra.append(f"unresolved {key}")
     if values.get("EXPECTED_CLUSTER") != "devnet":
@@ -103,16 +102,14 @@ def topology_errors(values: dict[str, str], *, compose_path: Path) -> tuple[list
         code.append("signer identities must be distinct")
     if values.get("SIGNER_A_VAULT_KEY") == values.get("SIGNER_B_VAULT_KEY"):
         code.append("Vault signer keys must be distinct")
-    if values.get("SIGNER_A_AUTH_REF") == values.get("SIGNER_B_AUTH_REF"):
-        code.append("Vault signer auth references must be distinct")
     for key in ("COORDINATOR_SQLITE_PATH", "SIGNING_JOURNAL_PATH", "SUBMISSION_JOURNAL_PATH"):
         if values.get(key) and not _persistent(values[key]):
             code.append(f"{key} must be a persistent absolute path")
-    required_services = {"verifier-a", "verifier-b", "coordinator", "secure-settlement"}
+    required_services = {"verifier-a", "verifier-b", "coordinator"}
     services = _compose_services(compose_path)
     for name in sorted(required_services - services):
         code.append(f"compose missing {name}")
-    for name in ("oracle-attester", "remote-signer"):
+    for name in ("oracle-attester", "remote-signer", "secure-settlement"):
         if name in services:
             code.append(f"legacy settlement service present in production compose: {name}")
     if values.get("ALERT_RECEIVER_CONFIGURED") != "1":

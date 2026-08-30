@@ -1,4 +1,4 @@
-# Production-shaped secure settlement topology.
+# Production-shaped secure-coordinator topology.
 # Generic remote signer and direct oracle-attester settlement are intentionally absent.
 services:
   resolver-registry:
@@ -37,27 +37,13 @@ services:
     build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
     command: uvicorn src.coordinator_main:app --host 0.0.0.0 --port 8400
     environment:
-      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
+      PROPHET_COORDINATOR_RUNTIME_CONFIG: /app/runtime/coordinator-runtime.yaml
     env_file:
       - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/coordinator.env"
     volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/coordinator-runtime.yaml:/app/runtime/coordinator-runtime.yaml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/state:/var/lib/prophet/devnet
     depends_on: [verifier-a, verifier-b]
-    restart: unless-stopped
-
-  secure-settlement:
-    build: { context: ../../.., dockerfile: apps/oracle-attester/Dockerfile }
-    command: uvicorn src.secure_settlement_main:app --host 0.0.0.0 --port 8500
-    environment:
-      PROPHET_SETTLEMENT_RUNTIME_CONFIG: /app/runtime/secure-settlement.yaml
-    env_file:
-      - "${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/secure-settlement.env"
-    volumes:
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/config/secure-settlement.yaml:/app/runtime/secure-settlement.yaml:ro
-      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/devnet}/state:/var/lib/prophet/devnet
-      - ${PROPHET_SECRET_ROOT:-/etc/prophet/devnet}/settlement-fee-payer.json:/run/secrets/settlement-fee-payer.json:ro
-    depends_on: [coordinator]
     restart: unless-stopped
 
   matching-keeper:

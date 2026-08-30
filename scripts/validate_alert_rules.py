@@ -7,8 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 PROMETHEUS_CONFIG = ROOT / "ops" / "monitoring" / "prometheus.yml"
 ALERTS_CONFIG = ROOT / "ops" / "monitoring" / "alerts.yml"
 METRIC_SOURCES = [
-    ROOT / "apps" / "oracle-attester" / "src" / "main.py",
-    ROOT / "apps" / "oracle-attester" / "src" / "remote_signer_main.py",
     ROOT / "apps" / "oracle-attester" / "src" / "resolver_registry_main.py",
     ROOT / "apps" / "matching-keeper" / "src" / "service.py",
 ]

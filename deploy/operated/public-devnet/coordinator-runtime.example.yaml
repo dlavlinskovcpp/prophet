@@ -33,37 +33,3 @@ coordinator:
   sqlite_path: /var/lib/prophet/public-devnet/coordinator/coordinator.sqlite
   internal_auth: {token_env: PROPHET_COORDINATOR_INTERNAL_TOKEN}
   request_timeout_seconds: 25
-signing:
-  vault:
-    address: https://vault:8200
-    auth: {token_env: PROPHET_LEGACY_GENERIC_VAULT_TOKEN_DISABLED}
-    transit_mount: transit
-    request_timeout_seconds: 5
-    backend: vault-transit
-  journal_path: /var/lib/prophet/public-devnet/signing/signing-journal.sqlite
-  signers:
-    a:
-      signer_id: public-devnet-settlement-a
-      key_name: prophet-public-devnet-settlement-a
-      expected_public_key: FWq7715Lzdzn3ofYr5HHVSNh1dLAmkiFxNpfUTh2h3vf
-      expected_key_version: 1
-    b:
-      signer_id: public-devnet-settlement-b
-      key_name: prophet-public-devnet-settlement-b
-      expected_public_key: 4mrX5LqBtoRWapJT6bijDkpThCoYNcDmQkcfXchWhE14
-      expected_key_version: 1
-settlement_execution:
-  rpc_url_env: RPC_URL
-  expected_cluster: devnet
-  expected_genesis_hash: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
-  fee_payer: {keypair_path_env: PROPHET_SETTLEMENT_FEE_PAYER_KEYPAIR_PATH}
-  rpc: {timeout_seconds: 10, commitment: confirmed}
-  journal_path: /var/lib/prophet/public-devnet/submission/submission-journal.sqlite
-secure_settlement:
-  resolution_mode: secure-coordinator
-  direct_attester_settlement_enabled: false
-  generic_remote_signer_settlement_enabled: false
-  required_signer_count: 2
-  api_auth_token_env: PROPHET_SECURE_SETTLEMENT_API_TOKEN
-  signer_a_vault_token_env: PROPHET_VAULT_SIGNER_A_TOKEN
-  signer_b_vault_token_env: PROPHET_VAULT_SIGNER_B_TOKEN

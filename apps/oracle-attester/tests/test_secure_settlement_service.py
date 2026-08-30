@@ -1,8 +1,14 @@
 import base64
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.agreed_settlement_signer import CoordinatorJobMissing
+from src.secure_settlement_bootstrap import (
+    LegacySecureSettlementRetired,
+    build_secure_settlement_service,
+)
+from src.secure_settlement_main import app as legacy_secure_settlement_app
 from src.secure_settlement_service import (
     SecureSettlementResult,
     create_secure_settlement_service,
@@ -89,3 +95,14 @@ def test_secure_settlement_api_requires_its_own_bearer_token():
     response = _client(engine).post(f"/v1/settlements/{JOB}/submit")
     assert response.status_code == 401
     assert engine.calls == []
+
+
+def test_legacy_dual_token_bootstrap_hard_fails_before_credential_acquisition():
+    with pytest.raises(LegacySecureSettlementRetired, match="legacy_secure_settlement_retired"):
+        build_secure_settlement_service()
+
+
+def test_legacy_application_server_start_hard_fails_before_credential_acquisition():
+    with pytest.raises(LegacySecureSettlementRetired, match="legacy_secure_settlement_retired"):
+        with TestClient(legacy_secure_settlement_app):
+            pass

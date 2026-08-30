@@ -35,8 +35,6 @@ ENVIRONMENTS_DIR = Path(
 DEFAULT_BUNDLE_ROOT = ROOT / "releases"
 TAG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 LOCAL_SERVICE_ENDPOINT_KEYS = (
-    "attester_base_url",
-    "remote_signer_url",
     "resolver_registry_url",
     "matching_keeper_base_url",
 )
@@ -218,8 +216,11 @@ def _secure_settlement_metadata(config: Dict[str, Any], *, env_name: str) -> Dic
 
     verifier_a = exact(value["verifier_a"], {"identity", "backend_ref", "auth_ref"}, "verifier_a")
     verifier_b = exact(value["verifier_b"], {"identity", "backend_ref", "auth_ref"}, "verifier_b")
-    signer_a = exact(value["signer_a"], {"identity", "vault_key_ref", "auth_ref"}, "signer_a")
-    signer_b = exact(value["signer_b"], {"identity", "vault_key_ref", "auth_ref"}, "signer_b")
+    # Per-signer Vault credentials belong exclusively to the independent signer
+    # services.  The coordinator/release topology retains public identity and
+    # key binding metadata only.
+    signer_a = exact(value["signer_a"], {"identity", "vault_key_ref"}, "signer_a")
+    signer_b = exact(value["signer_b"], {"identity", "vault_key_ref"}, "signer_b")
     if (
         verifier_a["identity"] == verifier_b["identity"]
         or verifier_a["backend_ref"] == verifier_b["backend_ref"]
@@ -229,9 +230,8 @@ def _secure_settlement_metadata(config: Dict[str, Any], *, env_name: str) -> Dic
     if (
         signer_a["identity"] == signer_b["identity"]
         or signer_a["vault_key_ref"] == signer_b["vault_key_ref"]
-        or signer_a["auth_ref"] == signer_b["auth_ref"]
     ):
-        raise ReleaseError("Signer A/B identity, Vault key, and auth references must be distinct.")
+        raise ReleaseError("Signer A/B identity and Vault key references must be distinct.")
     return dict(value)
 
 
