@@ -44,6 +44,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
 
     payer = Keypair()
     oracle_kp = Keypair()
+    oracle_b = Keypair()
     payer_kp = tmp_path / "payer.json"
     _write_keypair(payer_kp, payer)
 
@@ -64,7 +65,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
     resolve_ts = now - 50 
 
     notary_config, _ = derive_notary_config_pda(client.payer.pubkey(), client.program_id)
-    client.initialize_notary_config(1, [oracle_kp.pubkey()])
+    client.initialize_notary_config(2, [oracle_kp.pubkey(), oracle_b.pubkey()])
 
     client.initialize_market_v2(
         resolver_hash=resolver,
@@ -91,7 +92,7 @@ def test_localnet_resolve_flow(tmp_path, resolver_fill, proof_fill, pi_fill, out
         outcome=outcome,
         proof_hash=proof_hash,
         public_inputs_hash=pi_hash,
-        notary_keypairs=[oracle_kp],
+        notary_keypairs=[oracle_kp, oracle_b],
         relayer_keypair=client.payer,
     )
     
