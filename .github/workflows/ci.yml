@@ -753,6 +753,22 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry install --no-interaction --no-root
 
+      - name: Install SDK and keeper dependencies for acceptance
+        run: |
+          poetry install --directory sdk/python --no-interaction
+          poetry install --directory apps/matching-keeper --no-interaction
+
+      - name: Install JavaScript dependencies for acceptance
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.6"
+
+      - name: Install repository Yarn dependencies for acceptance
+        run: |
+          corepack enable
+          corepack prepare "yarn@${YARN_VERSION}" --activate
+          yarn install --frozen-lockfile --non-interactive
+
       - name: Run attester tests (exclude e2e)
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
