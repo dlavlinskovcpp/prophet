@@ -1,32 +1,12 @@
-import os
 import ipaddress
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlsplit
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from solders.pubkey import Pubkey
 
-
-def _load_dotenv_if_present() -> None:
-    env_path = Path(".env")
-    if not env_path.exists():
-        return
-
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not key or key in os.environ:
-            continue
-        value = value.strip().strip("'").strip('"')
-        os.environ[key] = value
-
-
-_load_dotenv_if_present()
 
 MAX_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS = 1_000_000
 _PRODUCTION_ENVIRONMENTS = frozenset(("public-devnet", "mainnet"))
@@ -41,41 +21,51 @@ def _derive_ws_url(rpc_url: str) -> str:
 
 
 class Settings(BaseSettings):
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "localtest")
-    RPC_URL: str = os.getenv("RPC_URL", "http://127.0.0.1:8899")
-    WS_URL: str = os.getenv("WS_URL", "")
-    PROPHET_PROGRAM_ID: str
-    PAYER_KEYPAIR_PATH: str = os.getenv("PAYER_KEYPAIR_PATH", "./id.json")
-    MARKET_DISCOVERY_MODE: str = os.getenv("MARKET_DISCOVERY_MODE", "explicit")
-    MARKETS: str = os.getenv("MARKETS", "")
-    DISCOVERY_INTERVAL_S: int = int(os.getenv("DISCOVERY_INTERVAL_S", "60"))
-    MAX_DISCOVERED_MARKETS: int = int(os.getenv("MAX_DISCOVERED_MARKETS", "500"))
-    REQUIRE_NOTARY_CONFIG: bool = os.getenv("REQUIRE_NOTARY_CONFIG", "1").strip().lower() in {"1", "true", "yes", "on"}
-    DB_PATH: str = os.getenv("DB_PATH", "./state/matcher.db")
-    POLL_MS: int = int(os.getenv("POLL_MS", "250"))
-    SNAPSHOT_RESYNC_S: int = int(os.getenv("SNAPSHOT_RESYNC_S", "300"))
-    MATCH_ATTEMPT_RETENTION_DAYS: int = int(os.getenv("MATCH_ATTEMPT_RETENTION_DAYS", "30"))
-    PRUNE_INTERVAL_S: int = int(os.getenv("PRUNE_INTERVAL_S", "3600"))
-    STALE_WS_THRESHOLD_S: int = int(os.getenv("STALE_WS_THRESHOLD_S", "120"))
-    MAX_QTY_ATOMS: int = int(os.getenv("MAX_QTY_ATOMS", "1000000"))
-    MAX_MATCHES_PER_MARKET: int = int(os.getenv("MAX_MATCHES_PER_MARKET", "10"))
-    COMPUTE_UNIT_LIMIT: Optional[int] = int(os.getenv("COMPUTE_UNIT_LIMIT", "")) if os.getenv("COMPUTE_UNIT_LIMIT", "").strip() else None
-    COMPUTE_UNIT_PRICE_MICRO_LAMPORTS: Optional[int] = (
-        int(os.getenv("COMPUTE_UNIT_PRICE_MICRO_LAMPORTS", ""))
-        if os.getenv("COMPUTE_UNIT_PRICE_MICRO_LAMPORTS", "").strip()
-        else None
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
-    OPS_HOST: str = os.getenv("OPS_HOST", "127.0.0.1")
-    OPS_PORT: int = int(os.getenv("OPS_PORT", "8010"))
-    OPS_PROTECTED_INGRESS: bool = os.getenv("OPS_PROTECTED_INGRESS", "0").strip().lower() in {"1", "true", "yes", "on"}
-    OPS_API_AUTH_TOKEN: str = os.getenv("OPS_API_AUTH_TOKEN", "")
-    OPS_EXPOSE_MARKETS: bool = os.getenv("OPS_EXPOSE_MARKETS", "0").strip().lower() in {"1", "true", "yes", "on"}
-    OPS_EXPOSE_ATTEMPTS: bool = os.getenv("OPS_EXPOSE_ATTEMPTS", "0").strip().lower() in {"1", "true", "yes", "on"}
-    OPS_EXPOSE_METRICS: bool = os.getenv("OPS_EXPOSE_METRICS", "0").strip().lower() in {"1", "true", "yes", "on"}
-    MATCHING_FAILURE_MAX_AGE_S: int = int(os.getenv("MATCHING_FAILURE_MAX_AGE_S", "60"))
-    REQUIRE_OPERATED_RESOLVER_SUPPORT: bool = os.getenv("REQUIRE_OPERATED_RESOLVER_SUPPORT", "0").strip().lower() in {"1", "true", "yes", "on"}
-    OPERATED_SUPPORTED_RESOLVER_HASHES: str = os.getenv("OPERATED_SUPPORTED_RESOLVER_HASHES", "")
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    ENVIRONMENT: str = "localtest"
+    RPC_URL: str = "http://127.0.0.1:8899"
+    WS_URL: str = ""
+    PROPHET_PROGRAM_ID: str
+    PAYER_KEYPAIR_PATH: str = "./id.json"
+    MARKET_DISCOVERY_MODE: str = "explicit"
+    MARKETS: str = ""
+    DISCOVERY_INTERVAL_S: int = 60
+    MAX_DISCOVERED_MARKETS: int = 500
+    REQUIRE_NOTARY_CONFIG: bool = True
+    DB_PATH: str = "./state/matcher.db"
+    POLL_MS: int = 250
+    SNAPSHOT_RESYNC_S: int = 300
+    MATCH_ATTEMPT_RETENTION_DAYS: int = 30
+    PRUNE_INTERVAL_S: int = 3600
+    STALE_WS_THRESHOLD_S: int = 120
+    MAX_QTY_ATOMS: int = 1_000_000
+    MAX_MATCHES_PER_MARKET: int = 10
+    COMPUTE_UNIT_LIMIT: Optional[int] = None
+    COMPUTE_UNIT_PRICE_MICRO_LAMPORTS: Optional[int] = None
+    OPS_HOST: str = "127.0.0.1"
+    OPS_PORT: int = 8010
+    OPS_PROTECTED_INGRESS: bool = False
+    OPS_API_AUTH_TOKEN: str = ""
+    OPS_EXPOSE_MARKETS: bool = False
+    OPS_EXPOSE_ATTEMPTS: bool = False
+    OPS_EXPOSE_METRICS: bool = False
+    MATCHING_FAILURE_MAX_AGE_S: int = 60
+    REQUIRE_OPERATED_RESOLVER_SUPPORT: bool = False
+    OPERATED_SUPPORTED_RESOLVER_HASHES: str = ""
+    LOG_LEVEL: str = "INFO"
+
+    @field_validator("COMPUTE_UNIT_LIMIT", "COMPUTE_UNIT_PRICE_MICRO_LAMPORTS", mode="before")
+    @classmethod
+    def _empty_optional_int_as_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("PROPHET_PROGRAM_ID")
     @classmethod

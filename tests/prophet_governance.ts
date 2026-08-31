@@ -53,7 +53,7 @@ describe("prophet-governance", () => {
         threshold,
         notaryKeys.length === 1 ? [notaryKeys[0], Keypair.generate().publicKey] : notaryKeys
       )
-      .accounts({
+      .accountsPartial({
         notaryConfig,
         admin: configAdmin.publicKey,
         systemProgram: SystemProgram.programId,
@@ -149,7 +149,7 @@ describe("prophet-governance", () => {
     try {
       await program.methods
         .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-        .accounts({
+        .accountsPartial({
           market: victimMarket,
           creator: victim.publicKey,
           oracleAuthority: victim.publicKey,
@@ -169,7 +169,7 @@ describe("prophet-governance", () => {
 
     await program.methods
       .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-      .accounts({
+      .accountsPartial({
         market: victimMarket,
         creator: victim.publicKey,
         oracleAuthority: victim.publicKey,
@@ -194,7 +194,7 @@ describe("prophet-governance", () => {
     ] as const) {
       await program.methods
         .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-        .accounts({
+        .accountsPartial({
           market,
           creator: creator.publicKey,
           oracleAuthority: creator.publicKey,
@@ -213,7 +213,7 @@ describe("prophet-governance", () => {
     try {
       await program.methods
         .initializeMarketV2([...resolverHash], openTs, nonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-        .accounts({
+        .accountsPartial({
           market: victimMarket,
           creator: victim.publicKey,
           oracleAuthority: victim.publicKey,
@@ -288,7 +288,7 @@ describe("prophet-governance", () => {
         32,
         4096
       )
-      .accounts({
+      .accountsPartial({
         market,
         creator: admin.publicKey,
         oracleAuthority: admin.publicKey,
@@ -306,7 +306,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .lockMarket()
-        .accounts({ market, authority: outsider.publicKey })
+        .accountsPartial({ market, authority: outsider.publicKey })
         .signers([outsider])
         .rpc();
     } catch {
@@ -316,7 +316,7 @@ describe("prophet-governance", () => {
 
     await (program.methods as any)
       .transferMarketAuthority(newAuthority.publicKey)
-      .accounts({ market, authority: admin.publicKey })
+      .accountsPartial({ market, authority: admin.publicKey })
       .signers([admin])
       .rpc();
 
@@ -339,7 +339,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .lockMarket()
-        .accounts({ market, authority: admin.publicKey })
+        .accountsPartial({ market, authority: admin.publicKey })
         .signers([admin])
         .rpc();
     } catch {
@@ -351,7 +351,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .lockMarket()
-        .accounts({ market, authority: newAuthority.publicKey })
+        .accountsPartial({ market, authority: newAuthority.publicKey })
         .signers([newAuthority])
         .rpc();
     } catch {
@@ -364,7 +364,7 @@ describe("prophet-governance", () => {
     const newResolveTs = new BN(scheduleNow + 20);
     await (program.methods as any)
       .updateMarketSchedule(newLockTs, newResolveTs)
-      .accounts({ market, authority: newAuthority.publicKey })
+      .accountsPartial({ market, authority: newAuthority.publicKey })
       .signers([newAuthority])
       .rpc();
 
@@ -374,7 +374,7 @@ describe("prophet-governance", () => {
     assert.equal(marketAcc.resolveTs.toNumber(), newResolveTs.toNumber());
 
     await waitUntilChainTimeGE(newLockTs.toNumber());
-    await (program.methods as any).syncMarketStatus().accounts({ market }).rpc();
+    await (program.methods as any).syncMarketStatus().accountsPartial({ market }).rpc();
 
     marketAcc = await program.account.market.fetch(market);
     assert.equal(marketAcc.status.locked !== undefined, true, "sync should materialize locked status");
@@ -385,7 +385,7 @@ describe("prophet-governance", () => {
     try {
       await program.methods
         .placeOrder(new BN(0), { buyYes: {} }, 60_000_000, new BN(10))
-        .accounts({
+        .accountsPartial({
           market,
           order,
           position,
@@ -440,7 +440,7 @@ describe("prophet-governance", () => {
         32,
         4096
       )
-      .accounts({
+      .accountsPartial({
         market,
         creator: authority.publicKey,
         oracleAuthority: authority.publicKey,
@@ -458,7 +458,7 @@ describe("prophet-governance", () => {
     const position = derivePosition(market, trader.publicKey);
     await program.methods
       .placeOrder(new BN(0), { buyYes: {} }, 60_000_000, new BN(10))
-      .accounts({
+      .accountsPartial({
         market,
         order,
         position,
@@ -475,7 +475,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .updateMarketSchedule(new BN(now + 50), new BN(now + 60))
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -485,7 +485,7 @@ describe("prophet-governance", () => {
 
     await program.methods
       .cancelOrder()
-      .accounts({
+      .accountsPartial({
         market,
         order,
         position,
@@ -502,7 +502,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .updateMarketSchedule(new BN(now + 50), new BN(now + 60))
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -524,7 +524,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .lockMarket()
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -535,7 +535,7 @@ describe("prophet-governance", () => {
     await waitUntilChainTimeGE(lockTs.toNumber());
     await (program.methods as any)
       .lockMarket()
-      .accounts({ market, authority: authority.publicKey })
+      .accountsPartial({ market, authority: authority.publicKey })
       .signers([authority])
       .rpc();
 
@@ -609,7 +609,7 @@ describe("prophet-governance", () => {
         32,
         4096
       )
-      .accounts({
+      .accountsPartial({
         market,
         creator: authority.publicKey,
         oracleAuthority: authority.publicKey,
@@ -627,7 +627,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .setMarketFeeConfig(market, 500)
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -641,7 +641,7 @@ describe("prophet-governance", () => {
 
     await (program.methods as any)
       .setMarketFeeConfig(treasury.publicKey, 500)
-      .accounts({ market, authority: authority.publicKey })
+      .accountsPartial({ market, authority: authority.publicKey })
       .signers([authority])
       .rpc();
 
@@ -653,7 +653,7 @@ describe("prophet-governance", () => {
     const makerPosition = derivePosition(market, makerYes.publicKey);
     await program.methods
       .placeOrder(new BN(0), { buyYes: {} }, 60_000_000, new BN(100))
-      .accounts({
+      .accountsPartial({
         market,
         order: makerOrder,
         position: makerPosition,
@@ -674,7 +674,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .setMarketFeeConfig(authority.publicKey, 250)
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -686,7 +686,7 @@ describe("prophet-governance", () => {
     const takerPosition = derivePosition(market, takerNo.publicKey);
     await program.methods
       .placeOrder(new BN(1), { buyNo: {} }, 55_000_000, new BN(100))
-      .accounts({
+      .accountsPartial({
         market,
         order: takerOrder,
         position: takerPosition,
@@ -705,7 +705,7 @@ describe("prophet-governance", () => {
 
     await program.methods
       .matchOrders(new BN(100))
-      .accounts({
+      .accountsPartial({
         market,
         orderYes: makerOrder,
         orderNo: takerOrder,
@@ -739,7 +739,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .updateMarketSchedule(new BN(now + 330), new BN(now + 350))
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {
@@ -756,7 +756,7 @@ describe("prophet-governance", () => {
 
     await (program.methods as any)
       .withdrawProtocolFees(new BN(999))
-      .accounts({
+      .accountsPartial({
         market,
         authority: authority.publicKey,
         quoteVault,
@@ -779,7 +779,7 @@ describe("prophet-governance", () => {
     const cancelPosition = derivePosition(market, canceller.publicKey);
     await program.methods
       .placeOrder(new BN(2), { buyYes: {} }, 50_000_000, new BN(10))
-      .accounts({
+      .accountsPartial({
         market,
         order: cancelOrder,
         position: cancelPosition,
@@ -798,7 +798,7 @@ describe("prophet-governance", () => {
 
     await program.methods
       .cancelOrder()
-      .accounts({
+      .accountsPartial({
         market,
         order: cancelOrder,
         position: cancelPosition,
@@ -816,7 +816,7 @@ describe("prophet-governance", () => {
     try {
       await (program.methods as any)
         .updateMarketSchedule(new BN(now + 330), new BN(now + 350))
-        .accounts({ market, authority: authority.publicKey })
+        .accountsPartial({ market, authority: authority.publicKey })
         .signers([authority])
         .rpc();
     } catch {

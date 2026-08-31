@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,6 +34,31 @@ def test_program_id_invalid_pubkey_length_is_rejected():
 def test_current_public_devnet_program_id_is_accepted():
     settings = Settings(PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID)
     assert settings.PROPHET_PROGRAM_ID == PUBLIC_DEVNET_PROGRAM_ID
+
+
+def test_environment_is_read_when_settings_are_constructed(monkeypatch):
+    monkeypatch.setenv("RPC_URL", "https://rpc.example")
+    settings = Settings(PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID)
+    assert settings.RPC_URL == "https://rpc.example"
+
+
+def test_dotenv_is_read_without_mutating_process_environment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("RPC_URL", raising=False)
+    (tmp_path / ".env").write_text("RPC_URL=https://dotenv.example\n", encoding="utf-8")
+
+    settings = Settings(PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID)
+
+    assert settings.RPC_URL == "https://dotenv.example"
+    assert os.environ.get("RPC_URL") is None
+
+
+def test_empty_optional_compute_settings_remain_unset(monkeypatch):
+    monkeypatch.setenv("COMPUTE_UNIT_LIMIT", "")
+    monkeypatch.setenv("COMPUTE_UNIT_PRICE_MICRO_LAMPORTS", "")
+    settings = Settings(PROPHET_PROGRAM_ID=PUBLIC_DEVNET_PROGRAM_ID)
+    assert settings.COMPUTE_UNIT_LIMIT is None
+    assert settings.COMPUTE_UNIT_PRICE_MICRO_LAMPORTS is None
 
 
 def test_another_valid_program_id_is_technically_accepted():

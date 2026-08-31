@@ -274,7 +274,62 @@ persistent-state semantic, or production topology change is included.
 - Anchor integration suite: **14 passed, 1 pending**; the pending case is the
   intentionally retired legacy single-oracle suite.
 - Checked-in Python security static gate: **PASS**.
-- TypeScript compiler check is not a configured package/CI gate and still has
-  pre-existing generated Anchor-account typing errors; no test or generated
-  interface was modified to conceal them.
+- Repository TypeScript typecheck (`yarn typecheck`): **PASS**; the generated
+  Anchor output was not modified and no suppression was added.
 - `git diff --check`: **PASS**.
+
+## Final Q1 closure
+
+- **Q1-001 — CLOSED.** Active documentation is synchronized to the immutable
+  RC4.7 target; historical release records remain intact.
+- **Q1-002 — CLOSED.** The parser fallback catches ordinary `Exception` only,
+  preserving normal parse-failure handling and propagation of control-flow
+  exceptions.
+- **Q1-003 — CLOSED.** Keeper settings now use explicit instance-time
+  Pydantic environment/dotenv loading with process-environment precedence,
+  stable defaults, and characterization tests for construction timing,
+  dotenv isolation, and empty optional numeric values.
+- **Q1-004 — INTENTIONAL / ACCEPTED ARCHITECTURE.** The operational evidence
+  verifier remains cohesive and explicit across parsing, canonicalization,
+  signatures, and trust policy; independent security-domain validation is not
+  deduplicated.
+- **Q1-005 — INTENTIONAL / ACCEPTED ARCHITECTURE.** The coordinator store keeps
+  schema, durable transitions, and serializers visible at the SQLite boundary
+  so crash, replay, and anti-equivocation ordering remain locally reviewable.
+- **Q1-006 — INTENTIONAL / ACCEPTED ARCHITECTURE.** The attester orchestration
+  path remains visibly end-to-end so verifier, resolver, signer, and audit
+  boundaries are not hidden behind a generic abstraction. A future split would
+  require a separately reviewed characterization refactor.
+- **Q1-007 — CLOSED.** The active security scope now names RC4.7 and its exact
+  acceptance basis while retaining the substantive scope and non-goals.
+
+Final classification:
+
+- Unresolved Q0: **0**
+- Unresolved Q1: **0**
+- Q1 closed: **4**
+- Q1 accepted intentional: **3**
+- Q1 requiring semantic redesign: **0**
+- Remaining Q2: **7**
+- Remaining Q3: **4**
+- Oversized modules: **11**; intentionally cohesive/security-explicit:
+  **3**; split in this pass: **0**. The other 8 remain retained by their
+  tooling, public-API, or separate-boundary classifications rather than by an
+  arbitrary LOC target.
+
+## TypeScript typecheck closure
+
+The previous compiler failure was classified as **C — actual source typing
+defect**. The generated Anchor IDL types correctly distinguish accounts that
+the resolver can derive from accounts that callers must provide. The tests
+were passing derived PDA/relation accounts through `.accounts()`, whose
+`@anchor-lang/core` 1.0.3 type intentionally rejects them; the runtime method
+delegates to the same implementation as `.accountsPartial()`. The existing
+Mocha shim also lacked the `describe.skip` member used by the retired suite.
+
+The three affected test files now use `.accountsPartial()` for explicitly
+provided accounts, the two extraneous `systemProgram` entries were removed
+from instructions whose IDL does not declare that account, and the existing
+shim declares `describe.skip`. A repository-level `yarn typecheck` command now
+passes. No generated Anchor output, protocol source, account layout, or
+security suppression was modified.

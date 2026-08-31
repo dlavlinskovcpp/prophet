@@ -103,7 +103,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .initializeNotaryConfig(2, notaryKeys.length === 1 ? [notaryKeys[0], oracleB.publicKey] : notaryKeys)
-      .accounts({
+      .accountsPartial({
         notaryConfig,
         admin: configAdmin.publicKey,
         systemProgram: SystemProgram.programId,
@@ -242,7 +242,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         creator: authority.publicKey,
         oracleAuthority: oracle.publicKey,
@@ -265,7 +265,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .placeOrder(seqA, { buyYes: {} }, 60_000_000, new BN(100))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         order: orderA,
         position: posA,
@@ -284,7 +284,7 @@ describe("prophet-invariants", () => {
     const ataB = await getAssociatedTokenAddress(quoteMint, traderB.publicKey);
     await program.methods
       .placeOrder(seqB, { buyNo: {} }, 60_000_000, new BN(50))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         order: orderB,
         position: posB,
@@ -302,7 +302,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .matchOrders(new BN(50))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         orderYes: orderA,
         orderNo: orderB,
@@ -331,7 +331,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .cancelOrder()
-      .accounts({ market: marketKey, order: orderA, position: posA, owner: traderA.publicKey })
+      .accountsPartial({ market: marketKey, order: orderA, position: posA, owner: traderA.publicKey })
       .signers([traderA])
       .rpc();
 
@@ -344,7 +344,7 @@ describe("prophet-invariants", () => {
     const balPre = (await getAccount(provider.connection, ataA)).amount;
     await program.methods
       .claimRefunds(new BN(1_000_000))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         position: posA,
         owner: traderA.publicKey,
@@ -366,7 +366,7 @@ describe("prophet-invariants", () => {
     try {
       await program.methods
         .claimRefunds(new BN(1))
-        .accounts({
+        .accountsPartial({
           market: marketKey,
           position: posA,
           owner: traderA.publicKey,
@@ -398,7 +398,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .initializeMarketV2([...resolverHash], openTs, marketNonce, lockTs, resolveTs, new BN(1), new BN(1), 32, 4096)
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         creator: authority.publicKey,
         oracleAuthority: oracle.publicKey,
@@ -423,7 +423,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .placeOrder(seqA, { buyYes: {} }, 50_000_000, new BN(40))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         order: orderA,
         position: posA,
@@ -438,7 +438,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .placeOrder(seqB, { buyNo: {} }, 50_000_000, new BN(40))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         order: orderB,
         position: posB,
@@ -453,7 +453,7 @@ describe("prophet-invariants", () => {
 
     await program.methods
       .matchOrders(new BN(40))
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         orderYes: orderA,
         orderNo: orderB,
@@ -488,7 +488,7 @@ describe("prophet-invariants", () => {
     const ed25519IxB = createManualEd25519Ix(msg, sigB, oracleB.publicKey.toBuffer());
     const resolveIx = await program.methods
       .resolveMarketThreshold({ yes: {} } as any, [...proofHash], [...publicInputsHash])
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         notaryConfig,
         instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -499,7 +499,7 @@ describe("prophet-invariants", () => {
     const balA1 = (await getAccount(provider.connection, ataA)).amount;
     await program.methods
       .redeem()
-      .accounts({
+      .accountsPartial({
         market: marketKey,
         position: posA,
         owner: traderA.publicKey,
@@ -516,7 +516,7 @@ describe("prophet-invariants", () => {
     try {
       await program.methods
         .redeem()
-        .accounts({
+        .accountsPartial({
           market: marketKey,
           position: posA,
           owner: traderA.publicKey,

@@ -164,7 +164,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .initializeNotaryConfig(threshold, notaryKeys)
-            .accounts({
+            .accountsPartial({
                 notaryConfig,
                 admin: configAdmin.publicKey,
                 systemProgram: SystemProgram.programId,
@@ -271,7 +271,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey, // legacy field; unused
@@ -308,7 +308,7 @@ describe("prophet-threshold-notary", () => {
         const buildResolveIx = async () => {
             return program.methods
                 .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-                .accounts({
+                .accountsPartial({
                     market,
                     notaryConfig,
                     instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -351,7 +351,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market: market2,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -382,7 +382,7 @@ describe("prophet-threshold-notary", () => {
         const buildResolveIx2 = async () => {
             return program.methods
                 .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-                .accounts({
+                .accountsPartial({
                     market: market2,
                     notaryConfig,
                     instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -491,7 +491,7 @@ describe("prophet-threshold-notary", () => {
             const ed2 = createManualEd25519Ix(badMsg, sig2, notary2.publicKey.toBuffer());
             const resolveIx = await program.methods
                 .resolveMarketThreshold({ yes: {} } as any, Array.from(badProofHash), Array.from(badPublicInputsHash))
-                .accounts({
+                .accountsPartial({
                     market: market2,
                     notaryConfig,
                     instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -553,7 +553,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market: marketInside,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -586,7 +586,7 @@ describe("prophet-threshold-notary", () => {
         const edInside2 = createManualEd25519Ix(msgInside, sigInside2, notary2.publicKey.toBuffer());
         const resolveInside = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market: marketInside,
                 notaryConfig,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -619,7 +619,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market: marketOutside,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -652,7 +652,7 @@ describe("prophet-threshold-notary", () => {
         const edOutside2 = createManualEd25519Ix(msgOutside, sigOutside2, notary2.publicKey.toBuffer());
         const resolveOutside = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market: marketOutside,
                 notaryConfig,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -718,7 +718,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -756,10 +756,9 @@ describe("prophet-threshold-notary", () => {
         try {
             await program.methods
                 .updateNotaryConfig(2, [rotatedNotary1.publicKey, rotatedNotary2.publicKey])
-                .accounts({
+                .accountsPartial({
                     notaryConfig,
                     admin: configAdmin.publicKey,
-                    systemProgram: SystemProgram.programId,
                 })
                 .signers([configAdmin])
                 .rpc();
@@ -782,7 +781,7 @@ describe("prophet-threshold-notary", () => {
                 2,
                 [rotatedNotary1.publicKey, rotatedNotary2.publicKey]
             )
-            .accounts({
+            .accountsPartial({
                 previousNotaryConfig: notaryConfig,
                 newNotaryConfig: notaryConfigV2,
                 admin: configAdmin.publicKey,
@@ -799,7 +798,7 @@ describe("prophet-threshold-notary", () => {
 
         const resolveV1Ix = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market,
                 notaryConfig,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -833,7 +832,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market: marketV2,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -879,7 +878,7 @@ describe("prophet-threshold-notary", () => {
 
         const resolveIx = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market: marketV2,
                 notaryConfig: notaryConfigV2,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -974,7 +973,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -997,7 +996,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .placeOrder(seqA, { buyYes: {} }, 60_000_000, new BN(100))
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderA,
                 position: posA,
@@ -1012,7 +1011,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .placeOrder(seqB, { buyNo: {} }, 60_000_000, new BN(50))
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderB,
                 position: posB,
@@ -1027,7 +1026,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .matchOrders(new BN(20))
-            .accounts({
+            .accountsPartial({
                 market,
                 orderYes: orderA,
                 orderNo: orderB,
@@ -1059,7 +1058,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .cancelOrder()
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderA,
                 position: posA,
@@ -1070,7 +1069,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .cancelOrder()
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderB,
                 position: posB,
@@ -1098,7 +1097,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .claimRefunds(new BN(48))
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posA,
                 owner: traderA.publicKey,
@@ -1111,7 +1110,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .claimRefunds(new BN(12))
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posB,
                 owner: traderB.publicKey,
@@ -1161,7 +1160,7 @@ describe("prophet-threshold-notary", () => {
         const ed2 = createManualEd25519Ix(resolveMsg, sig2, notary2.publicKey.toBuffer());
         const resolveIx = await program.methods
             .resolveMarketThreshold({ yes: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market,
                 notaryConfig,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -1180,7 +1179,7 @@ describe("prophet-threshold-notary", () => {
         const balARedeemPre = (await getAccount(provider.connection, ataA.address)).amount;
         await program.methods
             .redeem()
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posA,
                 owner: traderA.publicKey,
@@ -1197,7 +1196,7 @@ describe("prophet-threshold-notary", () => {
         try {
             await program.methods
                 .redeem()
-                .accounts({
+                .accountsPartial({
                     market,
                     position: posA,
                     owner: traderA.publicKey,
@@ -1215,7 +1214,7 @@ describe("prophet-threshold-notary", () => {
         const balBRedeemPre = (await getAccount(provider.connection, ataB.address)).amount;
         await program.methods
             .redeem()
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posB,
                 owner: traderB.publicKey,
@@ -1254,17 +1253,16 @@ describe("prophet-threshold-notary", () => {
         if (existing) {
             await program.methods
                 .updateNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
+                .accountsPartial({
                     notaryConfig,
                     admin: admin.publicKey,
-                    systemProgram: SystemProgram.programId,
                 })
                 .signers([admin])
                 .rpc();
         } else {
             await program.methods
                 .initializeNotaryConfig(2, [notary1.publicKey, notary2.publicKey])
-                .accounts({
+                .accountsPartial({
                     notaryConfig,
                     admin: admin.publicKey,
                     systemProgram: SystemProgram.programId,
@@ -1318,7 +1316,7 @@ describe("prophet-threshold-notary", () => {
                 32,
                 4096
             )
-            .accounts({
+            .accountsPartial({
                 market,
                 creator: admin.publicKey,
                 oracleAuthority: admin.publicKey,
@@ -1341,7 +1339,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .placeOrder(seqA, { buyYes: {} }, 60_000_000, new BN(20))
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderA,
                 position: posA,
@@ -1356,7 +1354,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .placeOrder(seqB, { buyNo: {} }, 60_000_000, new BN(20))
-            .accounts({
+            .accountsPartial({
                 market,
                 order: orderB,
                 position: posB,
@@ -1371,7 +1369,7 @@ describe("prophet-threshold-notary", () => {
 
         await program.methods
             .matchOrders(new BN(20))
-            .accounts({
+            .accountsPartial({
                 market,
                 orderYes: orderA,
                 orderNo: orderB,
@@ -1424,7 +1422,7 @@ describe("prophet-threshold-notary", () => {
         const ed2 = createManualEd25519Ix(resolveMsg, sig2, notary2.publicKey.toBuffer());
         const resolveIx = await program.methods
             .resolveMarketThreshold({ invalid: {} } as any, Array.from(proofHash), Array.from(publicInputsHash))
-            .accounts({
+            .accountsPartial({
                 market,
                 notaryConfig,
                 instructionsSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -1442,7 +1440,7 @@ describe("prophet-threshold-notary", () => {
         const balARedeemPre = (await getAccount(provider.connection, ataA.address)).amount;
         await program.methods
             .redeem()
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posA,
                 owner: traderA.publicKey,
@@ -1458,7 +1456,7 @@ describe("prophet-threshold-notary", () => {
         const balBRedeemPre = (await getAccount(provider.connection, ataB.address)).amount;
         await program.methods
             .redeem()
-            .accounts({
+            .accountsPartial({
                 market,
                 position: posB,
                 owner: traderB.publicKey,
