@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -37,6 +38,9 @@ def run_lane(lane: dict) -> str:
 def verify(data: dict, *, execute: bool) -> None:
     for lane in data["lanes"]:
         if not execute:
+            continue
+        if lane["id"] == "anchor_local_e2e" and os.getenv("RC48_SKIP_ANCHOR_E2E") == "1":
+            print("anchor_local_e2e: COVERED BY ANCHOR TS INTEGRATION")
             continue
         output = run_lane(lane)
         kind = lane.get("kind")

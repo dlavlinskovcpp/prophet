@@ -758,7 +758,7 @@ jobs:
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
 
       - name: Validate RC4.8 transaction and runtime acceptance basis
-        run: make rc48-security-acceptance
+        run: RC48_SKIP_ANCHOR_E2E=1 make rc48-security-acceptance
 
       - name: Validate operated monitoring contract
         run: python3 scripts/validate_operated_monitoring.py
