@@ -6,11 +6,11 @@ evidence; they are not a substitute for this external audit.
 
 ## Release context
 
-The current release candidate is `v1.0.0-rc4.6` at commit
-`6ec033ef9096202f623a70cb895ca6f331f5091c`. Its acceptance basis is revision 5
+The current release candidate is `v1.0.0-rc4.7` at commit
+`42351960cae1497d1a0e5dfebf46d65a72c4c5db`. Its acceptance basis is revision 6
 with digest
-`c879eae30bceea6f24282f3fbb341c30429fc2d625efe019c5ef3896f72747a6`, and CI
-run `33325187604` is green.
+`a7f3d1a2ee4b6377a7bfc26cc4ef93e01e559a08d3f1bf4482fe323875b2ad9d`, and CI
+run `33339208482` is green.
 
 Public-devnet is paused and the Prophet program is not deployed there. Mainnet
 is blocked. An external independent audit is required before significant

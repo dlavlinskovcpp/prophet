@@ -11,12 +11,12 @@ From the repository root:
 
 ```bash
 make demo
-make rc46-security-acceptance
+make rc47-security-acceptance
 ```
 
 `make demo` runs the deterministic agent-native Resolver V2 flow and its
 conflict fail-closed case without a wallet, RPC, or deployment. The acceptance
-target validates the checked-in RC4.6 security basis.
+target validates the checked-in RC4.7 security basis.
 
 For the fixed-role localtest path:
 

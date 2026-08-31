@@ -12,7 +12,7 @@
   <a href="https://github.com/dlavlinskovcpp/prophet/actions/workflows/ci.yml">
     <img alt="CI" src="https://github.com/dlavlinskovcpp/prophet/actions/workflows/ci.yml/badge.svg?branch=initial-project">
   </a>
-  <img alt="Release" src="https://img.shields.io/badge/release-v1.0.0--rc4.6-blue">
+  <img alt="Release" src="https://img.shields.io/badge/release-v1.0.0--rc4.7-blue">
   <img alt="Solana" src="https://img.shields.io/badge/Solana-Anchor-9945FF">
   <a href="LICENSE">
     <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
@@ -412,10 +412,10 @@ conflicting-verifier fail-closed path
 
 The demo uses deterministic local evidence and does not require a public RPC endpoint.
 
-### Run the RC4.6 security acceptance basis
+### Run the RC4.7 security acceptance basis
 
 ```bash
-make rc46-security-acceptance
+make rc47-security-acceptance
 ```
 
 ### Run the on-chain test suite
@@ -477,26 +477,26 @@ docs/
 Current immutable release candidate:
 
 ```text
-v1.0.0-rc4.6
+v1.0.0-rc4.7
 ```
 
 Target commit:
 
 ```text
-6ec033ef9096202f623a70cb895ca6f331f5091c
+42351960cae1497d1a0e5dfebf46d65a72c4c5db
 ```
 
 Security acceptance basis:
 
 ```text
-revision 5
-c879eae30bceea6f24282f3fbb341c30429fc2d625efe019c5ef3896f72747a6
+revision 6
+a7f3d1a2ee4b6377a7bfc26cc4ef93e01e559a08d3f1bf4482fe323875b2ad9d
 ```
 
 GitHub Actions:
 
 ```text
-run 33325187604
+run 33339208482
 GREEN
 ```
 
@@ -520,7 +520,7 @@ Public-devnet acceptance additionally requires real operational evidence for ind
 
 ## Security Validation
 
-RC4.6 currently includes, among other release gates:
+RC4.7 currently includes, among other release gates:
 
 ```text
 Oracle Attester:

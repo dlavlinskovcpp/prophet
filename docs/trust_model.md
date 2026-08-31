@@ -116,7 +116,7 @@ An operated deployment should:
 
 ## Current status
 
-The current release candidate is `v1.0.0-rc4.6` with CI green. Public-devnet
+The current release candidate is `v1.0.0-rc4.7` with CI green. Public-devnet
 is paused and its Prophet program is not deployed. Mainnet is blocked, and an
 external independent audit is required before significant mainnet TVL.
 

@@ -152,9 +152,7 @@ class Settings(BaseSettings):
             try:
                 from solders.keypair import Keypair as SKeypair
                 kp = SKeypair.from_base58_string(val)
-            except BaseException as exc:
-                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                    raise
+            except Exception:
                 pass
 
         return kp
