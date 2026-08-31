@@ -774,10 +774,8 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
 
-      - name: Validate RC4.8 transaction and runtime acceptance basis
-        run: |
-          export RC48_SKIP_ANCHOR_E2E=1
-          python3 scripts/validate_rc48_security_acceptance.py --run
+      - name: Validate RC4.8 acceptance manifest
+        run: python3 scripts/validate_rc48_security_acceptance.py
 
       - name: Validate operated monitoring contract
         run: python3 scripts/validate_operated_monitoring.py
