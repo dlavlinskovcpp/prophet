@@ -387,6 +387,7 @@ jobs:
             for envfile in resolver-registry.env verifier-a.env verifier-b.env coordinator.env secure-settlement.env matching-keeper.env; do
               : > "${SECRET_ROOT}/${envfile}"
             done
+            PROPHET_KEEPER_OPS_TOKEN=ci-placeholder \
             PROPHET_SECRET_ROOT="${SECRET_ROOT}" PROPHET_RUNTIME_ROOT="${RUNTIME_ROOT}" \
               docker compose -f "deploy/operated/${environment}/docker-compose.yml" config >/dev/null
           done
