@@ -103,6 +103,22 @@ def test_source_result_freshness_uses_rc42_inclusive_expiry_boundary():
         _payload(now_ms=201)
 
 
+def test_attestation_rejects_future_acquisition_and_excessive_ttl():
+    signer = _signer()
+    future = _payload(now_ms=200)
+    future["acquired_at_ms"] = "6000"
+    future["valid_until_ms"] = "6100"
+    future["job_id"] = settlement_authorization_job_id({key: future[key] for key in ("cluster_genesis_hash", "program_id", "market", "resolver_definition_hash", "evidence_hash", "proof_hash", "public_inputs_hash")})
+    future_signed = signer.sign(future, now_ms=6000).as_transport()
+    with pytest.raises(VerifierAttestationError):
+        verify_attestation(future_signed, expected_verifier_id=signer.verifier_id, expected_verifier_version=signer.verifier_version, expected_verifier_implementation_digest=signer.verifier_implementation_digest, expected_public_key=signer.public_key, now_ms=200)
+
+    excessive = _payload(now_ms=200)
+    excessive["valid_until_ms"] = str(int(excessive["acquired_at_ms"]) + 3_600_001)
+    with pytest.raises(VerifierAttestationError):
+        signer.sign(excessive, now_ms=200)
+
+
 @pytest.mark.parametrize("field,value", [
     ("verifier_id", "prophet.verifier.runtime.b"),
     ("verifier_version", "2.0.1"),

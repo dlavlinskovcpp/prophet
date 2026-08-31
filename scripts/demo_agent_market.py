@@ -62,6 +62,7 @@ class DemoBackend:
     """Deterministic local submission harness implementing the agent facade."""
     def __init__(self, *, conflict: bool):
         self.conflict, self.orders, self.matched, self.resolved = conflict, [], False, False
+        self.redeemed: set[tuple[str, str]] = set()
         self.notaries = [Keypair.from_seed(bytes((21 + i,)) * 32) for i in range(2)]
         self.definition = definition()
 
@@ -128,6 +129,10 @@ class DemoBackend:
 
     def redeem(self, market: MarketHandle, owner: str) -> Mapping[str, Any]:
         if not self.resolved or owner != "agent-a": return {"owner": owner, "amount": 0}
+        key = (market.market_id, owner)
+        if key in self.redeemed:
+            raise PipelineRejected("PositionAlreadyRedeemed")
+        self.redeemed.add(key)
         return {"owner": owner, "amount": 100, "redemption_tx": hashlib.sha256(f"{market.market_id}:{owner}:100".encode()).hexdigest()}
 
 

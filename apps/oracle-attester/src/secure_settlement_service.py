@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.requests import ClientDisconnect
 
 from .agreed_settlement_signer import (
     AgreedSettlementSigningError,
@@ -30,6 +31,21 @@ class SecureSettlementResult:
     submission_state: str
     confirmation_status: str | None
     slot: int | None
+
+
+async def _read_empty_or_object_body(request: Request, maximum: int = 4096) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdecimal() or int(declared) > maximum):
+        raise ValueError("settlement_body_too_large")
+    data = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > maximum:
+                raise ValueError("settlement_body_too_large")
+            data.extend(chunk)
+    except ClientDisconnect as exc:
+        raise ValueError("settlement_body_invalid") from exc
+    return bytes(data).strip()
 
 
 class SecureSettlementEngine:
@@ -120,7 +136,10 @@ def create_secure_settlement_service(
             return JSONResponse(status_code=401, content={"error": "unauthorized"})
         if not _valid_job_id(coordinator_job_id):
             return JSONResponse(status_code=404, content={"error": "resolution_not_found"})
-        body = (await request.body()).strip()
+        try:
+            body = await _read_empty_or_object_body(request)
+        except ValueError:
+            return JSONResponse(status_code=413, content={"error": "settlement_request_too_large"})
         if body not in {b"", b"{}"}:
             return JSONResponse(
                 status_code=400,

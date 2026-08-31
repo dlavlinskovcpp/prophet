@@ -14,6 +14,7 @@ from typing import Any, Mapping, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.requests import ClientDisconnect
 
 from .resolution_coordinator import (
     ResolutionCoordinatorError,
@@ -35,6 +36,31 @@ except ModuleNotFoundError:
 
 
 logger = logging.getLogger("prophet.coordinator-service")
+
+
+class _RequestTooLarge(ValueError):
+    pass
+
+
+async def _read_bounded_body(request: Request, maximum: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdecimal() or (len(declared) > 1 and declared.startswith("0"))):
+        raise ValueError("content_length_invalid")
+    if declared is not None and int(declared) > maximum:
+        raise _RequestTooLarge("content_length_exceeds_limit")
+    data = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > maximum:
+                raise _RequestTooLarge("streamed_body_exceeds_limit")
+            data.extend(chunk)
+    except _RequestTooLarge:
+        raise
+    except ClientDisconnect as exc:
+        raise ValueError("request_stream_disconnected") from exc
+    except Exception as exc:
+        raise ValueError("request_stream_unavailable") from exc
+    return bytes(data)
 
 
 class CoordinatorServiceMetrics:
@@ -177,6 +203,7 @@ def create_coordinator_service(
     close_resources: bool = False,
     solana_runtime: SolanaRuntimeConfig | None = None,
     require_settlement_context: bool = False,
+    settlement_executor: Any = None,
 ) -> FastAPI:
     """Create the HTTP layer; request handlers delegate only to coordinator APIs."""
     @asynccontextmanager
@@ -185,7 +212,7 @@ def create_coordinator_service(
             yield
         finally:
             if close_resources:
-                for resource in (getattr(coordinator, "verifier_client_a", None), getattr(coordinator, "verifier_client_b", None), state):
+                for resource in (getattr(coordinator, "verifier_client_a", None), getattr(coordinator, "verifier_client_b", None), settlement_executor, state):
                     close = getattr(resource, "close", None)
                     if close is not None:
                         close()
@@ -200,6 +227,7 @@ def create_coordinator_service(
     app.state.request_max_bytes, app.state.request_timeout_seconds = request_max_bytes, request_timeout_seconds
     app.state.solana_runtime = solana_runtime
     app.state.require_settlement_context = require_settlement_context
+    app.state.settlement_executor = settlement_executor
     if coordinator is not None:
         logger.info(json.dumps({"event": "coordinator_service_startup", "ready": ready}, sort_keys=True))
 
@@ -243,14 +271,14 @@ def create_coordinator_service(
             if not _authorized(request, auth_token):
                 status, category = 401, "unauthorized"
                 return JSONResponse(status_code=status, content={"error": "unauthorized", "request_id": request_id})
-            declared = request.headers.get("content-length")
-            if declared is not None and (not declared.isdigit() or int(declared) > app.state.request_max_bytes):
+            try:
+                body = await _read_bounded_body(request, app.state.request_max_bytes)
+            except _RequestTooLarge:
                 status, category = 413, "too_large"
                 return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
-            body = await request.body()
-            if len(body) > app.state.request_max_bytes:
-                status, category = 413, "too_large"
-                return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
+            except ValueError:
+                status, category = 400, "malformed"
+                return JSONResponse(status_code=status, content={"error": "invalid_request", "request_id": request_id})
             try:
                 parsed = json.loads(body)
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -291,6 +319,23 @@ def create_coordinator_service(
             except ResolutionCoordinatorError:
                 status, category = 500, "coordinator"
                 return JSONResponse(status_code=status, content={"error": "coordinator_failure", "request_id": request_id})
+            if job.state == "AGREED" and app.state.settlement_executor is not None:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            app.state.settlement_executor.execute,
+                            job,
+                            attestation_a=getattr(app.state.coordinator.verifier_client_a, "last_attestation", None),
+                            attestation_b=getattr(app.state.coordinator.verifier_client_b, "last_attestation", None),
+                        ),
+                        timeout=app.state.request_timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    status, category = 503, "settlement_timeout"
+                    return JSONResponse(status_code=status, content={"error": "settlement_timeout", "request_id": request_id})
+                except Exception:
+                    status, category = 503, "settlement_dependency"
+                    return JSONResponse(status_code=status, content={"error": "settlement_unavailable", "request_id": request_id})
             status, category, state_name = 200, "resolved", job.state
             metrics.inc("coordinator_resolve_total", {"state": state_name})
             response = JSONResponse(content=_job_payload(job))

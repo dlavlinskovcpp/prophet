@@ -41,6 +41,10 @@ def _ops_authorized(request: Request) -> bool:
     if not settings.OPS_PROTECTED_INGRESS:
         return False
     token = request.headers.get("x-prophet-ops-token", "")
+    if not token:
+        scheme, _, presented = request.headers.get("authorization", "").partition(" ")
+        if scheme.lower() == "bearer":
+            token = presented
     return bool(token) and hmac.compare_digest(token, settings.OPS_API_AUTH_TOKEN)
 
 

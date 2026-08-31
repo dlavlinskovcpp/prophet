@@ -33,3 +33,26 @@ coordinator:
   sqlite_path: /var/lib/prophet/public-devnet/coordinator/coordinator.sqlite
   internal_auth: {token_env: PROPHET_COORDINATOR_INTERNAL_TOKEN}
   request_timeout_seconds: 25
+external_signers:
+  signer_a:
+    endpoint: https://signer-a.internal
+    signer_id: prophet-signer-a
+    public_key: REPLACE_WITH_SIGNER_A_PUBLIC_KEY
+    key_version: 1
+    grant_path_env: PROPHET_SIGNER_A_GRANT_PATH
+  signer_b:
+    endpoint: https://signer-b.internal
+    signer_id: prophet-signer-b
+    public_key: REPLACE_WITH_SIGNER_B_PUBLIC_KEY
+    key_version: 1
+    grant_path_env: PROPHET_SIGNER_B_GRANT_PATH
+  timeout_seconds: 30
+  journal_path: /var/lib/prophet/public-devnet/coordinator/signing.sqlite
+settlement_execution:
+  rpc_url_env: PROPHET_SOLANA_RPC_URL
+  expected_cluster: devnet
+  expected_genesis_hash: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
+  fee_payer:
+    keypair_path_env: PROPHET_COORDINATOR_FEE_PAYER_KEYPAIR
+  rpc: {timeout_seconds: 30, commitment: finalized}
+  journal_path: /var/lib/prophet/public-devnet/coordinator/submissions.sqlite

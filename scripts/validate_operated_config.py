@@ -131,7 +131,7 @@ def validate_environment(name: str) -> list[str]:
             "verifier-a": "networks: [control, egress]",
             "verifier-b": "networks: [control, egress]",
             "coordinator": "networks: [control]",
-            "matching-keeper": "networks: [egress]",
+            "matching-keeper": "networks: [control, egress]",
         }.items():
             try:
                 if expected_networks not in _block(text, service):

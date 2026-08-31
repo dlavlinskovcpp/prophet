@@ -9,6 +9,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -753,8 +756,11 @@ jobs:
         working-directory: apps/oracle-attester
         run: poetry run pytest -q tests -k "not e2e" --ignore=tests/test_e2e.py
 
-      - name: Validate RC4.7 reproducible protocol and operations acceptance basis
-        run: make rc47-security-acceptance
+      - name: Validate RC4.8 transaction and runtime acceptance basis
+        run: make rc48-security-acceptance
+
+      - name: Validate operated monitoring contract
+        run: python3 scripts/validate_operated_monitoring.py
 
       - name: Run deterministic agent E2E demo
         working-directory: apps/oracle-attester

@@ -25,6 +25,8 @@ ATTESTATION_SCHEMA = "prophet.verifier-attestation.v1"
 ATTESTATION_VERSION = "1"
 ATTESTATION_DOMAIN = b"PROPHET_VERIFIER_ATTESTATION_V1\0"
 JOB_ID_DOMAIN = b"PROPHET_SETTLEMENT_JOB_V1\0"
+ALLOWED_ATTESTATION_CLOCK_SKEW_MS = 5_000
+MAX_ATTESTATION_TTL_MS = 3_600_000
 _FIELDS = frozenset((
     "attestation_schema", "attestation_version", "verifier_id", "verifier_version",
     "verifier_implementation_digest", "job_id", "cluster_genesis_hash", "program_id",
@@ -126,6 +128,8 @@ def validate_attestation_payload(value: Mapping[str, Any], *, now_ms: Optional[i
     valid_until = _uint(payload["valid_until_ms"], "valid_until_ms")
     if valid_until <= acquired:
         _fail("attestation_validity_invalid")
+    if valid_until - acquired > MAX_ATTESTATION_TTL_MS:
+        _fail("attestation_ttl_exceeds_policy")
     if payload["job_id"] != settlement_authorization_job_id({field: payload[field] for field in _JOB_FIELDS}):
         _fail("attestation_job_id_mismatch")
     try:
@@ -192,10 +196,20 @@ class VerifierAttestationSigner:
         return SignedVerifierAttestation(canonical, bytes(self.keypair.sign_message(attestation_signing_bytes(canonical))).hex(), self.public_key)
 
 
-def verify_attestation(value: Mapping[str, Any], *, expected_verifier_id: str, expected_verifier_version: str, expected_verifier_implementation_digest: str, expected_public_key: str, now_ms: Optional[int] = None) -> dict[str, str]:
+def verify_attestation(value: Mapping[str, Any], *, expected_verifier_id: str, expected_verifier_version: str, expected_verifier_implementation_digest: str, expected_public_key: str, now_ms: Optional[int] = None, allowed_clock_skew_ms: int = ALLOWED_ATTESTATION_CLOCK_SKEW_MS, max_ttl_ms: int = MAX_ATTESTATION_TTL_MS) -> dict[str, str]:
     if not isinstance(value, Mapping) or set(value) != {"payload", "signature_hex", "public_key"}:
         _fail("signed_attestation_shape_invalid")
     payload = validate_attestation_payload(value["payload"], now_ms=now_ms)
+    if isinstance(allowed_clock_skew_ms, bool) or not isinstance(allowed_clock_skew_ms, int) or allowed_clock_skew_ms < 0:
+        _fail("attestation_clock_policy_invalid")
+    if isinstance(max_ttl_ms, bool) or not isinstance(max_ttl_ms, int) or max_ttl_ms <= 0:
+        _fail("attestation_ttl_policy_invalid")
+    acquired = int(payload["acquired_at_ms"])
+    valid_until = int(payload["valid_until_ms"])
+    if valid_until - acquired > max_ttl_ms:
+        _fail("attestation_ttl_exceeds_policy")
+    if now_ms is not None and acquired > now_ms + allowed_clock_skew_ms:
+        _fail("attestation_acquired_in_future")
     expected = (expected_verifier_id, expected_verifier_version, expected_verifier_implementation_digest)
     actual = (payload["verifier_id"], payload["verifier_version"], payload["verifier_implementation_digest"])
     if actual != expected:

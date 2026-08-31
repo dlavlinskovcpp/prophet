@@ -9,6 +9,39 @@ from solders.pubkey import Pubkey
 from prophet_sdk.types import OrderAccount
 
 
+U64_MAX = (1 << 64) - 1
+_ORDER_U64_COLUMNS = (
+    "seq",
+    "qty_remaining_atoms",
+    "escrow_remaining_atoms",
+)
+_MATCH_U64_COLUMNS = ("qty_atoms",)
+
+
+def encode_u64(value: int) -> str:
+    """Encode a Solana u64 as canonical unsigned decimal text for SQLite."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= U64_MAX:
+        raise ValueError("protocol u64 value out of range")
+    return str(value)
+
+
+def decode_u64(value: object) -> int:
+    """Decode a canonical decimal u64 without accepting negative/malformed data."""
+    if isinstance(value, bool):
+        raise ValueError("protocol u64 value is malformed")
+    if isinstance(value, int):
+        decoded = value
+    elif isinstance(value, str) and value and value.isascii() and value.isdecimal():
+        if len(value) > 1 and value.startswith("0"):
+            raise ValueError("protocol u64 value is not canonical decimal")
+        decoded = int(value)
+    else:
+        raise ValueError("protocol u64 value is malformed")
+    if not 0 <= decoded <= U64_MAX:
+        raise ValueError("protocol u64 value out of range")
+    return decoded
+
+
 class SQLiteStateStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -53,10 +86,10 @@ class SQLiteStateStore:
                     market TEXT NOT NULL,
                     owner TEXT NOT NULL,
                     side INTEGER NOT NULL,
-                    seq INTEGER NOT NULL,
+                    seq TEXT NOT NULL,
                     limit_p_yes_e8 INTEGER NOT NULL,
-                    qty_remaining_atoms INTEGER NOT NULL,
-                    escrow_remaining_atoms INTEGER NOT NULL,
+                    qty_remaining_atoms TEXT NOT NULL,
+                    escrow_remaining_atoms TEXT NOT NULL,
                     created_ts INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 );
@@ -68,7 +101,7 @@ class SQLiteStateStore:
                     market TEXT NOT NULL,
                     order_yes TEXT NOT NULL,
                     order_no TEXT NOT NULL,
-                    qty_atoms INTEGER NOT NULL,
+                    qty_atoms TEXT NOT NULL,
                     success INTEGER NOT NULL,
                     signature TEXT NOT NULL DEFAULT '',
                     error_text TEXT NOT NULL DEFAULT ''
@@ -80,6 +113,116 @@ class SQLiteStateStore:
             self._ensure_column(conn, "markets", "discovery_source", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "markets", "active", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "markets", "last_seen_at", "INTEGER NOT NULL DEFAULT 0")
+            self._migrate_u64_columns(conn, "orders", _ORDER_U64_COLUMNS)
+            self._migrate_u64_columns(conn, "match_attempts", _MATCH_U64_COLUMNS)
+
+    @staticmethod
+    def _table_info(conn: sqlite3.Connection, table: str) -> Dict[str, str]:
+        return {
+            row["name"]: str(row["type"]).upper()
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+
+    def _migrate_u64_columns(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        u64_columns: tuple[str, ...],
+    ) -> None:
+        info = self._table_info(conn, table)
+        if not info:
+            return
+        rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+        for row in rows:
+            for column in u64_columns:
+                decode_u64(row[column])
+
+        if all(info[column] == "TEXT" for column in u64_columns):
+            return
+
+        if table == "orders":
+            conn.execute("DROP INDEX IF EXISTS idx_orders_market")
+            conn.execute("ALTER TABLE orders RENAME TO orders_legacy_u64")
+            conn.execute(
+                """
+                CREATE TABLE orders (
+                    order_pubkey TEXT PRIMARY KEY,
+                    market TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    side INTEGER NOT NULL,
+                    seq TEXT NOT NULL,
+                    limit_p_yes_e8 INTEGER NOT NULL,
+                    qty_remaining_atoms TEXT NOT NULL,
+                    escrow_remaining_atoms TEXT NOT NULL,
+                    created_ts INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
+            conn.executemany(
+                """
+                INSERT INTO orders (
+                    order_pubkey, market, owner, side, seq, limit_p_yes_e8,
+                    qty_remaining_atoms, escrow_remaining_atoms, created_ts, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        row["order_pubkey"], row["market"], row["owner"], row["side"],
+                        encode_u64(decode_u64(row["seq"])), row["limit_p_yes_e8"],
+                        encode_u64(decode_u64(row["qty_remaining_atoms"])),
+                        encode_u64(decode_u64(row["escrow_remaining_atoms"])),
+                        row["created_ts"], row["updated_at"],
+                    )
+                    for row in rows
+                ],
+            )
+            conn.execute("DROP TABLE orders_legacy_u64")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_market ON orders(market)")
+            return
+
+        if table == "match_attempts":
+            conn.execute("DROP INDEX IF EXISTS idx_match_attempts_market_id")
+            conn.execute("ALTER TABLE match_attempts RENAME TO match_attempts_legacy_u64")
+            conn.execute(
+                """
+                CREATE TABLE match_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at INTEGER NOT NULL,
+                    market TEXT NOT NULL,
+                    order_yes TEXT NOT NULL,
+                    order_no TEXT NOT NULL,
+                    qty_atoms TEXT NOT NULL,
+                    success INTEGER NOT NULL,
+                    signature TEXT NOT NULL DEFAULT '',
+                    error_text TEXT NOT NULL DEFAULT ''
+                )
+                """
+            )
+            conn.executemany(
+                """
+                INSERT INTO match_attempts (
+                    id, created_at, market, order_yes, order_no, qty_atoms,
+                    success, signature, error_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        row["id"], row["created_at"], row["market"], row["order_yes"],
+                        row["order_no"], encode_u64(decode_u64(row["qty_atoms"])),
+                        row["success"], row["signature"], row["error_text"],
+                    )
+                    for row in rows
+                ],
+            )
+            conn.execute("DROP TABLE match_attempts_legacy_u64")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_match_attempts_market_id "
+                "ON match_attempts(market, id DESC)"
+            )
+            return
+
+        raise ValueError(f"unsupported u64 migration table: {table}")
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
         cols = {
@@ -177,10 +320,10 @@ class SQLiteStateStore:
                         market_str,
                         str(order.owner),
                         int(order.side),
-                        int(order.seq),
+                        encode_u64(order.seq),
                         int(order.limit_p_yes_e8),
-                        int(order.qty_remaining_atoms),
-                        int(order.escrow_remaining_atoms),
+                        encode_u64(order.qty_remaining_atoms),
+                        encode_u64(order.escrow_remaining_atoms),
                         int(order.created_ts),
                         ts,
                     )
@@ -238,10 +381,10 @@ class SQLiteStateStore:
                         market_str,
                         str(order.owner),
                         int(order.side),
-                        int(order.seq),
+                        encode_u64(order.seq),
                         int(order.limit_p_yes_e8),
-                        int(order.qty_remaining_atoms),
-                        int(order.escrow_remaining_atoms),
+                        encode_u64(order.qty_remaining_atoms),
+                        encode_u64(order.escrow_remaining_atoms),
                         int(order.created_ts),
                         ts,
                     ),
@@ -317,7 +460,7 @@ class SQLiteStateStore:
                     str(market),
                     str(order_yes),
                     str(order_no),
-                    int(qty_atoms),
+                    encode_u64(qty_atoms),
                     1 if success else 0,
                     signature,
                     error_text,
@@ -374,7 +517,13 @@ class SQLiteStateStore:
                 """,
                 (int(limit),),
             ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            for column in _MATCH_U64_COLUMNS:
+                item[column] = decode_u64(item[column])
+            result.append(item)
+        return result
 
     def summarize_attempts(self) -> dict:
         with self._connect() as conn:

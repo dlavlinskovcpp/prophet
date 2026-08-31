@@ -6,10 +6,13 @@ authorizes settlement fields, accesses the journal directly, or signs bytes.
 from __future__ import annotations
 
 import base64
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import os
 import threading
 import time
 from collections.abc import Callable, Mapping
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -168,14 +171,30 @@ def create_independent_signer_service(
         raise IndependentSignerServiceStartupError("signer_authorization_concurrency_invalid") from exc
     concurrency = _AuthorizationConcurrency(max_inflight)
 
+    # The security engine owns synchronous RPC, Vault, SQLite, and signing
+    # operations.  A single role-local worker keeps those operations off the
+    # HTTP loop while preserving the journal's serialized anti-equivocation
+    # boundary.  Admission and readiness use the same worker, so a connection
+    # scoped SQLite transaction can never cross an arbitrary worker thread.
+    worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"signer-{service_config.signer_role.lower()}")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            worker.shutdown(wait=True, cancel_futures=True)
+
     app = FastAPI(
         title="Prophet Independent Signer",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
     app.state.engine = engine
     app.state.ready = False
+    app.state.worker = worker
 
     def readiness() -> tuple[bool, str]:
         try:
@@ -210,9 +229,13 @@ def create_independent_signer_service(
 
     app.state.readiness = readiness
 
+    async def run_blocking(function: Callable[..., Any], *args: Any) -> Any:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(worker, lambda: function(*args))
+
     @app.get("/health")
     async def health() -> dict[str, bool | str]:
-        ready_state, reason = readiness()
+        ready_state, reason = await run_blocking(readiness)
         return {"ok": ready_state, "live": True, "ready": ready_state, **({"reason": reason} if reason else {})}
 
     @app.get("/live")
@@ -221,7 +244,7 @@ def create_independent_signer_service(
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
-        ready_state, reason = readiness()
+        ready_state, reason = await run_blocking(readiness)
         if not ready_state:
             return JSONResponse(status_code=503, content={"ready": False, "reason": reason})
         return JSONResponse(status_code=200, content={"ready": True})
@@ -255,19 +278,25 @@ def create_independent_signer_service(
             headers = request.headers.getlist("x-prophet-admission-grant")
             if len(headers) != 1:
                 raise SignerAdmissionRuntimeError("grant_transport_invalid")
-            admission.admit(request=strict, raw_grant=decode_grant_header(headers[0]))
+            raw_grant = decode_grant_header(headers[0])
         except (AdmissionGrantError, SignerAdmissionRuntimeError):
             return JSONResponse(status_code=403, content={"error": "admission_rejected"})
-        try:
+
+        def admit_and_execute() -> IndependentSignerExecutionResult:
+            admission.admit(request=strict, raw_grant=raw_grant)
             now_ms = _local_now(local_clock)
-        except ValueError:
-            return JSONResponse(status_code=503, content={"error": "service_unavailable"})
+            return engine.execute(parsed, now_ms=now_ms)
+
         try:
-            result = engine.execute(parsed, now_ms=now_ms)
+            result = await run_blocking(admit_and_execute)
+        except (AdmissionGrantError, SignerAdmissionRuntimeError):
+            return JSONResponse(status_code=403, content={"error": "admission_rejected"})
         except SignerAuthorizationError:
             return JSONResponse(status_code=422, content={"error": "authorization_rejected"})
         except IndependentSignerExecutionError:
             return JSONResponse(status_code=409, content={"error": "signing_not_completed"})
+        except ValueError:
+            return JSONResponse(status_code=503, content={"error": "service_unavailable"})
         except Exception:
             return JSONResponse(status_code=503, content={"error": "service_unavailable"})
         if not isinstance(result, IndependentSignerExecutionResult) or result.state != "SIGNED":

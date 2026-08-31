@@ -33,8 +33,19 @@ SYSVAR_INSTRUCTIONS_ID = Pubkey.from_string("Sysvar1nstructions11111111111111111
 
 ORDER_DISCRIMINATOR = hashlib.sha256(b"account:Order").digest()[:8]
 MARKET_DISCRIMINATOR = hashlib.sha256(b"account:Market").digest()[:8]
+NOTARY_CONFIG_DISCRIMINATOR = hashlib.sha256(b"account:NotaryConfig").digest()[:8]
+MAX_NOTARIES = 32
+NOTARY_CONFIG_BODY_LEN = 32 + 1 + 1 + 1 + 5 + 8 + (32 * MAX_NOTARIES)
 
 DOMAIN_V2 = b"PROPHET_RESOLVE_V2"
+
+
+class AccountFetchError(RuntimeError):
+    """The RPC response could not be trusted as an account snapshot."""
+
+
+class AccountDecodeError(AccountFetchError):
+    """A program-owned account matched the expected type but was malformed."""
 
 
 class ProphetClient:
@@ -44,7 +55,18 @@ class ProphetClient:
         self.program_id = Pubkey.from_string(
             program_id or os.getenv("PROPHET_PROGRAM_ID", "913Xp7ck53fMFTjGdKtjiwQXsBa4SfC9hce1SVGr3G9A")
         )
+        self._fetch_diagnostics: Dict[str, int] = {}
         self.payer = self._load_keypair(payer_keypair_path or os.getenv("PAYER_KEYPAIR_PATH", "./id.json"))
+
+    @property
+    def fetch_diagnostics(self) -> Dict[str, int]:
+        """Counters for isolated account filtering and systemic fetch failures."""
+        return dict(self._fetch_diagnostics)
+
+    def _diagnose(self, name: str) -> None:
+        if not hasattr(self, "_fetch_diagnostics"):
+            self._fetch_diagnostics = {}
+        self._fetch_diagnostics[name] = self._fetch_diagnostics.get(name, 0) + 1
 
     def inspect_quote_mint(self, mint: Pubkey) -> Dict[str, object]:
         """Return the operated mint facts and reject Token-2022/unknown owners."""
@@ -92,11 +114,15 @@ class ProphetClient:
         if kp is None:
             try:
                 kp = Keypair.from_base58_string(val)
-            except Exception:
+            except BaseException:
+                # solana-py may surface Rust base58 failures as a pyo3 panic
+                # exception, which is not an Exception subclass.  Normalize
+                # that failure without exposing supplied key material.
                 kp = None
 
         if kp is None:
-            raise ValueError(f"Failed to load Keypair from input: {path_or_str[:20]}...")
+            # Never echo any portion of a supplied secret or key material.
+            raise ValueError("Failed to load Keypair from supplied input")
 
         return kp
 
@@ -139,13 +165,20 @@ class ProphetClient:
         resp = self.client.get_account_info(notary_config, commitment=Confirmed)
         if not resp.value:
             raise ValueError(f"Notary config {notary_config} not found")
+        owner = getattr(resp.value, "owner", None)
+        if owner is None or str(owner) != str(self.program_id):
+            raise ValueError("Notary config owner is not the Prophet program")
         raw = extract_account_bytes(resp.value.data)
-        if len(raw) < 8 + 48:
-            raise ValueError("Notary config account data too short")
+        if len(raw) != 8 + NOTARY_CONFIG_BODY_LEN:
+            raise ValueError("Notary config account size is invalid")
+        if raw[:8] != NOTARY_CONFIG_DISCRIMINATOR:
+            raise ValueError("Notary config discriminator is invalid")
         data = raw[8:]
 
         threshold = data[32]
         notary_count = data[33]
+        if not 1 <= notary_count <= MAX_NOTARIES:
+            raise ValueError("Notary config notary_count is invalid")
         version = int(struct.unpack_from("<Q", data, 40)[0])
 
         keys: List[Pubkey] = []
@@ -153,8 +186,6 @@ class ProphetClient:
         for i in range(int(notary_count)):
             start = offset + i * 32
             end = start + 32
-            if end > len(data):
-                break
             keys.append(Pubkey.from_bytes(data[start:end]))
 
         return {
@@ -175,13 +206,20 @@ class ProphetClient:
         return decode_market(extract_account_bytes(resp.value.data))
 
     def fetch_markets(self) -> List[Tuple[Pubkey, MarketAccount]]:
-        resp = self.client.get_program_accounts(
-            self.program_id,
-            commitment=Confirmed,
-            encoding="base64",
-        )
+        try:
+            resp = self.client.get_program_accounts(
+                self.program_id,
+                commitment=Confirmed,
+                encoding="base64",
+            )
+        except Exception as exc:
+            self._diagnose("market_rpc_failures")
+            raise AccountFetchError("market_account_query_failed") from exc
 
         results: List[Tuple[Pubkey, MarketAccount]] = []
+        if resp.value is None:
+            self._diagnose("market_response_shape_failures")
+            raise AccountFetchError("market_account_response_invalid")
         if not resp.value:
             return results
 
@@ -193,14 +231,18 @@ class ProphetClient:
                 else:
                     acc_data_obj = item["account"]["data"]
                     pk_str = item["pubkey"]
-
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                self._diagnose("market_response_shape_failures")
+                raise AccountFetchError("market_account_response_invalid") from exc
+            try:
                 raw_bytes = extract_account_bytes(acc_data_obj)
                 if raw_bytes[:8] != MARKET_DISCRIMINATOR:
+                    self._diagnose("market_unrelated_accounts")
                     continue
-
                 results.append((Pubkey.from_string(pk_str), decode_market(raw_bytes)))
-            except Exception:
-                continue
+            except Exception as exc:
+                self._diagnose("market_decode_failures")
+                raise AccountDecodeError("market_account_decode_failed") from exc
 
         return results
 
@@ -225,14 +267,21 @@ class ProphetClient:
     def fetch_orders_for_market(self, market: Pubkey) -> List[Tuple[Pubkey, OrderAccount]]:
         filters = [MemcmpOpts(offset=8, bytes=str(market))]
 
-        resp = self.client.get_program_accounts(
-            self.program_id,
-            commitment=Confirmed,
-            encoding="base64",
-            filters=filters,
-        )
+        try:
+            resp = self.client.get_program_accounts(
+                self.program_id,
+                commitment=Confirmed,
+                encoding="base64",
+                filters=filters,
+            )
+        except Exception as exc:
+            self._diagnose("order_rpc_failures")
+            raise AccountFetchError("order_account_query_failed") from exc
 
         results = []
+        if resp.value is None:
+            self._diagnose("order_response_shape_failures")
+            raise AccountFetchError("order_account_response_invalid")
         if not resp.value:
             return results
 
@@ -244,21 +293,23 @@ class ProphetClient:
                 else:
                     acc_data_obj = item["account"]["data"]
                     pk_str = item["pubkey"]
-
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                self._diagnose("order_response_shape_failures")
+                raise AccountFetchError("order_account_response_invalid") from exc
+            try:
                 raw_bytes = extract_account_bytes(acc_data_obj)
-
                 if raw_bytes[:8] != ORDER_DISCRIMINATOR:
+                    self._diagnose("order_unrelated_accounts")
                     continue
-
                 order_acc = decode_order(raw_bytes)
                 if order_acc.market != market:
+                    self._diagnose("order_filter_mismatches")
                     continue
-
                 if order_acc.qty_remaining_atoms > 0:
-                    pubkey = Pubkey.from_string(pk_str)
-                    results.append((pubkey, order_acc))
-            except Exception:
-                continue
+                    results.append((Pubkey.from_string(pk_str), order_acc))
+            except Exception as exc:
+                self._diagnose("order_decode_failures")
+                raise AccountDecodeError("order_account_decode_failed") from exc
 
         return results
 
@@ -269,7 +320,17 @@ class ProphetClient:
         results: Dict[Pubkey, Optional[OrderAccount]] = {}
         for i in range(0, len(order_pubkeys), batch_size):
             batch = order_pubkeys[i : i + batch_size]
-            resp = self.client.get_multiple_accounts(batch, commitment=Confirmed)
+            try:
+                resp = self.client.get_multiple_accounts(batch, commitment=Confirmed)
+            except Exception as exc:
+                self._diagnose("order_rpc_failures")
+                raise AccountFetchError("order_bulk_query_failed") from exc
+            if resp.value is None:
+                self._diagnose("order_response_shape_failures")
+                raise AccountFetchError("order_bulk_response_invalid")
+            if len(resp.value) != len(batch):
+                self._diagnose("order_response_shape_failures")
+                raise AccountFetchError("order_bulk_response_invalid")
             if not resp.value:
                 continue
             for pubkey, account_info in zip(batch, resp.value):
@@ -279,12 +340,14 @@ class ProphetClient:
                 try:
                     raw_bytes = extract_account_bytes(account_info.data)
                     if len(raw_bytes) < 8 or raw_bytes[:8] != ORDER_DISCRIMINATOR:
+                        self._diagnose("order_unrelated_accounts")
                         results[pubkey] = None
                         continue
                     order = decode_order(raw_bytes)
                     results[pubkey] = order if order.qty_remaining_atoms > 0 else None
-                except Exception:
-                    results[pubkey] = None
+                except Exception as exc:
+                    self._diagnose("order_decode_failures")
+                    raise AccountDecodeError("order_account_decode_failed") from exc
         return results
 
     # -------------------------------------------------------------------------

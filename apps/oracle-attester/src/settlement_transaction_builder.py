@@ -141,7 +141,7 @@ class SettlementTransactionBuilder:
             raise SettlementTransactionBindingError("solana_runtime_identity_invalid") from exc
         if not solana_runtime.cluster:
             raise SettlementTransactionBindingError("solana_runtime_cluster_invalid")
-        if not isinstance(threshold_signer, ThresholdResolutionSigner):
+        if not isinstance(threshold_signer, ThresholdResolutionSigner) and not getattr(threshold_signer, "supports_settlement_transaction_validation", False):
             raise SettlementTransactionBindingError("threshold_signer_validation_boundary_required")
         if threshold_signer.journal is not signing_journal:
             raise SettlementTransactionBindingError("threshold_signer_journal_mismatch")

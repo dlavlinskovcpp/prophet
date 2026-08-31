@@ -14,6 +14,13 @@ scrape_configs:
     static_configs: [{targets: [resolver-registry:8200]}]
   - job_name: prophet-matching-keeper
     static_configs: [{targets: [matching-keeper:8010]}]
+    bearer_token_file: /run/secrets/keeper-ops-token
   - job_name: vault
+    scheme: https
     metrics_path: /v1/sys/metrics
     static_configs: [{targets: [vault:8200]}]
+    bearer_token_file: /run/secrets/vault-metrics-token
+    tls_config:
+      ca_file: /run/secrets/vault-ca.crt
+      server_name: vault
+      insecure_skip_verify: false

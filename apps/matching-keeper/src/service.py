@@ -150,6 +150,10 @@ class MatchingKeeperService:
             resolver_hash = bytes(market_account.resolver_hash).hex()
             if resolver_hash not in self.settings.operated_supported_resolver_hashes:
                 return False
+        if self.settings.REQUIRE_OPERATED_QUOTE_ASSET_POLICY:
+            expected = self.settings.operated_quote_assets.get(str(market_account.quote_mint))
+            if expected is None:
+                return False
         return True
 
     async def _discover_market_targets(self) -> Dict[Pubkey, str]:
@@ -267,6 +271,20 @@ class MatchingKeeperService:
                 reason="market is not open and trackable",
             )
             return False
+
+        if self.settings.REQUIRE_OPERATED_QUOTE_ASSET_POLICY:
+            expected = self.settings.operated_quote_assets[str(market_account.quote_mint)]
+            try:
+                observed = await asyncio.to_thread(self.client.inspect_quote_mint, market_account.quote_mint)
+            except Exception:
+                self._last_rpc_error = "quote_asset_policy_unavailable"
+                raise
+            if any(observed.get(name) != value for name, value in expected.items()):
+                self._retire_market(
+                    market, market_status=market_status, discovery_source=discovery_source,
+                    reason="quote asset policy mismatch",
+                )
+                return False
 
         try:
             orders = await asyncio.to_thread(self.client.fetch_orders_for_market, market)

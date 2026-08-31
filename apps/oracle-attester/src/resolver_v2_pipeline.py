@@ -352,6 +352,9 @@ class SignerPolicy:
     required_verifier_ids: Tuple[str, ...] = ()
     minimum_agreeing_verifiers: int = 1
     exact_verifier_agreement: bool = True
+    # Explicit local trust policy for the implementation behind each verifier
+    # identity.  A signed bundle cannot choose or widen this set.
+    trusted_verifier_implementations: Tuple[Tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -379,6 +382,11 @@ class SignerPolicyEngine:
             return PolicyDecision(False, "bundle_hash_mismatch", self.policy.policy_id, self.policy.policy_version)
         definition = bundle["resolver_definition"]
         verifier = bundle["verifier"]
+        trusted = set(self.policy.trusted_verifier_implementations)
+        if trusted:
+            top_identity = (verifier["adapter_id"], verifier["adapter_version"], verifier["implementation_digest"])
+            if top_identity not in trusted:
+                return PolicyDecision(False, "untrusted_verifier_implementation", self.policy.policy_id, self.policy.policy_version)
         if definition["resolver_id"] not in self.policy.allowed_resolver_ids:
             return PolicyDecision(False, "unknown_resolver", self.policy.policy_id, self.policy.policy_version)
         if definition["resolver_id"] in self.policy.emergency_denylist:
@@ -405,6 +413,8 @@ class SignerPolicyEngine:
             result_verifier = result["verifier"]
             if result_verifier["adapter_id"] not in self.policy.allowed_verifier_ids or result_verifier["adapter_version"] not in self.policy.allowed_verifier_versions:
                 return PolicyDecision(False, "unexpected_verifier", self.policy.policy_id, self.policy.policy_version)
+            if trusted and (result_verifier["adapter_id"], result_verifier["adapter_version"], result_verifier["implementation_digest"]) not in trusted:
+                return PolicyDecision(False, "untrusted_verifier_implementation", self.policy.policy_id, self.policy.policy_version)
         if bundle["market"] != self.policy.market:
             return PolicyDecision(False, "market_mismatch", self.policy.policy_id, self.policy.policy_version)
         if bundle["cluster_genesis_hash"] != self.policy.cluster_genesis_hash:

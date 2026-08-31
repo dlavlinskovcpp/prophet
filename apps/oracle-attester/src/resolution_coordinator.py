@@ -72,6 +72,15 @@ class ResolutionCoordinator:
             return job
 
         request_id = self._correlation_id(correlation_id)
+        attestation_context = None
+        if settlement_context is not None:
+            attestation_context = {
+                "cluster_genesis_hash": settlement_runtime.genesis_hash if settlement_runtime is not None else "",
+                "program_id": settlement_context.program_id,
+                "market": market,
+                "proof_hash": settlement_context.proof_hash,
+                "public_inputs_hash": settlement_context.public_inputs_hash,
+            }
         if job.verifier_a_result is None:
             result = self._call(
                 slot="A",
@@ -80,6 +89,7 @@ class ResolutionCoordinator:
                 evidence=evidence,
                 trust_model=trust_model,
                 request_id=request_id,
+                attestation_context=attestation_context,
             )
             job = self._record(job.job_id, "A", result)
         if job.state in {"AGREED", "CONFLICT"}:
@@ -92,6 +102,7 @@ class ResolutionCoordinator:
                 evidence=evidence,
                 trust_model=trust_model,
                 request_id=request_id,
+                attestation_context=attestation_context,
             )
             job = self._record(job.job_id, "B", result)
         return job

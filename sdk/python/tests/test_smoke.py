@@ -1,6 +1,7 @@
 import struct
 from types import SimpleNamespace
 
+import pytest
 from solders.pubkey import Pubkey
 
 import prophet_sdk.client as client_mod
@@ -88,9 +89,9 @@ def _encode_notary_config(*, admin: Pubkey, threshold: int, notary_keys, version
     body += bytes([255])
     body += bytes(5)
     body += struct.pack("<Q", version)
-    for pk in notary_keys:
+    for pk in list(notary_keys) + [Pubkey.default()] * (32 - len(notary_keys)):
         body += bytes(pk)
-    return b"12345678" + bytes(body)
+    return client_mod.NOTARY_CONFIG_DISCRIMINATOR + bytes(body)
 
 
 def test_initialize_notary_config_treats_existing_pda_as_success(monkeypatch):
@@ -104,6 +105,7 @@ def test_initialize_notary_config_treats_existing_pda_as_success(monkeypatch):
             assert pubkey == cfg_pda
             return SimpleNamespace(
                 value=SimpleNamespace(
+                    owner=program_id,
                     data=_encode_notary_config(
                         admin=payer.pubkey(),
                         threshold=1,
@@ -140,8 +142,9 @@ def test_initialize_notary_config_reraises_when_existing_pda_shape_differs(monke
         def get_account_info(self, pubkey, commitment=None):
             assert pubkey == cfg_pda
             return SimpleNamespace(
-                value=SimpleNamespace(
-                    data=_encode_notary_config(
+                    value=SimpleNamespace(
+                        owner=program_id,
+                        data=_encode_notary_config(
                         admin=payer.pubkey(),
                         threshold=2,
                         notary_keys=[existing_notary],
@@ -179,8 +182,9 @@ def test_rotate_notary_config_builds_successor_snapshot(monkeypatch):
         def get_account_info(self, pubkey, commitment=None):
             assert pubkey == previous
             return SimpleNamespace(
-                value=SimpleNamespace(
-                    data=_encode_notary_config(
+                    value=SimpleNamespace(
+                        owner=program_id,
+                        data=_encode_notary_config(
                         admin=payer.pubkey(),
                         threshold=1,
                         notary_keys=[old_notary],
@@ -209,3 +213,12 @@ def test_rotate_notary_config_builds_successor_snapshot(monkeypatch):
     assert successor == expected
     assert sig == "sig"
     assert captured["ix"].program_id == program_id
+
+
+def test_invalid_keypair_error_never_echoes_supplied_secret_prefix():
+    client = ProphetClient.__new__(ProphetClient)
+    secret = "definitely-not-a-keypair-secret-prefix"
+    with pytest.raises(ValueError) as error:
+        client._load_keypair(secret)
+    assert secret not in str(error.value)
+    assert str(error.value) == "Failed to load Keypair from supplied input"

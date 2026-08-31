@@ -23,6 +23,7 @@ class AgreementPolicy:
     required_verifier_count: int
     minimum_agreeing_verifiers: int
     exact_agreement: bool = True
+    trusted_verifier_implementations: Tuple[Tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,9 +50,11 @@ def evaluate_agreement(results: Sequence[Mapping[str, Any]], policy: AgreementPo
     rows = []
     for result in results:
         verifier = result.get("verifier", {})
-        verifier_id, version = verifier.get("adapter_id"), verifier.get("adapter_version")
+        verifier_id, version, implementation = verifier.get("adapter_id"), verifier.get("adapter_version"), verifier.get("implementation_digest")
         if not isinstance(verifier_id, str) or not isinstance(version, str):
             return AgreementDecision(False, "verifier_identity_invalid", None, (), "verifier_version_mismatch")
+        if policy.trusted_verifier_implementations and (verifier_id, version, implementation) not in set(policy.trusted_verifier_implementations):
+            return AgreementDecision(False, "untrusted_verifier_implementation", None, (verifier_id,), "verifier_implementation_mismatch")
         rows.append((verifier_id, version, result.get("evidence_hash"), result.get("definition_hash"), result.get("result"), _outcome(result)))
     ids = tuple(sorted(row[0] for row in rows))
     if len(set(ids)) != len(ids):

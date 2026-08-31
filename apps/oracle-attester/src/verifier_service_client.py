@@ -11,6 +11,7 @@ from typing import Any, Mapping, Optional
 import httpx
 
 from .runtime_config import CoordinatorVerifierServiceConfig, ResolverRuntimeConfig
+from .verifier_attestation import verify_attestation
 
 try:
     from prophet_sdk import resolver_v2
@@ -58,6 +59,7 @@ class VerifierServiceClient:
         self.config = config
         self._token = bearer_token
         self._response_max_bytes = response_max_bytes
+        self.last_attestation: Optional[Mapping[str, Any]] = None
         self._owns_client = http_client is None
         self._http = http_client or httpx.Client(follow_redirects=False, trust_env=False)
 
@@ -99,6 +101,7 @@ class VerifierServiceClient:
         evidence: Mapping[str, Any],
         trust_model: Mapping[str, Any],
         request_id: Optional[str] = None,
+        attestation_context: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
         """Send one unchanged canonical runtime request and validate its result binding."""
         try:
@@ -109,11 +112,14 @@ class VerifierServiceClient:
             evidence_hash = resolver_v2.evidence_hash(canonical_evidence).hex()
             if canonical_evidence["definition_hash"] != definition_hash or definition["trust_model"] != canonical_trust:
                 raise VerifierClientRequestError("canonical_request_binding_mismatch")
-            body = resolver_v2.canonical_json_bytes({
+            request_payload = {
                 "resolver_definition": definition,
                 "evidence": canonical_evidence,
                 "trust_model": canonical_trust,
-            })
+            }
+            if attestation_context is not None:
+                request_payload["attestation_context"] = dict(attestation_context)
+            body = resolver_v2.canonical_json_bytes(request_payload)
         except VerifierClientError:
             raise
         except (ValueError, resolver_v2.ResolverV2Error) as exc:
@@ -162,7 +168,22 @@ class VerifierServiceClient:
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
                 raise ValueError("response is not an object")
-            result = resolver_v2.validate_verification_result(parsed)
+            self.last_attestation = None
+            if set(parsed) == {"verification_result", "attestation"}:
+                result = resolver_v2.validate_verification_result(parsed["verification_result"])
+                if self.config.attestation_public_key is None:
+                    raise VerifierClientIdentityMismatch("unexpected_attested_verifier_response")
+                attestation = verify_attestation(
+                    parsed["attestation"],
+                    expected_verifier_id=self.config.expected_verifier_id,
+                    expected_verifier_version=self.config.expected_verifier_version,
+                    expected_verifier_implementation_digest=self.config.expected_verifier_implementation_digest,
+                    expected_public_key=self.config.attestation_public_key,
+                    now_ms=int(time.time() * 1000),
+                )
+                self.last_attestation = parsed["attestation"]
+            else:
+                result = resolver_v2.validate_verification_result(parsed)
         except (ValueError, json.JSONDecodeError, resolver_v2.ResolverV2Error) as exc:
             raise VerifierClientMalformedResponse("invalid_verification_result_response") from exc
         verifier = result["verifier"]

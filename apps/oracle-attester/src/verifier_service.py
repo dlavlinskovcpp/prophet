@@ -13,11 +13,37 @@ from typing import Any, Mapping, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.requests import ClientDisconnect
 
 from .resolver_v2_pipeline import PipelineRejected
 
 
 logger = logging.getLogger("prophet.verifier-service")
+
+
+class _RequestTooLarge(ValueError):
+    pass
+
+
+async def _read_bounded_body(request: Request, maximum: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None and (not declared.isdecimal() or (len(declared) > 1 and declared.startswith("0"))):
+        raise ValueError("content_length_invalid")
+    if declared is not None and int(declared) > maximum:
+        raise _RequestTooLarge("content_length_exceeds_limit")
+    data = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > maximum:
+                raise _RequestTooLarge("streamed_body_exceeds_limit")
+            data.extend(chunk)
+    except _RequestTooLarge:
+        raise
+    except ClientDisconnect as exc:
+        raise ValueError("request_stream_disconnected") from exc
+    except Exception as exc:
+        raise ValueError("request_stream_unavailable") from exc
+    return bytes(data)
 
 
 class VerifierServiceMetrics:
@@ -87,10 +113,12 @@ def create_verifier_service(*, runtime: Any = None, auth_token: str = "", expect
         try:
             if not app.state.ready: status, category = 503, "not_ready"; return JSONResponse(status_code=status, content={"error": "service_not_ready", "request_id": request_id})
             if not _authorized(request, auth_token): status, category = 401, "unauthorized"; return JSONResponse(status_code=status, content={"error": "unauthorized", "request_id": request_id})
-            declared = request.headers.get("content-length")
-            if declared is not None and (not declared.isdigit() or int(declared) > app.state.request_max_bytes): status, category = 413, "too_large"; return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
-            body = await request.body()
-            if len(body) > app.state.request_max_bytes: status, category = 413, "too_large"; return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
+            try:
+                body = await _read_bounded_body(request, app.state.request_max_bytes)
+            except _RequestTooLarge:
+                status, category = 413, "too_large"; return JSONResponse(status_code=status, content={"error": "request_too_large", "request_id": request_id})
+            except ValueError:
+                status, category = 400, "malformed"; return JSONResponse(status_code=status, content={"error": "invalid_request", "request_id": request_id})
             try:
                 payload = json.loads(body)
                 allowed = {"resolver_definition", "evidence", "trust_model", "attestation_context"}

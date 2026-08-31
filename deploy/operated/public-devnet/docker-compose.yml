@@ -2,7 +2,7 @@
 # Generic remote signer and direct oracle-attester settlement are intentionally absent.
 services:
   vault:
-    image: hashicorp/vault:1.17.6
+    image: hashicorp/vault@sha256:74a4ab138ab5d64725e89cd9a9c73f7040c7fe49e98b71697b275ca9a69919df # 1.17.6
     command: vault server -config=/vault/config/vault.hcl
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -83,6 +83,8 @@ services:
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/config/coordinator-runtime.yaml:/app/runtime/coordinator-runtime.yaml:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator:/var/lib/prophet/public-devnet/coordinator
+      - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/coordinator/grants:/var/lib/prophet/public-devnet/coordinator/grants:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/coordinator-fee-payer.json:/run/secrets/coordinator-fee-payer.json:ro
     depends_on: [verifier-a, verifier-b]
     user: "10001:10001"
     read_only: true
@@ -102,6 +104,11 @@ services:
     environment:
       ENVIRONMENT: public-devnet
       PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json
+      OPS_HOST: 0.0.0.0
+      OPS_PORT: "8010"
+      OPS_PROTECTED_INGRESS: "1"
+      OPS_EXPOSE_METRICS: "1"
+      OPS_API_AUTH_TOKEN: ${PROPHET_KEEPER_OPS_TOKEN:?PROPHET_KEEPER_OPS_TOKEN must be set}
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-id.json:/run/secrets/keeper-id.json:ro
@@ -114,20 +121,23 @@ services:
     cpus: "1.0"
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
     restart: on-failure:5
-    networks: [egress]
+    networks: [control, egress]
 
   prometheus:
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus@sha256:f6639335d34a77d9d9db382b92eeb7fc00934be8eae81dbc03b31cfe90411a94 # v2.54.1
     command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/prometheus, --web.enable-admin-api=false]
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/keeper-ops-token:/run/secrets/keeper-ops-token:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault-metrics-token:/run/secrets/vault-metrics-token:ro
+      - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/vault/ca.crt:/run/secrets/vault-ca.crt:ro
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/public-devnet}/prometheus:/prometheus
     restart: unless-stopped
     networks: [control, egress]
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5 # v0.27.0
     command: [--config.file=/run/secrets/alertmanager.yml, --storage.path=/alertmanager]
     volumes:
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/alertmanager.yml:/run/secrets/alertmanager.yml:ro
@@ -136,7 +146,7 @@ services:
     networks: [control, egress]
 
   grafana:
-    image: grafana/grafana:11.1.4
+    image: grafana/grafana@sha256:886b56d5534e54f69a8cfcb4b8928da8fc753178a7a3d20c3f9b04b660169805 # 11.1.4
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ADMIN_PASSWORD__FILE: ${PROPHET_SECRET_ROOT:-/etc/prophet/public-devnet}/grafana-admin-password

@@ -1,4 +1,5 @@
 import ipaddress
+import json
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlsplit
@@ -55,6 +56,8 @@ class Settings(BaseSettings):
     OPS_EXPOSE_MARKETS: bool = False
     OPS_EXPOSE_ATTEMPTS: bool = False
     OPS_EXPOSE_METRICS: bool = False
+    REQUIRE_OPERATED_QUOTE_ASSET_POLICY: bool = False
+    OPERATED_QUOTE_ASSETS: str = ""
     MATCHING_FAILURE_MAX_AGE_S: int = 60
     REQUIRE_OPERATED_RESOLVER_SUPPORT: bool = False
     OPERATED_SUPPORTED_RESOLVER_HASHES: str = ""
@@ -104,6 +107,39 @@ class Settings(BaseSettings):
         if invalid:
             raise ValueError("OPERATED_SUPPORTED_RESOLVER_HASHES must contain lowercase 32-byte hex hashes.")
         return values
+
+    @property
+    def operated_quote_assets(self) -> dict[str, dict[str, object]]:
+        """Return the explicit operated quote-asset facts keyed by mint."""
+        if not self.OPERATED_QUOTE_ASSETS.strip():
+            return {}
+        try:
+            raw = json.loads(self.OPERATED_QUOTE_ASSETS)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("OPERATED_QUOTE_ASSETS must be a JSON object") from exc
+        if not isinstance(raw, dict) or not raw:
+            raise ValueError("OPERATED_QUOTE_ASSETS must be a non-empty JSON object")
+        result: dict[str, dict[str, object]] = {}
+        for mint, facts in raw.items():
+            if not isinstance(mint, str) or not isinstance(facts, dict):
+                raise ValueError("OPERATED_QUOTE_ASSETS contains an invalid entry")
+            try:
+                parsed_mint = str(Pubkey.from_string(mint))
+            except Exception as exc:
+                raise ValueError("OPERATED_QUOTE_ASSETS contains an invalid mint") from exc
+            required = {"program", "decimals", "mint_authority_present", "freeze_authority_present"}
+            if set(facts) != required:
+                raise ValueError("OPERATED_QUOTE_ASSETS entry fields are invalid")
+            if facts["program"] != "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA":
+                raise ValueError("operated quote assets must use the legacy SPL Token program")
+            if isinstance(facts["decimals"], bool) or not isinstance(facts["decimals"], int) or not 0 <= facts["decimals"] <= 255:
+                raise ValueError("operated quote asset decimals are invalid")
+            if any(not isinstance(facts[name], bool) for name in ("mint_authority_present", "freeze_authority_present")):
+                raise ValueError("operated quote asset authority facts are invalid")
+            if parsed_mint != mint or mint in result:
+                raise ValueError("operated quote asset mint is not canonical or is duplicated")
+            result[mint] = dict(facts)
+        return result
 
     def validate_runtime(self) -> None:
         environment = self.ENVIRONMENT.strip().lower()
@@ -159,6 +195,9 @@ class Settings(BaseSettings):
         if self.MATCHING_FAILURE_MAX_AGE_S <= 0:
             raise ValueError("MATCHING_FAILURE_MAX_AGE_S must be positive.")
         supported_hashes = self.operated_supported_resolver_hashes
+        quote_assets = self.operated_quote_assets
+        if environment in _PRODUCTION_ENVIRONMENTS and self.REQUIRE_OPERATED_QUOTE_ASSET_POLICY and not quote_assets:
+            raise ValueError("production keeper requires an explicit operated quote-asset policy.")
         if environment in _PRODUCTION_ENVIRONMENTS and not self.REQUIRE_OPERATED_RESOLVER_SUPPORT:
             raise ValueError("production keeper must require operated resolver support.")
         if self.REQUIRE_OPERATED_RESOLVER_SUPPORT and not supported_hashes:

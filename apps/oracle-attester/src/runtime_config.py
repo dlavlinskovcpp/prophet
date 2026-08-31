@@ -79,6 +79,19 @@ class SettlementRpcConfig:
 class SettlementExecutionRuntimeConfig:
     rpc_url_env: str; expected_cluster: str; expected_genesis_hash: str; fee_payer: SettlementFeePayerConfig; rpc: SettlementRpcConfig; journal_path: str|None = None
 @dataclass(frozen=True)
+class ExternalSignerRuntimeConfig:
+    endpoint: str
+    signer_id: str
+    public_key: str
+    key_version: int
+    grant_path_env: str
+@dataclass(frozen=True)
+class ExternalSignerPairRuntimeConfig:
+    signer_a: ExternalSignerRuntimeConfig
+    signer_b: ExternalSignerRuntimeConfig
+    timeout_seconds: int
+    journal_path: str
+@dataclass(frozen=True)
 class SignedOracleRuntimeConfig: registry_path: str; registry_fingerprint: str; key_bindings: tuple[object, ...]
 @dataclass(frozen=True)
 class ZkTlsRuntimeConfig: provider_id: str; verifier_backend: str; allowed_proof_versions: tuple[str, ...]
@@ -86,7 +99,7 @@ class ZkTlsRuntimeConfig: provider_id: str; verifier_backend: str; allowed_proof
 class ResolverRuntimeConfig:
     schema_version: int; environment: str; mode: str; solana: SolanaRuntimeConfig
     resolver_v2_schema_version: int; verifier: VerifierRuntimeIdentity; allowed_adapters: tuple[str, ...]
-    limits: Limits; freshness: Freshness; internal_auth: InternalAuth; signed_oracle: SignedOracleRuntimeConfig|None; zktls: ZkTlsRuntimeConfig|None; coordinator: CoordinatorRuntimeConfig|None; signing: VaultSigningConfig|None; settlement_execution: SettlementExecutionRuntimeConfig|None = None
+    limits: Limits; freshness: Freshness; internal_auth: InternalAuth; signed_oracle: SignedOracleRuntimeConfig|None; zktls: ZkTlsRuntimeConfig|None; coordinator: CoordinatorRuntimeConfig|None; signing: VaultSigningConfig|None; settlement_execution: SettlementExecutionRuntimeConfig|None = None; external_signers: ExternalSignerPairRuntimeConfig|None = None
     verifier_attestation: VerifierAttestationRuntimeConfig|None = None
     def fingerprint(self) -> str:
         client = lambda value: {"base_url":value.base_url,"auth_token_env":value.auth_token_env,"expected_verifier_id":value.expected_verifier_id,"expected_verifier_version":value.expected_verifier_version,"expected_verifier_implementation_digest":value.expected_verifier_implementation_digest,"request_timeout_seconds":str(value.request_timeout_seconds),"attestation_public_key":value.attestation_public_key or "","attestation_private_key_env":value.attestation_private_key_env or ""}
@@ -106,6 +119,7 @@ class ResolverRuntimeConfig:
             "zktls": None if self.zktls is None else {"provider_id": self.zktls.provider_id, "verifier_backend": self.zktls.verifier_backend, "allowed_proof_versions": list(self.zktls.allowed_proof_versions)},
             "coordinator": None if self.coordinator is None else {"verifier_a": client(self.coordinator.verifier_a), "verifier_b": client(self.coordinator.verifier_b), "sqlite_path": self.coordinator.sqlite_path, "internal_auth": {"token_env": self.coordinator.internal_auth.token_env}, "request_timeout_seconds": str(self.coordinator.request_timeout_seconds)},
             "signing": None if self.signing is None else {"vault": {"address": self.signing.address, "auth": {"token_env": self.signing.token_env}, "transit_mount": self.signing.transit_mount, "request_timeout_seconds": str(self.signing.request_timeout_seconds), "backend": self.signing.backend}, "journal_path": self.signing.journal_path or "", "signers": {"a": signer(self.signing.signer_a), "b": signer(self.signing.signer_b)}},
+            "external_signers": None if self.external_signers is None else {"signer_a": {"endpoint": self.external_signers.signer_a.endpoint, "signer_id": self.external_signers.signer_a.signer_id, "public_key": self.external_signers.signer_a.public_key, "key_version": str(self.external_signers.signer_a.key_version), "grant_path_env": self.external_signers.signer_a.grant_path_env}, "signer_b": {"endpoint": self.external_signers.signer_b.endpoint, "signer_id": self.external_signers.signer_b.signer_id, "public_key": self.external_signers.signer_b.public_key, "key_version": str(self.external_signers.signer_b.key_version), "grant_path_env": self.external_signers.signer_b.grant_path_env}, "timeout_seconds": str(self.external_signers.timeout_seconds), "journal_path": self.external_signers.journal_path},
         }
         if self.settlement_execution is not None:
             execution = self.settlement_execution
@@ -191,9 +205,38 @@ def parse_settlement_execution_config(
         ),
     )
 
+def parse_external_signers_config(value: Any, *, environment: str) -> ExternalSignerPairRuntimeConfig:
+    required = {"signer_a", "signer_b", "timeout_seconds", "journal_path"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise RuntimeConfigError("external_signers has unknown or missing fields")
+    def parse_one(raw: Any, name: str) -> ExternalSignerRuntimeConfig:
+        if not isinstance(raw, dict) or set(raw) != {"endpoint", "signer_id", "public_key", "key_version", "grant_path_env"}:
+            raise RuntimeConfigError(f"{name} has unknown or missing fields")
+        endpoint = _text(raw["endpoint"], f"{name}.endpoint")
+        try:
+            parsed = urlsplit(endpoint)
+        except ValueError as exc:
+            raise RuntimeConfigError(f"{name}.endpoint is invalid") from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+            raise RuntimeConfigError(f"{name}.endpoint is invalid")
+        public_key = _text(raw["public_key"], f"{name}.public_key")
+        try:
+            if str(Pubkey.from_string(public_key)) != public_key:
+                raise ValueError
+        except Exception as exc:
+            raise RuntimeConfigError(f"{name}.public_key is invalid") from exc
+        return ExternalSignerRuntimeConfig(endpoint.rstrip("/"), _text(raw["signer_id"], f"{name}.signer_id"), public_key, _positive(raw["key_version"], f"{name}.key_version"), _env_name(raw["grant_path_env"], f"{name}.grant_path_env"))
+    signer_a, signer_b = parse_one(value["signer_a"], "external_signers.signer_a"), parse_one(value["signer_b"], "external_signers.signer_b")
+    if signer_a.endpoint == signer_b.endpoint or signer_a.signer_id == signer_b.signer_id or signer_a.public_key == signer_b.public_key:
+        raise RuntimeConfigError("external signer roles must be distinct")
+    journal_path = _text(value["journal_path"], "external_signers.journal_path")
+    if environment == "public-devnet" and (journal_path == ":memory:" or not Path(journal_path).is_absolute()):
+        raise RuntimeConfigError("public-devnet requires persistent absolute external_signers.journal_path")
+    return ExternalSignerPairRuntimeConfig(signer_a, signer_b, _positive(value["timeout_seconds"], "external_signers.timeout_seconds"), journal_path)
+
 def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverRuntimeConfig:
     required={"schema_version","environment","mode","solana","resolver_v2","verifier","allowed_adapters","limits","freshness","internal_auth"}
-    if not isinstance(raw,dict) or not required.issubset(raw) or set(raw)-required-{"signed_oracle","zktls","coordinator","signing","settlement_execution","verifier_attestation"}: raise RuntimeConfigError("runtime config has unknown or missing fields")
+    if not isinstance(raw,dict) or not required.issubset(raw) or set(raw)-required-{"signed_oracle","zktls","coordinator","signing","settlement_execution","verifier_attestation","external_signers"}: raise RuntimeConfigError("runtime config has unknown or missing fields")
     top=raw
     if top["schema_version"] != 1: raise RuntimeConfigError("unsupported schema_version")
     environment, mode = _text(top["environment"],"environment"), _text(top["mode"],"mode")
@@ -210,7 +253,7 @@ def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverR
     if not isinstance(adapters,list) or not adapters or any(not isinstance(a,str) or a not in _ADAPTERS for a in adapters) or len(adapters) != len(set(adapters)): raise RuntimeConfigError("allowed_adapters invalid")
     l = _obj(top["limits"], {"request_max_bytes","request_timeout_seconds"}, "limits"); f = _obj(top["freshness"], {"default_max_evidence_age_seconds","default_max_verification_age_seconds"}, "freshness")
     a = _obj(top["internal_auth"], {"token_env"}, "internal_auth")
-    signed=None; zktls=None; coordinator=None; signing=None; settlement_execution=None; verifier_attestation=None
+    signed=None; zktls=None; coordinator=None; signing=None; settlement_execution=None; verifier_attestation=None; external_signers=None
     if "verifier_attestation" in top:
         row=_obj(top["verifier_attestation"], {"public_key", "private_key_env"}, "verifier_attestation")
         try:
@@ -314,7 +357,9 @@ def parse_runtime_config(raw: Any, *, enable_mainnet: bool = False) -> ResolverR
         settlement_execution = parse_settlement_execution_config(
             top["settlement_execution"], solana=solana
         )
-    return ResolverRuntimeConfig(1,environment,mode,solana,2,VerifierRuntimeIdentity(_text(v["implementation_id"],"verifier.implementation_id"),_text(v["version"],"verifier.version")),tuple(sorted(adapters)),Limits(_positive(l["request_max_bytes"],"limits.request_max_bytes"),_positive(l["request_timeout_seconds"],"limits.request_timeout_seconds")),Freshness(_positive(f["default_max_evidence_age_seconds"],"freshness.default_max_evidence_age_seconds"),_positive(f["default_max_verification_age_seconds"],"freshness.default_max_verification_age_seconds")),InternalAuth(_text(a["token_env"],"internal_auth.token_env")),signed,zktls,coordinator,signing,settlement_execution,verifier_attestation)
+    if "external_signers" in top:
+        external_signers = parse_external_signers_config(top["external_signers"], environment=environment)
+    return ResolverRuntimeConfig(1,environment,mode,solana,2,VerifierRuntimeIdentity(_text(v["implementation_id"],"verifier.implementation_id"),_text(v["version"],"verifier.version")),tuple(sorted(adapters)),Limits(_positive(l["request_max_bytes"],"limits.request_max_bytes"),_positive(l["request_timeout_seconds"],"limits.request_timeout_seconds")),Freshness(_positive(f["default_max_evidence_age_seconds"],"freshness.default_max_evidence_age_seconds"),_positive(f["default_max_verification_age_seconds"],"freshness.default_max_verification_age_seconds")),InternalAuth(_text(a["token_env"],"internal_auth.token_env")),signed,zktls,coordinator,signing,settlement_execution,external_signers,verifier_attestation)
 
 def load_runtime_config(path: str | Path) -> ResolverRuntimeConfig:
     try: raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))

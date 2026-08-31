@@ -176,6 +176,19 @@ def test_policy_rejects_unknown_resolver_and_trust_model():
     assert SignerPolicyEngine(replace(policy, allowed_trust_model_digests=(H(99),))).evaluate(bundle, now_ms=120).reason == "unknown_trust_model"
 
 
+def test_policy_rejects_inner_verifier_digest_not_in_local_trust_policy():
+    bundle = _bundle()
+    policy = replace(
+        _policy(bundle),
+        trusted_verifier_implementations=(("prophet.verifier.independent", "2.0.0", H(3)),),
+    )
+    bundle["verification_results"][0]["verifier"] = {
+        **bundle["verification_results"][0]["verifier"],
+        "implementation_digest": H(9),
+    }
+    assert SignerPolicyEngine(policy).evaluate(bundle, now_ms=120).reason == "untrusted_verifier_implementation"
+
+
 def test_policy_rejects_stale_tampered_and_wrong_verifier():
     bundle = _bundle()
     policy = _policy(bundle)

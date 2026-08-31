@@ -1,6 +1,6 @@
 # Prophet v0.2 Operational Makefile
 
-.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down rc44-security-acceptance rc46-security-acceptance rc47-security-acceptance
+.PHONY: validator build deploy test reliability attester verifier-a-run verifier-b-run verifier-services-test coordinator-run coordinator-service-test remote-signer resolver-registry seed-resolver publish-resolver factory maker keeper keeper-example grafana ops-backup ops-restore ops-verify-restore ops-validate-alerts ops-validate-operated-monitoring ops-drills localnet-up localnet-down clean zktls-audit release-plan release-bundle release-deploy render-operated operated-smoke operated-devnet signer-vault-bootstrap signer-kms-bootstrap signer-dry-run signer-allowlist security-review-bundle demo devnet-runtime-up devnet-runtime-status devnet-runtime-preflight devnet-runtime-logs devnet-runtime-down rc44-security-acceptance rc46-security-acceptance rc47-security-acceptance rc48-security-acceptance
 
 validator:
 	SOLANA_VERSION=3.1.10 bash scripts/localnet_start.sh
@@ -71,6 +71,9 @@ rc46-security-acceptance:
 
 rc47-security-acceptance:
 	python3 scripts/validate_rc47_security_acceptance.py --run
+
+rc48-security-acceptance:
+	python3 scripts/validate_rc48_security_acceptance.py --run
 
 demo:
 	cd apps/oracle-attester && poetry run python ../../scripts/demo_agent_market.py
@@ -144,6 +147,9 @@ ops-verify-restore:
 
 ops-validate-alerts:
 	python3 scripts/validate_alert_rules.py
+
+ops-validate-operated-monitoring:
+	python3 scripts/validate_operated_monitoring.py
 
 ops-drills:
 	python3 scripts/verify_ops_backup_restore.py

@@ -89,6 +89,11 @@ services:
     environment:
       ENVIRONMENT: mainnet
       PAYER_KEYPAIR_PATH: /run/secrets/keeper-id.json
+      OPS_HOST: 0.0.0.0
+      OPS_PORT: "8010"
+      OPS_PROTECTED_INGRESS: "1"
+      OPS_EXPOSE_METRICS: "1"
+      OPS_API_AUTH_TOKEN: ${PROPHET_KEEPER_OPS_TOKEN:?PROPHET_KEEPER_OPS_TOKEN must be set}
     volumes:
       - ${PROPHET_RUNTIME_ROOT:-/var/lib/prophet/mainnet-beta}/matching-keeper:/app/apps/matching-keeper/state
       - ${PROPHET_SECRET_ROOT:-/etc/prophet/mainnet-beta}/keeper-id.json:/run/secrets/keeper-id.json:ro
@@ -101,7 +106,7 @@ services:
     cpus: "1.0"
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
     restart: on-failure:5
-    networks: [egress]
+    networks: [control, egress]
 
 networks:
   control:

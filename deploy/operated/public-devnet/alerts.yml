@@ -4,14 +4,38 @@ groups:
       - alert: ProphetVaultUnavailable
         expr: up{job="vault"} == 0
         for: 5m
-        labels: {severity: critical}
+        labels: {severity: critical, service: vault}
+        annotations: {summary: Vault is unavailable, description: Prometheus cannot scrape the authenticated Vault metrics endpoint.}
+      - alert: ProphetVerifierAUnavailable
+        expr: up{job="prophet-verifier-a"} == 0
+        for: 2m
+        labels: {severity: critical, service: verifier-a}
+        annotations: {summary: Verifier A is unavailable, description: Prometheus cannot scrape verifier A.}
+      - alert: ProphetVerifierBUnavailable
+        expr: up{job="prophet-verifier-b"} == 0
+        for: 2m
+        labels: {severity: critical, service: verifier-b}
+        annotations: {summary: Verifier B is unavailable, description: Prometheus cannot scrape verifier B.}
+      - alert: ProphetCoordinatorUnavailable
+        expr: up{job="prophet-coordinator"} == 0
+        for: 2m
+        labels: {severity: critical, service: coordinator}
+        annotations: {summary: Coordinator is unavailable, description: Prometheus cannot scrape the resolution coordinator.}
+      - alert: ProphetResolverRegistryUnavailable
+        expr: up{job="prophet-resolver-registry"} == 0
+        for: 2m
+        labels: {severity: critical, service: resolver-registry}
+        annotations: {summary: Resolver registry is unavailable, description: Prometheus cannot scrape the resolver registry.}
       - alert: ProphetVerifierDisagreement
         expr: increase(prophet_resolver_v2_verifier_disagreement_total[10m]) > 0
-        labels: {severity: high}
+        labels: {severity: high, service: resolver}
+        annotations: {summary: Verifiers disagree, description: A Resolver V2 verifier disagreement was recorded.}
       - alert: ProphetSignerEquivocation
-        expr: increase(prophet_resolver_v2_equivocation_total{actor="signer"}[10m]) > 0
-        labels: {severity: critical}
+        expr: increase(prophet_resolver_v2_equivocation_total{kind="signer"}[10m]) > 0
+        labels: {severity: critical, service: signer}
+        annotations: {summary: Signer equivocation detected, description: A fixed-role signer produced conflicting evidence.}
       - alert: ProphetKeeperUnavailable
         expr: up{job="prophet-matching-keeper"} == 0
         for: 2m
-        labels: {severity: high}
+        labels: {severity: critical, service: matching-keeper}
+        annotations: {summary: Matching keeper is unavailable, description: Prometheus cannot scrape the authenticated keeper metrics endpoint.}

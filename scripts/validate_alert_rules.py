@@ -8,6 +8,7 @@ PROMETHEUS_CONFIG = ROOT / "ops" / "monitoring" / "prometheus.yml"
 ALERTS_CONFIG = ROOT / "ops" / "monitoring" / "alerts.yml"
 METRIC_SOURCES = [
     ROOT / "apps" / "oracle-attester" / "src" / "resolver_registry_main.py",
+    ROOT / "apps" / "oracle-attester" / "src" / "resolver_v2_multi_verifier.py",
     ROOT / "apps" / "matching-keeper" / "src" / "service.py",
 ]
 PROMQL_KEYWORDS = {
