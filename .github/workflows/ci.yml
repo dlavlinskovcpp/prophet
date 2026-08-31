@@ -760,7 +760,7 @@ jobs:
       - name: Validate RC4.8 transaction and runtime acceptance basis
         run: |
           export RC48_SKIP_ANCHOR_E2E=1
-          make rc48-security-acceptance
+          python3 scripts/validate_rc48_security_acceptance.py --run
 
       - name: Validate operated monitoring contract
         run: python3 scripts/validate_operated_monitoring.py
